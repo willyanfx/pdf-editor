@@ -2,6 +2,7 @@ import { Rnd } from "react-rnd";
 import { X } from "lucide-react";
 import type { PdfEdit } from "../store/useEditorStore";
 import { useEditorStore } from "../store/useEditorStore";
+import { TextFormatToolbar, cssFontStack } from "./TextFormatToolbar";
 
 type Props = {
   edit: PdfEdit;
@@ -18,6 +19,9 @@ export function EditBox({ edit }: Props) {
       size={{ width: edit.width, height: edit.height }}
       position={{ x: edit.x, y: edit.y }}
       bounds="parent"
+      // Don't start a drag from inside the textarea/toolbar, so text selection
+      // and typing work; the box still drags from its border/handles.
+      cancel="textarea, .text-format-toolbar, .delete"
       onMouseDown={(event) => {
         event.stopPropagation();
         selectEdit(edit.id);
@@ -36,19 +40,28 @@ export function EditBox({ edit }: Props) {
       className={selected ? "edit-box selected" : "edit-box"}
     >
       {edit.type === "text" && (
-        <textarea
-          value={edit.text}
-          style={{ fontSize: edit.fontSize }}
-          onMouseDown={(e) => e.stopPropagation()}
-          onChange={(event) =>
-            updateEdit(edit.id, { text: event.target.value })
-          }
-        />
+        <>
+          {/* The cover for the original glyphs is rendered by EditableLayer,
+              pinned to the original location so it stays put when this box moves. */}
+          <textarea
+            value={edit.text}
+            spellCheck={false}
+            style={{
+              fontSize: edit.fontSize,
+              fontFamily: cssFontStack(edit.fontFamily),
+              fontWeight: edit.bold ? 700 : 400,
+              fontStyle: edit.italic ? "italic" : "normal",
+              color: edit.color,
+              textAlign: edit.align,
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onChange={(event) => updateEdit(edit.id, { text: event.target.value })}
+          />
+          {selected && <TextFormatToolbar edit={edit} />}
+        </>
       )}
 
-      {edit.type === "image" && (
-        <img src={edit.dataUrl} alt="" draggable={false} />
-      )}
+      {edit.type === "image" && <img src={edit.dataUrl} alt="" draggable={false} />}
 
       {edit.type === "rectangle" && <div className="rectangle-preview" />}
 

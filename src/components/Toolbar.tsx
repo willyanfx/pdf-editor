@@ -1,12 +1,6 @@
 import { useRef } from "react";
-import {
-  FilePlus2,
-  Type,
-  ImagePlus,
-  Square,
-  Download,
-} from "lucide-react";
-import { useEditorStore } from "../store/useEditorStore";
+import { FilePlus2, Type, ImagePlus, Square, Download, MousePointer2, Pencil } from "lucide-react";
+import { useEditorStore, makeTextEdit } from "../store/useEditorStore";
 import { exportEditedPdf } from "../lib/exportPdf";
 import { fileToDataUrl } from "../lib/file";
 
@@ -17,25 +11,25 @@ export function Toolbar() {
   const file = useEditorStore((s) => s.file);
   const edits = useEditorStore((s) => s.edits);
   const selectedPageIndex = useEditorStore((s) => s.selectedPageIndex);
+  const mode = useEditorStore((s) => s.mode);
   const setFile = useEditorStore((s) => s.setFile);
   const addEdit = useEditorStore((s) => s.addEdit);
+  const setMode = useEditorStore((s) => s.setMode);
 
   function openPdf(picked: File) {
     setFile(picked);
   }
 
   function addText() {
-    addEdit({
-      id: crypto.randomUUID(),
-      type: "text",
-      pageIndex: selectedPageIndex,
-      x: 80,
-      y: 80,
-      width: 220,
-      height: 60,
-      text: "Your text",
-      fontSize: 18,
-    });
+    addEdit(
+      makeTextEdit({
+        pageIndex: selectedPageIndex,
+        x: 80,
+        y: 80,
+        width: 220,
+        height: 60,
+      }),
+    );
   }
 
   function addRectangle() {
@@ -106,6 +100,26 @@ export function Toolbar() {
 
       <button onClick={() => pdfInputRef.current?.click()}>
         <FilePlus2 size={16} /> Open PDF
+      </button>
+
+      <div className="toolbar-divider" />
+
+      {/* Mode toggle: Select vs. Edit existing text */}
+      <button
+        className={mode === "select" ? "mode active" : "mode"}
+        onClick={() => setMode("select")}
+        disabled={!file}
+        title="Select & move your edits"
+      >
+        <MousePointer2 size={16} /> Select
+      </button>
+      <button
+        className={mode === "editText" ? "mode active" : "mode"}
+        onClick={() => setMode("editText")}
+        disabled={!file}
+        title="Click existing PDF text to edit it"
+      >
+        <Pencil size={16} /> Edit Text
       </button>
 
       <div className="toolbar-divider" />
