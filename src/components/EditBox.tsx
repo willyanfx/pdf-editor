@@ -1,7 +1,8 @@
 import { Rnd } from "react-rnd";
-import { X } from "lucide-react";
+import { X, ScanText } from "lucide-react";
 import type { PdfEdit } from "../store/useEditorStore";
-import { useEditorStore } from "../store/useEditorStore";
+import { useEditorStore, makeTextEdit } from "../store/useEditorStore";
+import { recognizeImageDataUrl } from "../lib/ocr";
 import { TextFormatToolbar, cssFontStack } from "./TextFormatToolbar";
 
 type Props = {
@@ -12,7 +13,43 @@ export function EditBox({ edit }: Props) {
   const updateEdit = useEditorStore((s) => s.updateEdit);
   const deleteEdit = useEditorStore((s) => s.deleteEdit);
   const selectEdit = useEditorStore((s) => s.selectEdit);
+  const addEdit = useEditorStore((s) => s.addEdit);
+  const setOcrBusy = useEditorStore((s) => s.setOcrBusy);
+  const setOcrProgress = useEditorStore((s) => s.setOcrProgress);
+  const ocrBusy = useEditorStore((s) => s.ocrBusy);
   const selected = useEditorStore((s) => s.selectedEditId === edit.id);
+
+  async function ocrImage() {
+    if (edit.type !== "image") return;
+    setOcrBusy(true);
+    setOcrProgress(0);
+    try {
+      const items = await recognizeImageDataUrl(
+        edit.dataUrl,
+        { x: edit.x, y: edit.y, width: edit.width, height: edit.height },
+        setOcrProgress,
+      );
+      for (const it of items) {
+        // Lay recognized text over the image without covering it — the user may
+        // want to keep the original signature/photo intact.
+        addEdit(
+          makeTextEdit({
+            pageIndex: edit.pageIndex,
+            x: it.x,
+            y: it.y,
+            width: Math.max(it.width + 8, 40),
+            height: Math.max(it.height, 16),
+            text: it.str,
+            fontSize: it.fontSize,
+            fontFamily: it.fontFamily,
+          }),
+        );
+      }
+    } finally {
+      setOcrBusy(false);
+      setOcrProgress(0);
+    }
+  }
 
   return (
     <Rnd
@@ -61,7 +98,25 @@ export function EditBox({ edit }: Props) {
         </>
       )}
 
-      {edit.type === "image" && <img src={edit.dataUrl} alt="" draggable={false} />}
+      {edit.type === "image" && (
+        <>
+          <img src={edit.dataUrl} alt="" draggable={false} />
+          {selected && (
+            <button
+              className="ocr-image-btn"
+              title="Recognize text in this image (OCR)"
+              disabled={ocrBusy}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                void ocrImage();
+              }}
+            >
+              <ScanText size={14} /> OCR
+            </button>
+          )}
+        </>
+      )}
 
       {edit.type === "rectangle" && <div className="rectangle-preview" />}
 

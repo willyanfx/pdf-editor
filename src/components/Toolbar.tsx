@@ -1,8 +1,18 @@
 import { useRef } from "react";
-import { FilePlus2, Type, ImagePlus, Square, Download, MousePointer2, Pencil } from "lucide-react";
+import {
+  FilePlus2,
+  Type,
+  ImagePlus,
+  Square,
+  Download,
+  MousePointer2,
+  Pencil,
+  ScanText,
+  ScanLine,
+} from "lucide-react";
 import { useEditorStore, makeTextEdit } from "../store/useEditorStore";
 import { exportEditedPdf } from "../lib/exportPdf";
-import { fileToDataUrl } from "../lib/file";
+import { addImageFromFile } from "../lib/openFiles";
 
 export function Toolbar() {
   const pdfInputRef = useRef<HTMLInputElement | null>(null);
@@ -12,9 +22,11 @@ export function Toolbar() {
   const edits = useEditorStore((s) => s.edits);
   const selectedPageIndex = useEditorStore((s) => s.selectedPageIndex);
   const mode = useEditorStore((s) => s.mode);
+  const ocrBusy = useEditorStore((s) => s.ocrBusy);
   const setFile = useEditorStore((s) => s.setFile);
   const addEdit = useEditorStore((s) => s.addEdit);
   const setMode = useEditorStore((s) => s.setMode);
+  const requestOcrPage = useEditorStore((s) => s.requestOcrPage);
 
   function openPdf(picked: File) {
     setFile(picked);
@@ -41,20 +53,6 @@ export function Toolbar() {
       y: 120,
       width: 180,
       height: 80,
-    });
-  }
-
-  async function addImage(picked: File) {
-    const dataUrl = await fileToDataUrl(picked);
-    addEdit({
-      id: crypto.randomUUID(),
-      type: "image",
-      pageIndex: selectedPageIndex,
-      x: 100,
-      y: 100,
-      width: 220,
-      height: 120,
-      dataUrl,
     });
   }
 
@@ -93,7 +91,7 @@ export function Toolbar() {
         hidden
         onChange={(event) => {
           const picked = event.target.files?.[0];
-          if (picked) void addImage(picked);
+          if (picked) void addImageFromFile(picked);
           event.target.value = "";
         }}
       />
@@ -120,6 +118,24 @@ export function Toolbar() {
         title="Click existing PDF text to edit it"
       >
         <Pencil size={16} /> Edit Text
+      </button>
+      <button
+        className={mode === "ocr" ? "mode active" : "mode"}
+        onClick={() => setMode("ocr")}
+        disabled={!file || ocrBusy}
+        title="Drag a box over scanned/image text to recognize it (OCR)"
+      >
+        <ScanLine size={16} /> OCR Region
+      </button>
+
+      <div className="toolbar-divider" />
+
+      <button
+        onClick={() => requestOcrPage(selectedPageIndex)}
+        disabled={!file || ocrBusy}
+        title="Recognize all text on the current page (OCR)"
+      >
+        <ScanText size={16} /> Extract Text
       </button>
 
       <div className="toolbar-divider" />

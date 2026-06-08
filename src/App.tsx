@@ -1,9 +1,20 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Toolbar } from "./components/Toolbar";
 import { PdfViewer } from "./components/PdfViewer";
 import { useEditorStore } from "./store/useEditorStore";
+import { openFiles } from "./lib/openFiles";
 
 export default function App() {
+  // Whole-window drag-and-drop: drop a PDF anytime to open/replace it, or drop
+  // an image onto an open PDF to add it. A depth counter keeps the overlay from
+  // flickering as the cursor crosses nested child elements.
+  const [isDragging, setIsDragging] = useState(false);
+  const dragDepth = useRef(0);
+
+  function hasFiles(e: React.DragEvent) {
+    return Array.from(e.dataTransfer.types).includes("Files");
+  }
+
   // Keyboard nudge & delete for the selected edit (Adobe-style).
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -40,9 +51,40 @@ export default function App() {
   }, []);
 
   return (
-    <main className="app">
+    <main
+      className="app"
+      onDragEnter={(e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        dragDepth.current += 1;
+        setIsDragging(true);
+      }}
+      onDragOver={(e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+      }}
+      onDragLeave={(e) => {
+        if (!hasFiles(e)) return;
+        dragDepth.current -= 1;
+        if (dragDepth.current <= 0) {
+          dragDepth.current = 0;
+          setIsDragging(false);
+        }
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        dragDepth.current = 0;
+        setIsDragging(false);
+        openFiles(e.dataTransfer.files);
+      }}
+    >
       <Toolbar />
       <PdfViewer />
+      {isDragging && (
+        <div className="drop-overlay">
+          <div className="drop-overlay-card">Drop PDF to open · drop image to add</div>
+        </div>
+      )}
     </main>
   );
 }

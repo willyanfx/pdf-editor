@@ -50,9 +50,10 @@ export type PdfEdit =
       height: number;
     };
 
-/** Select vs. Edit-Text. In edit-text mode, clicking existing PDF text turns
- * it into an editable box. */
-export type EditorMode = "select" | "editText";
+/** Select vs. Edit-Text vs. OCR. In edit-text mode, clicking existing PDF text
+ * turns it into an editable box. In ocr mode, dragging a rectangle runs OCR on
+ * that region and turns recognized text into editable boxes. */
+export type EditorMode = "select" | "editText" | "ocr";
 
 type EditorState = {
   /** The source PDF. We keep the File (not a detachable ArrayBuffer) so we can
@@ -64,6 +65,13 @@ type EditorState = {
   selectedPageIndex: number;
   mode: EditorMode;
 
+  /** OCR runs in a WASM worker and takes seconds; surface a global spinner. */
+  ocrBusy: boolean;
+  ocrProgress: number; // 0..1
+  /** Set by the toolbar's "Extract Text" button to ask PdfViewer (which owns the
+   * page canvases) to OCR a whole page. PdfViewer clears it after handling. */
+  ocrRequestPageIndex: number | null;
+
   setFile: (file: File) => void;
   addEdit: (edit: PdfEdit) => void;
   updateEdit: (id: string, patch: Partial<PdfEdit>) => void;
@@ -71,6 +79,9 @@ type EditorState = {
   selectEdit: (id: string | null) => void;
   setSelectedPageIndex: (pageIndex: number) => void;
   setMode: (mode: EditorMode) => void;
+  setOcrBusy: (busy: boolean) => void;
+  setOcrProgress: (progress: number) => void;
+  requestOcrPage: (pageIndex: number | null) => void;
 };
 
 export const useEditorStore = create<EditorState>((set) => ({
@@ -79,6 +90,9 @@ export const useEditorStore = create<EditorState>((set) => ({
   selectedEditId: null,
   selectedPageIndex: 0,
   mode: "select",
+  ocrBusy: false,
+  ocrProgress: 0,
+  ocrRequestPageIndex: null,
 
   setFile: (file) =>
     set({
@@ -86,6 +100,10 @@ export const useEditorStore = create<EditorState>((set) => ({
       edits: [],
       selectedEditId: null,
       selectedPageIndex: 0,
+      mode: "select",
+      ocrBusy: false,
+      ocrProgress: 0,
+      ocrRequestPageIndex: null,
     }),
 
   addEdit: (edit) =>
@@ -112,6 +130,12 @@ export const useEditorStore = create<EditorState>((set) => ({
   setSelectedPageIndex: (pageIndex) => set({ selectedPageIndex: pageIndex }),
 
   setMode: (mode) => set({ mode }),
+
+  setOcrBusy: (ocrBusy) => set({ ocrBusy }),
+
+  setOcrProgress: (ocrProgress) => set({ ocrProgress }),
+
+  requestOcrPage: (ocrRequestPageIndex) => set({ ocrRequestPageIndex }),
 }));
 
 /** Shared default for newly-added text boxes. */
@@ -132,4 +156,55 @@ export function makeTextEdit(
     coverColor: "#ffffff",
     ...partial,
   };
+}
+
+/** A recognized run of text (OCR or existing-PDF text) projected into screen px
+ * at the viewer width, ready to become a text edit. Mirrors the OCR/textLayer
+ * output shape so both sources share one edit-creation path. */
+export type RecognizedTextRun = {
+  str: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fontSize: number;
+  fontFamily: FontFamily;
+  bold: boolean;
+  italic: boolean;
+};
+
+/**
+ * Build a text edit that REPLACES a recognized run: it covers the original
+ * pixels (scanned glyphs / existing text) with a sampled background color and
+ * draws editable replacement text on top. Used by OCR and the existing-text
+ * lift flow so cover geometry stays defined in one place.
+ */
+export function makeCoverTextEdit(
+  run: RecognizedTextRun,
+  pageIndex: number,
+  coverColor: string,
+): TextEdit {
+  return makeTextEdit({
+    pageIndex,
+    x: run.x,
+    y: run.y,
+    width: Math.max(run.width + 8, 40),
+    height: Math.max(run.height, 16),
+    text: run.str,
+    fontSize: run.fontSize,
+    fontFamily: run.fontFamily,
+    bold: run.bold,
+    italic: run.italic,
+    color: "#111827",
+    origin: "existing",
+    coverColor,
+    // Lock the cover to the original glyph box (padded to hide edges) so dragging
+    // the replacement away doesn't re-expose the original.
+    coverRect: {
+      x: run.x - 2,
+      y: run.y - 2,
+      width: run.width + 4,
+      height: run.height + 4,
+    },
+  });
 }

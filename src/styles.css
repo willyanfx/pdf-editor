@@ -115,6 +115,76 @@ button {
   color: #6b7280;
 }
 
+/* Drop zone (empty state) --------------------------------------------- */
+
+.dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 24px 0;
+  padding: 48px 32px;
+  border: 2px dashed #cbd5e1;
+  border-radius: 16px;
+  background: #f8fafc;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.dropzone:hover {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.dropzone:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.dropzone-icon {
+  color: #94a3b8;
+}
+
+.dropzone:hover .dropzone-icon {
+  color: #2563eb;
+}
+
+.dropzone-title {
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.dropzone-sub {
+  font-size: 15px;
+}
+
+/* Whole-window drag overlay ------------------------------------------- */
+
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(37, 99, 235, 0.08);
+  pointer-events: none;
+}
+
+.drop-overlay-card {
+  padding: 28px 40px;
+  border: 3px dashed #2563eb;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #1e3a8a;
+  font-size: 20px;
+  font-weight: 600;
+}
+
 /* PDF + editable overlay ---------------------------------------------- */
 
 .pdf-wrapper {
@@ -278,6 +348,83 @@ button {
    clicking real text; the boxes still work. */
 .mode-editText {
   cursor: default;
+}
+
+/* OCR region-select overlay: a full-page capture surface, only mounted in
+   "ocr" mode. Sits above the edit boxes so the drag isn't intercepted. */
+.ocr-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  cursor: crosshair;
+}
+
+.ocr-selection-rect {
+  position: absolute;
+  border: 1.5px dashed #2563eb;
+  background: rgba(37, 99, 235, 0.12);
+  pointer-events: none;
+}
+
+/* "OCR" action on a selected image edit. */
+.ocr-image-btn {
+  position: absolute;
+  top: -13px;
+  left: -1px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border: 0;
+  border-radius: 6px;
+  background: #2563eb;
+  color: white;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ocr-image-btn:hover {
+  background: #1d4ed8;
+}
+
+.ocr-image-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Global OCR progress overlay (recognition takes seconds). */
+.ocr-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(17, 24, 39, 0.35);
+}
+
+.ocr-overlay-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+  font-size: 14px;
+  color: #111827;
+}
+
+.ocr-spinner {
+  animation: ocr-spin 0.9s linear infinite;
+}
+
+@keyframes ocr-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .edit-box img {
