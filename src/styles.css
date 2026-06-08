@@ -5,8 +5,13 @@
 body {
   margin: 0;
   font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
   background: #f3f4f6;
   color: #111827;
 }
@@ -44,7 +49,9 @@ button {
   background: white;
   color: #111827;
   cursor: pointer;
-  transition: opacity 0.15s ease, transform 0.05s ease;
+  transition:
+    opacity 0.15s ease,
+    transform 0.05s ease;
 }
 
 .toolbar button:hover:not(:disabled) {
@@ -56,6 +63,16 @@ button {
 }
 
 .toolbar button.primary {
+  background: #2563eb;
+  color: white;
+}
+
+.toolbar button.mode {
+  background: #374151;
+  color: #e5e7eb;
+}
+
+.toolbar button.mode.active {
   background: #2563eb;
   color: white;
 }
@@ -134,6 +151,8 @@ button {
 }
 
 .edit-box textarea {
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 100%;
   resize: none;
@@ -141,10 +160,124 @@ button {
   outline: none;
   padding: 0;
   background: transparent;
-  font-family: Arial, Helvetica, sans-serif;
   line-height: 1.15;
-  color: #111827;
   overflow: hidden;
+}
+
+/* Opaque fill that hides the original PDF glyphs. Pinned by EditableLayer to the
+   original text location (page-shell coords), so it stays put when the edit box
+   is dragged. pointer-events stay off via the parent .editable-layer. */
+.text-cover {
+  position: absolute;
+  z-index: 0;
+}
+
+/* Floating formatting bar above a selected text box. */
+.text-format-toolbar {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 6px;
+  background: #111827;
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+  white-space: nowrap;
+}
+
+.text-format-toolbar select {
+  font: inherit;
+  font-size: 13px;
+  border: 0;
+  border-radius: 5px;
+  padding: 4px 5px;
+  background: white;
+  color: #111827;
+  cursor: pointer;
+}
+
+.text-format-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 5px;
+  background: #374151;
+  color: #e5e7eb;
+  cursor: pointer;
+}
+
+.text-format-toolbar button:hover {
+  background: #4b5563;
+}
+
+.text-format-toolbar button.active {
+  background: #2563eb;
+  color: white;
+}
+
+.tft-divider {
+  width: 1px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.18);
+  margin: 0 2px;
+}
+
+.tft-color {
+  display: inline-flex;
+}
+
+.tft-color input[type="color"] {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  cursor: pointer;
+}
+
+/* Existing-text hit layer (only visible/active in Edit Text mode). */
+.existing-text-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.existing-text-hit {
+  position: absolute;
+  pointer-events: auto;
+  margin: 0;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: rgba(37, 99, 235, 0.06);
+  color: transparent;
+  cursor: text;
+  overflow: hidden;
+  line-height: 1;
+  text-align: left;
+}
+
+.existing-text-hit:hover {
+  background: rgba(37, 99, 235, 0.18);
+  border-color: rgba(37, 99, 235, 0.6);
+}
+
+.existing-text-hit span {
+  visibility: hidden;
+}
+
+/* In Edit Text mode, dim added-edit interactions slightly so the focus is on
+   clicking real text; the boxes still work. */
+.mode-editText {
+  cursor: default;
 }
 
 .edit-box img {

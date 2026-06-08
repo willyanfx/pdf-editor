@@ -6,5 +6,11 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   base: process.env.VITE_BASE ?? "/pdf-editor/",
   plugins: [react()],
+  // react-draggable (via react-rnd) reads `process.env.DRAGGABLE_DEBUG` at
+  // runtime; the browser has no `process`, so shim it to avoid a ReferenceError
+  // that crashes the drag handlers.
+  define: {
+    "process.env.DRAGGABLE_DEBUG": "false",
+  },
   lint: { options: { typeAware: true, typeCheck: true } },
 });
