@@ -71,6 +71,7 @@ type EditorState = {
   /** Set by the toolbar's "Extract Text" button to ask PdfViewer (which owns the
    * page canvases) to OCR a whole page. PdfViewer clears it after handling. */
   ocrRequestPageIndex: number | null;
+  errorMessage: string | null;
 
   setFile: (file: File) => void;
   addEdit: (edit: PdfEdit) => void;
@@ -82,6 +83,7 @@ type EditorState = {
   setOcrBusy: (busy: boolean) => void;
   setOcrProgress: (progress: number) => void;
   requestOcrPage: (pageIndex: number | null) => void;
+  setErrorMessage: (message: string | null) => void;
 };
 
 export const useEditorStore = create<EditorState>((set) => ({
@@ -93,6 +95,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   ocrBusy: false,
   ocrProgress: 0,
   ocrRequestPageIndex: null,
+  errorMessage: null,
 
   setFile: (file) =>
     set({
@@ -104,6 +107,7 @@ export const useEditorStore = create<EditorState>((set) => ({
       ocrBusy: false,
       ocrProgress: 0,
       ocrRequestPageIndex: null,
+      errorMessage: null,
     }),
 
   addEdit: (edit) =>
@@ -136,6 +140,8 @@ export const useEditorStore = create<EditorState>((set) => ({
   setOcrProgress: (ocrProgress) => set({ ocrProgress }),
 
   requestOcrPage: (ocrRequestPageIndex) => set({ ocrRequestPageIndex }),
+
+  setErrorMessage: (errorMessage) => set({ errorMessage }),
 }));
 
 /** Shared default for newly-added text boxes. */

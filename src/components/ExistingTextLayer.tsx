@@ -6,7 +6,7 @@ import {
   sampleBackgroundColor,
   type ScreenTextItem,
 } from "../lib/textLayer";
-import { VIEWER_WIDTH } from "../lib/exportPdf";
+import { VIEWER_WIDTH } from "../lib/pdfGeometry";
 
 type Props = {
   pageIndex: number;

@@ -11,7 +11,6 @@ import {
   ScanLine,
 } from "lucide-react";
 import { useEditorStore, makeTextEdit } from "../store/useEditorStore";
-import { exportEditedPdf } from "../lib/exportPdf";
 import { addImageFromFile } from "../lib/openFiles";
 
 export function Toolbar() {
@@ -27,6 +26,7 @@ export function Toolbar() {
   const addEdit = useEditorStore((s) => s.addEdit);
   const setMode = useEditorStore((s) => s.setMode);
   const requestOcrPage = useEditorStore((s) => s.requestOcrPage);
+  const setErrorMessage = useEditorStore((s) => s.setErrorMessage);
 
   function openPdf(picked: File) {
     setFile(picked);
@@ -58,17 +58,24 @@ export function Toolbar() {
 
   async function downloadPdf() {
     if (!file) return;
-    const bytes = await exportEditedPdf(file, edits);
-    // Copy into a fresh ArrayBuffer so the Blob owns standalone bytes.
-    const blob = new Blob([bytes.slice()], { type: "application/pdf" });
-    const url = URL.createObjectURL(blob);
+    setErrorMessage(null);
 
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = file.name.replace(/\.pdf$/i, "") + ".edited.pdf";
-    link.click();
+    try {
+      const { exportEditedPdf } = await import("../lib/exportPdf");
+      const bytes = await exportEditedPdf(file, edits);
+      // Copy into a fresh ArrayBuffer so the Blob owns standalone bytes.
+      const blob = new Blob([bytes.slice()], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
 
-    URL.revokeObjectURL(url);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = file.name.replace(/\.pdf$/i, "") + ".edited.pdf";
+      link.click();
+
+      URL.revokeObjectURL(url);
+    } catch {
+      setErrorMessage("Could not export this PDF.");
+    }
   }
 
   return (
@@ -91,7 +98,11 @@ export function Toolbar() {
         hidden
         onChange={(event) => {
           const picked = event.target.files?.[0];
-          if (picked) void addImageFromFile(picked);
+          if (picked) {
+            void addImageFromFile(picked).catch(() => {
+              setErrorMessage("Could not decode that image.");
+            });
+          }
           event.target.value = "";
         }}
       />

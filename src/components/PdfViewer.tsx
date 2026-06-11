@@ -7,9 +7,8 @@ import { ExistingTextLayer } from "./ExistingTextLayer";
 import { OcrLayer } from "./OcrLayer";
 import { useEditorStore, makeCoverTextEdit } from "../store/useEditorStore";
 import { openFiles } from "../lib/openFiles";
-import { recognizePageRegion } from "../lib/ocr";
 import { sampleBackgroundColor } from "../lib/textLayer";
-import { VIEWER_WIDTH } from "../lib/exportPdf";
+import { VIEWER_WIDTH } from "../lib/pdfGeometry";
 
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
@@ -35,6 +34,7 @@ export function PdfViewer() {
   const setOcrBusy = useEditorStore((s) => s.setOcrBusy);
   const setOcrProgress = useEditorStore((s) => s.setOcrProgress);
   const addEdit = useEditorStore((s) => s.addEdit);
+  const setErrorMessage = useEditorStore((s) => s.setErrorMessage);
   const [numPages, setNumPages] = useState(0);
 
   // Per-page pdf.js page proxies (for text extraction) and canvas refs (for
@@ -60,13 +60,10 @@ export function PdfViewer() {
     void (async () => {
       setOcrBusy(true);
       setOcrProgress(0);
+      setErrorMessage(null);
       try {
-        const items = await recognizePageRegion(
-          canvas,
-          VIEWER_WIDTH,
-          undefined,
-          setOcrProgress,
-        );
+        const { recognizePageRegion } = await import("../lib/ocr");
+        const items = await recognizePageRegion(canvas, VIEWER_WIDTH, undefined, setOcrProgress);
         if (cancelled) return;
         for (const it of items) {
           const coverColor = sampleBackgroundColor(
@@ -78,6 +75,10 @@ export function PdfViewer() {
             VIEWER_WIDTH,
           );
           addEdit(makeCoverTextEdit(it, pageIndex, coverColor));
+        }
+      } catch {
+        if (!cancelled) {
+          setErrorMessage("Could not recognize text on this page.");
         }
       } finally {
         setOcrBusy(false);
@@ -108,11 +109,7 @@ export function PdfViewer() {
             event.target.value = "";
           }}
         />
-        <button
-          type="button"
-          className="dropzone"
-          onClick={() => pdfInputRef.current?.click()}
-        >
+        <button type="button" className="dropzone" onClick={() => pdfInputRef.current?.click()}>
           <UploadCloud size={48} className="dropzone-icon" />
           <span className="dropzone-title">Drop a PDF here</span>
           <span className="dropzone-sub muted">or click to browse</span>
@@ -157,10 +154,7 @@ export function PdfViewer() {
               page={pagesRef.current.get(index) ?? null}
               getCanvas={() => canvasRefs.current.get(index) ?? null}
             />
-            <OcrLayer
-              pageIndex={index}
-              getCanvas={() => canvasRefs.current.get(index) ?? null}
-            />
+            <OcrLayer pageIndex={index} getCanvas={() => canvasRefs.current.get(index) ?? null} />
             <EditableLayer pageIndex={index} />
           </div>
         ))}

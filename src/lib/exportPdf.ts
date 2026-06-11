@@ -1,8 +1,8 @@
 import { PDFDocument, rgb, StandardFonts, type PDFFont } from "pdf-lib";
 import type { FontFamily, PdfEdit, TextEdit } from "../store/useEditorStore";
+import { mapScreenRectToPdf } from "./pdfGeometry";
 
-/** Must match the on-screen render width used by <Page width={...}> in PdfViewer. */
-export const VIEWER_WIDTH = 800;
+export { mapScreenRectToPdf, VIEWER_WIDTH } from "./pdfGeometry";
 
 type FontKey = `${FontFamily}-${"r" | "b" | "i" | "bi"}`;
 
@@ -92,22 +92,18 @@ export async function exportEditedPdf(sourceFile: File, edits: PdfEdit[]): Promi
 
     const pageWidth = page.getWidth();
     const pageHeight = page.getHeight();
-    const scale = pageWidth / VIEWER_WIDTH;
-
-    // Screen coords are top-left origin; PDF coords are bottom-left origin.
-    const pdfX = edit.x * scale;
-    const pdfY = pageHeight - (edit.y + edit.height) * scale;
+    const pdfRect = mapScreenRectToPdf(edit, pageWidth, pageHeight);
 
     if (edit.type === "text") {
-      await drawTextEdit(page, edit, scale, pdfX, pageHeight, getFont);
+      await drawTextEdit(page, edit, pdfRect.scale, pdfRect.x, pageHeight, getFont);
     }
 
     if (edit.type === "rectangle") {
       page.drawRectangle({
-        x: pdfX,
-        y: pdfY,
-        width: edit.width * scale,
-        height: edit.height * scale,
+        x: pdfRect.x,
+        y: pdfRect.y,
+        width: pdfRect.width,
+        height: pdfRect.height,
         borderColor: rgb(0, 0, 0),
         borderWidth: 1,
       });
@@ -120,10 +116,10 @@ export async function exportEditedPdf(sourceFile: File, edits: PdfEdit[]): Promi
         : await pdfDoc.embedJpg(imageBytes);
 
       page.drawImage(image, {
-        x: pdfX,
-        y: pdfY,
-        width: edit.width * scale,
-        height: edit.height * scale,
+        x: pdfRect.x,
+        y: pdfRect.y,
+        width: pdfRect.width,
+        height: pdfRect.height,
       });
     }
   }

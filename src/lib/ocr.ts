@@ -50,14 +50,14 @@ export async function terminateOcrWorker(): Promise<void> {
 
 // --- Recognition ------------------------------------------------------------
 
-type Bbox = { x0: number; y0: number; x1: number; y1: number };
-type Line = { text: string; bbox: Bbox };
+export type OcrBbox = { x0: number; y0: number; x1: number; y1: number };
+export type OcrLine = { text: string; bbox: OcrBbox };
 
 /** Pull line-level results out of the v5 blocks tree. */
-function linesFromData(data: unknown): Line[] {
+export function linesFromData(data: unknown): OcrLine[] {
   const blocks = (data as { blocks?: unknown[] } | undefined)?.blocks;
   if (!Array.isArray(blocks)) return [];
-  const lines: Line[] = [];
+  const lines: OcrLine[] = [];
   for (const block of blocks) {
     const paragraphs = (block as { paragraphs?: unknown[] }).paragraphs;
     if (!Array.isArray(paragraphs)) continue;
@@ -65,7 +65,7 @@ function linesFromData(data: unknown): Line[] {
       const paraLines = (para as { lines?: unknown[] }).lines;
       if (!Array.isArray(paraLines)) continue;
       for (const line of paraLines) {
-        const l = line as { text?: string; bbox?: Bbox };
+        const l = line as { text?: string; bbox?: OcrBbox };
         if (l.text && l.text.trim() !== "" && l.bbox) {
           lines.push({ text: l.text.replace(/\n+$/, ""), bbox: l.bbox });
         }
@@ -81,7 +81,7 @@ function linesFromData(data: unknown): Line[] {
 async function recognizeLines(
   image: HTMLCanvasElement | HTMLImageElement,
   onProgress?: OcrProgress,
-): Promise<Line[]> {
+): Promise<OcrLine[]> {
   return enqueue(async () => {
     const worker = await getWorker();
     progressCb = onProgress ?? null;
@@ -96,8 +96,8 @@ async function recognizeLines(
 
 /** Build a ScreenTextItem from a recognized line, mapping its bbox to screen px
  * via the given per-axis scale and screen-space offset. */
-function toScreenItem(
-  line: Line,
+export function ocrLineToScreenItem(
+  line: OcrLine,
   index: number,
   scaleX: number,
   scaleY: number,
@@ -162,7 +162,9 @@ export async function recognizePageRegion(
   }
 
   const lines = await recognizeLines(input, onProgress);
-  return lines.map((line, i) => toScreenItem(line, i, 1 / ratio, 1 / ratio, offsetX, offsetY));
+  return lines.map((line, i) =>
+    ocrLineToScreenItem(line, i, 1 / ratio, 1 / ratio, offsetX, offsetY),
+  );
 }
 
 /**
@@ -185,7 +187,7 @@ export async function recognizeImageDataUrl(
 
   const lines = await recognizeLines(img, onProgress);
   return lines.map((line, i) =>
-    toScreenItem(line, i, scaleX, scaleY, displayBox.x, displayBox.y),
+    ocrLineToScreenItem(line, i, scaleX, scaleY, displayBox.x, displayBox.y),
   );
 }
 

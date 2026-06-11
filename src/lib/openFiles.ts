@@ -7,7 +7,8 @@ const IMAGE_TYPES = ["image/png", "image/jpeg"];
  * "Add Image" button and by file drop, so the edit shape stays in one place. */
 export async function addImageFromFile(file: File): Promise<void> {
   const dataUrl = await fileToDataUrl(file);
-  const { addEdit, selectedPageIndex } = useEditorStore.getState();
+  const { addEdit, selectedPageIndex, setErrorMessage } = useEditorStore.getState();
+  setErrorMessage(null);
   addEdit({
     id: crypto.randomUUID(),
     type: "image",
@@ -38,5 +39,9 @@ export function openFiles(files: FileList | File[] | null | undefined): void {
   if (!hasPdf) return;
 
   const image = list.find((f) => IMAGE_TYPES.includes(f.type));
-  if (image) void addImageFromFile(image);
+  if (image) {
+    void addImageFromFile(image).catch(() => {
+      useEditorStore.getState().setErrorMessage("Could not decode that image.");
+    });
+  }
 }

@@ -10,6 +10,8 @@ export default function App() {
   // flickering as the cursor crosses nested child elements.
   const [isDragging, setIsDragging] = useState(false);
   const dragDepth = useRef(0);
+  const errorMessage = useEditorStore((s) => s.errorMessage);
+  const setErrorMessage = useEditorStore((s) => s.setErrorMessage);
 
   function hasFiles(e: React.DragEvent) {
     return Array.from(e.dataTransfer.types).includes("Files");
@@ -80,6 +82,14 @@ export default function App() {
     >
       <Toolbar />
       <PdfViewer />
+      {errorMessage && (
+        <div className="error-toast" role="alert">
+          <span>{errorMessage}</span>
+          <button type="button" onClick={() => setErrorMessage(null)}>
+            Dismiss
+          </button>
+        </div>
+      )}
       {isDragging && (
         <div className="drop-overlay">
           <div className="drop-overlay-card">Drop PDF to open · drop image to add</div>
