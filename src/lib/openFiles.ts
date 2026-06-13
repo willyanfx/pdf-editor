@@ -1,4 +1,5 @@
 import { useEditorStore } from "../store/useEditorStore";
+import { useToastStore } from "../store/useToastStore";
 import { fileToDataUrl } from "./file";
 
 const IMAGE_TYPES = ["image/png", "image/jpeg"];
@@ -7,8 +8,7 @@ const IMAGE_TYPES = ["image/png", "image/jpeg"];
  * "Add Image" button and by file drop, so the edit shape stays in one place. */
 export async function addImageFromFile(file: File): Promise<void> {
   const dataUrl = await fileToDataUrl(file);
-  const { addEdit, selectedPageIndex, setErrorMessage } = useEditorStore.getState();
-  setErrorMessage(null);
+  const { addEdit, selectedPageIndex } = useEditorStore.getState();
   addEdit({
     id: crypto.randomUUID(),
     type: "image",
@@ -41,7 +41,7 @@ export function openFiles(files: FileList | File[] | null | undefined): void {
   const image = list.find((f) => IMAGE_TYPES.includes(f.type));
   if (image) {
     void addImageFromFile(image).catch(() => {
-      useEditorStore.getState().setErrorMessage("Could not decode that image.");
+      useToastStore.getState().addToast("Could not decode that image.", "error");
     });
   }
 }

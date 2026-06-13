@@ -63,6 +63,9 @@ type EditorState = {
   edits: PdfEdit[];
   selectedEditId: string | null;
   selectedPageIndex: number;
+  /** Total page count of the open PDF (0 until loaded). Set by PdfViewer once
+   * react-pdf reports it; read by the top bar for the page readout. */
+  numPages: number;
   mode: EditorMode;
 
   /** OCR runs in a WASM worker and takes seconds; surface a global spinner. */
@@ -71,7 +74,11 @@ type EditorState = {
   /** Set by the toolbar's "Extract Text" button to ask PdfViewer (which owns the
    * page canvases) to OCR a whole page. PdfViewer clears it after handling. */
   ocrRequestPageIndex: number | null;
-  errorMessage: string | null;
+
+  /** Registered by PdfViewer (which owns the virtualizer) so the top bar's
+   * page nav can jump to a page even when that page isn't currently mounted.
+   * scrollIntoView can't reach an unmounted page, so we route through here. */
+  scrollToPage: ((pageIndex: number) => void) | null;
 
   setFile: (file: File) => void;
   addEdit: (edit: PdfEdit) => void;
@@ -79,11 +86,12 @@ type EditorState = {
   deleteEdit: (id: string) => void;
   selectEdit: (id: string | null) => void;
   setSelectedPageIndex: (pageIndex: number) => void;
+  setNumPages: (numPages: number) => void;
   setMode: (mode: EditorMode) => void;
   setOcrBusy: (busy: boolean) => void;
   setOcrProgress: (progress: number) => void;
   requestOcrPage: (pageIndex: number | null) => void;
-  setErrorMessage: (message: string | null) => void;
+  setScrollToPage: (fn: ((pageIndex: number) => void) | null) => void;
 };
 
 export const useEditorStore = create<EditorState>((set) => ({
@@ -91,11 +99,12 @@ export const useEditorStore = create<EditorState>((set) => ({
   edits: [],
   selectedEditId: null,
   selectedPageIndex: 0,
+  numPages: 0,
   mode: "select",
   ocrBusy: false,
   ocrProgress: 0,
   ocrRequestPageIndex: null,
-  errorMessage: null,
+  scrollToPage: null,
 
   setFile: (file) =>
     set({
@@ -103,11 +112,11 @@ export const useEditorStore = create<EditorState>((set) => ({
       edits: [],
       selectedEditId: null,
       selectedPageIndex: 0,
+      numPages: 0,
       mode: "select",
       ocrBusy: false,
       ocrProgress: 0,
       ocrRequestPageIndex: null,
-      errorMessage: null,
     }),
 
   addEdit: (edit) =>
@@ -133,6 +142,8 @@ export const useEditorStore = create<EditorState>((set) => ({
 
   setSelectedPageIndex: (pageIndex) => set({ selectedPageIndex: pageIndex }),
 
+  setNumPages: (numPages) => set({ numPages }),
+
   setMode: (mode) => set({ mode }),
 
   setOcrBusy: (ocrBusy) => set({ ocrBusy }),
@@ -141,7 +152,7 @@ export const useEditorStore = create<EditorState>((set) => ({
 
   requestOcrPage: (ocrRequestPageIndex) => set({ ocrRequestPageIndex }),
 
-  setErrorMessage: (errorMessage) => set({ errorMessage }),
+  setScrollToPage: (scrollToPage) => set({ scrollToPage }),
 }));
 
 /** Shared default for newly-added text boxes. */

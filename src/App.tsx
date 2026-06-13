@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Toolbar } from "./components/Toolbar";
+import { TopBar } from "./components/TopBar";
+import { ToolRail } from "./components/ToolRail";
 import { PdfViewer } from "./components/PdfViewer";
+import { Toaster } from "./components/Toaster";
+import { CommandPalette } from "./components/CommandPalette";
 import { useEditorStore } from "./store/useEditorStore";
+import { useEditorActions } from "./hooks/useEditorActions";
 import { openFiles } from "./lib/openFiles";
 
 export default function App() {
@@ -10,24 +14,54 @@ export default function App() {
   // flickering as the cursor crosses nested child elements.
   const [isDragging, setIsDragging] = useState(false);
   const dragDepth = useRef(0);
-  const errorMessage = useEditorStore((s) => s.errorMessage);
-  const setErrorMessage = useEditorStore((s) => s.setErrorMessage);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const { addText } = useEditorActions();
 
   function hasFiles(e: React.DragEvent) {
     return Array.from(e.dataTransfer.types).includes("Files");
   }
 
-  // Keyboard nudge & delete for the selected edit (Adobe-style).
+  // Global keyboard handling: ⌘K palette, tool shortcuts, and the Adobe-style
+  // nudge/delete for the selected edit.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      const { selectedEditId, edits, updateEdit, deleteEdit } = useEditorStore.getState();
-      if (!selectedEditId) return;
+      // ⌘K / Ctrl+K opens the command palette from anywhere.
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((open) => !open);
+        return;
+      }
 
       const target = e.target as HTMLElement | null;
       const typing =
         target &&
         (target.tagName === "TEXTAREA" || target.tagName === "INPUT" || target.isContentEditable);
 
+      const store = useEditorStore.getState();
+
+      // Single-key tool shortcuts (only when a file is open and not typing).
+      if (!typing && !e.metaKey && !e.ctrlKey && !e.altKey && store.file) {
+        const k = e.key.toLowerCase();
+        if (k === "v") {
+          e.preventDefault();
+          store.setMode("select");
+          return;
+        }
+        if (k === "e") {
+          e.preventDefault();
+          store.setMode("editText");
+          return;
+        }
+        if (k === "t") {
+          e.preventDefault();
+          addText();
+          return;
+        }
+      }
+
+      // Nudge / delete the selected edit.
+      const { selectedEditId, edits, updateEdit, deleteEdit } = store;
+      if (!selectedEditId) return;
       const edit = edits.find((ed) => ed.id === selectedEditId);
       if (!edit) return;
 
@@ -50,7 +84,7 @@ export default function App() {
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [addText]);
 
   return (
     <main
@@ -80,16 +114,14 @@ export default function App() {
         openFiles(e.dataTransfer.files);
       }}
     >
-      <Toolbar />
+      <TopBar />
+      <ToolRail onOpenPalette={() => setPaletteOpen(true)} />
       <PdfViewer />
-      {errorMessage && (
-        <div className="error-toast" role="alert">
-          <span>{errorMessage}</span>
-          <button type="button" onClick={() => setErrorMessage(null)}>
-            Dismiss
-          </button>
-        </div>
-      )}
+
+      <Toaster />
+
+      {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
+
       {isDragging && (
         <div className="drop-overlay">
           <div className="drop-overlay-card">Drop PDF to open · drop image to add</div>

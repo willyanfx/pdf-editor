@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { useEditorStore, makeCoverTextEdit } from "../store/useEditorStore";
+import { useToastStore } from "../store/useToastStore";
 import type { ScreenRegion } from "../lib/ocr";
 import { sampleBackgroundColor } from "../lib/textLayer";
 import { VIEWER_WIDTH } from "../lib/pdfGeometry";
@@ -23,7 +24,7 @@ export function OcrLayer({ pageIndex, getCanvas }: Props) {
   const setMode = useEditorStore((s) => s.setMode);
   const setOcrBusy = useEditorStore((s) => s.setOcrBusy);
   const setOcrProgress = useEditorStore((s) => s.setOcrProgress);
-  const setErrorMessage = useEditorStore((s) => s.setErrorMessage);
+  const addToast = useToastStore((s) => s.addToast);
 
   const layerRef = useRef<HTMLDivElement | null>(null);
   const startRef = useRef<{ x: number; y: number } | null>(null);
@@ -68,7 +69,6 @@ export function OcrLayer({ pageIndex, getCanvas }: Props) {
 
     setOcrBusy(true);
     setOcrProgress(0);
-    setErrorMessage(null);
     try {
       const { recognizePageRegion } = await import("../lib/ocr");
       const items = await recognizePageRegion(
@@ -88,8 +88,9 @@ export function OcrLayer({ pageIndex, getCanvas }: Props) {
         );
         addEdit(makeCoverTextEdit(it, pageIndex, coverColor));
       }
+      addToast(items.length ? "Text recognized" : "No text found in that region", "info");
     } catch {
-      setErrorMessage("Could not recognize text in that region.");
+      addToast("Could not recognize text in that region.", "error");
     } finally {
       setOcrBusy(false);
       setOcrProgress(0);

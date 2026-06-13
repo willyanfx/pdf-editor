@@ -2,6 +2,7 @@ import { Rnd } from "react-rnd";
 import { X, ScanText } from "lucide-react";
 import type { PdfEdit } from "../store/useEditorStore";
 import { useEditorStore, makeTextEdit } from "../store/useEditorStore";
+import { useToastStore } from "../store/useToastStore";
 import { TextFormatToolbar, cssFontStack } from "./TextFormatToolbar";
 
 type Props = {
@@ -15,7 +16,7 @@ export function EditBox({ edit }: Props) {
   const addEdit = useEditorStore((s) => s.addEdit);
   const setOcrBusy = useEditorStore((s) => s.setOcrBusy);
   const setOcrProgress = useEditorStore((s) => s.setOcrProgress);
-  const setErrorMessage = useEditorStore((s) => s.setErrorMessage);
+  const addToast = useToastStore((s) => s.addToast);
   const ocrBusy = useEditorStore((s) => s.ocrBusy);
   const selected = useEditorStore((s) => s.selectedEditId === edit.id);
 
@@ -23,7 +24,6 @@ export function EditBox({ edit }: Props) {
     if (edit.type !== "image") return;
     setOcrBusy(true);
     setOcrProgress(0);
-    setErrorMessage(null);
     try {
       const { recognizeImageDataUrl } = await import("../lib/ocr");
       const items = await recognizeImageDataUrl(
@@ -47,8 +47,9 @@ export function EditBox({ edit }: Props) {
           }),
         );
       }
+      addToast(items.length ? "Text recognized" : "No text found in this image", "info");
     } catch {
-      setErrorMessage("Could not recognize text in this image.");
+      addToast("Could not recognize text in this image.", "error");
     } finally {
       setOcrBusy(false);
       setOcrProgress(0);
