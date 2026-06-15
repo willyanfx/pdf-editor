@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FilePlus2, Download, Loader2, Check, ChevronLeft, ChevronRight } from "lucide-react";
+import { FilePlus2, Download, Loader2, Check, ChevronLeft, ChevronRight, Minimize2 } from "lucide-react";
 import { useEditorStore } from "../store/useEditorStore";
 import { useEditorActions } from "../hooks/useEditorActions";
 
@@ -13,9 +13,10 @@ export function TopBar() {
   // Routes through the virtualizer in PdfViewer: a target page may not be mounted,
   // so a DOM scrollIntoView can't reach it.
   const scrollToPage = useEditorStore((s) => s.scrollToPage);
-  const { pickPdf, downloadPdf } = useEditorActions();
+  const { pickPdf, downloadPdf, compressPdf } = useEditorActions();
 
   const [downloadState, setDownloadState] = useState<DownloadState>("idle");
+  const [compressState, setCompressState] = useState<DownloadState>("idle");
 
   function goToPage(index: number) {
     if (index < 0 || index >= numPages) return;
@@ -31,6 +32,17 @@ export function TopBar() {
         setTimeout(() => setDownloadState("idle"), 1500);
       },
       onError: () => setDownloadState("idle"),
+    });
+  }
+
+  function onCompress() {
+    void compressPdf({
+      onStart: () => setCompressState("exporting"),
+      onSuccess: () => {
+        setCompressState("done");
+        setTimeout(() => setCompressState("idle"), 1500);
+      },
+      onError: () => setCompressState("idle"),
     });
   }
 
@@ -78,6 +90,23 @@ export function TopBar() {
       <button type="button" className="topbar-btn" title="Open PDF" onClick={pickPdf}>
         <FilePlus2 size={15} />
         <span>Open</span>
+      </button>
+
+      <button
+        type="button"
+        className="topbar-btn"
+        title="Compress and download (smaller file)"
+        disabled={!file || compressState === "exporting"}
+        onClick={onCompress}
+      >
+        {compressState === "exporting" ? (
+          <Loader2 size={15} className="dl-icon dl-spin" />
+        ) : compressState === "done" ? (
+          <Check size={15} className="dl-icon dl-pop" />
+        ) : (
+          <Minimize2 size={15} />
+        )}
+        <span>{compressState === "exporting" ? "Compressing…" : "Compress"}</span>
       </button>
 
       <button

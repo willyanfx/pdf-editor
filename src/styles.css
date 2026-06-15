@@ -1112,6 +1112,486 @@ button {
   cursor: pointer;
 }
 
+/* Page transform wrapper (rotate/crop preview). Transform origin centered so a
+   rotation pivots in place; clip-path applies the crop preview. */
+.page-transform {
+  position: absolute;
+  inset: 0;
+  transform-origin: center center;
+}
+
+/* Multiple action buttons on a selected image edit (OCR + Swap). */
+.image-btn-row {
+  position: absolute;
+  top: -13px;
+  left: -1px;
+  z-index: 2;
+  display: flex;
+  gap: 4px;
+}
+.image-btn-row .ocr-image-btn {
+  position: static;
+}
+
+/* Markup annotation previews (on-page) ---------------------------------- */
+.markup-preview {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.markup-preview.highlight {
+  opacity: 0.4;
+  mix-blend-mode: multiply;
+}
+.markup-preview.underline {
+  border-bottom: 2px solid;
+}
+.markup-preview.strikeout::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  background: var(--rule, #e03131);
+}
+
+.ink-preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* Comment pin + body */
+.comment-pin {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 20px;
+  height: 20px;
+  border: 1px solid oklch(30% 0 0 / 0.4);
+  border-radius: 3px 3px 3px 0;
+  cursor: pointer;
+}
+.comment-body {
+  position: absolute;
+  top: 22px;
+  left: 0;
+  width: 180px;
+  min-height: 56px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 12px;
+  resize: both;
+  z-index: 3;
+}
+
+/* Annotate drag overlay (highlight/underline/strikeout/comment) --------- */
+.annotate-layer,
+.ink-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  cursor: crosshair;
+}
+.annotate-preview {
+  position: absolute;
+  pointer-events: none;
+  border: 1px dashed var(--fg);
+}
+.annotate-preview.highlight {
+  background: oklch(90% 0.15 95 / 0.4);
+}
+.ink-live {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* Existing-image hit targets (Edit Text mode) --------------------------- */
+.existing-image-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+.existing-image-hit {
+  position: absolute;
+  pointer-events: auto;
+  margin: 0;
+  padding: 0;
+  border: 1px solid oklch(65% 0.16 50 / 0.4);
+  border-radius: var(--r-sm);
+  background: oklch(70% 0.14 50 / 0.08);
+  cursor: pointer;
+  transition:
+    background var(--t-fast),
+    border-color var(--t-fast);
+}
+.existing-image-hit:hover {
+  background: oklch(70% 0.16 50 / 0.18);
+  border-color: oklch(55% 0.18 50 / 0.7);
+}
+
+/* Per-page actions bar (rotate/crop/delete) ----------------------------- */
+.page-actions-bar {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 6;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface-glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.page-actions-bar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  transition: background var(--t-fast);
+}
+.page-actions-bar button:hover {
+  background: oklch(60% 0.02 250 / 0.14);
+}
+.page-actions-bar button.active {
+  background: oklch(60% 0.12 250 / 0.2);
+}
+.page-actions-bar button.danger:hover {
+  background: var(--error);
+  color: white;
+}
+
+.crop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  cursor: crosshair;
+  background: oklch(0% 0 0 / 0.18);
+}
+.crop-rect {
+  position: absolute;
+  border: 2px solid white;
+  box-shadow: 0 0 0 9999px oklch(0% 0 0 / 0.35);
+}
+.crop-confirm {
+  position: absolute;
+  right: -13px;
+  bottom: -13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--success, #2f9e44);
+  color: white;
+  cursor: pointer;
+}
+
+/* Page organizer panel -------------------------------------------------- */
+.page-panel {
+  position: fixed;
+  top: 52px;
+  left: 52px;
+  bottom: 40px;
+  width: 168px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+.page-panel-title {
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted, var(--fg));
+  border-bottom: 1px solid var(--border);
+}
+.page-panel-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.page-thumb {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  cursor: grab;
+}
+.page-thumb.current {
+  border-color: oklch(55% 0.14 250 / 0.7);
+  box-shadow: 0 0 0 1px oklch(55% 0.14 250 / 0.5);
+}
+.page-thumb.dragging {
+  opacity: 0.5;
+}
+.page-thumb-grip {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  color: var(--muted, var(--fg));
+  opacity: 0.5;
+}
+.page-thumb-num {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted, var(--fg));
+}
+.page-thumb-del {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: oklch(0% 0 0 / 0.04);
+  color: var(--fg);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--t-fast);
+}
+.page-thumb:hover .page-thumb-del {
+  opacity: 1;
+}
+.page-thumb-del:hover {
+  background: var(--error);
+  color: white;
+}
+.page-thumb-skeleton {
+  width: 110px;
+  height: 140px;
+  background: oklch(60% 0.02 250 / 0.1);
+  border-radius: var(--r-sm);
+}
+
+/* Find bar -------------------------------------------------------------- */
+.find-bar {
+  position: fixed;
+  top: 60px;
+  right: 16px;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--surface-glass);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: 0 8px 24px oklch(0% 0 0 / 0.18);
+}
+.find-icon {
+  color: var(--muted, var(--fg));
+}
+.find-input {
+  width: 180px;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font-size: 13px;
+  outline: none;
+}
+.find-count {
+  font-size: 12px;
+  color: var(--muted, var(--fg));
+  font-variant-numeric: tabular-nums;
+  min-width: 32px;
+  text-align: right;
+}
+.find-bar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+.find-bar button:hover:not(:disabled) {
+  background: oklch(60% 0.02 250 / 0.14);
+}
+.find-bar button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Signature + split dialogs --------------------------------------------- */
+.sig-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: oklch(0% 0 0 / 0.4);
+  animation: fade-in var(--t-fast);
+}
+.sig-modal,
+.split-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 91;
+  width: min(560px, 92vw);
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg, 12px);
+  box-shadow: 0 24px 60px oklch(0% 0 0 / 0.3);
+}
+.sig-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.sig-close {
+  display: inline-flex;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+}
+.sig-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.sig-tabs button {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--fg);
+  font-size: 13px;
+  cursor: pointer;
+}
+.sig-tabs button.active {
+  background: var(--fg);
+  color: var(--surface);
+  border-color: var(--fg);
+}
+.sig-canvas-wrap {
+  position: relative;
+}
+.sig-canvas {
+  width: 100%;
+  height: 180px;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-sm);
+  background: oklch(98% 0 0);
+  touch-action: none;
+  cursor: crosshair;
+}
+.sig-clear {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 12px;
+  cursor: pointer;
+}
+.sig-type-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sig-type-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 14px;
+  outline: none;
+}
+.sig-type-preview {
+  height: 90px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-sm);
+  font-family: "Brush Script MT", "Segoe Script", cursive;
+  font-size: 44px;
+  color: var(--fg);
+}
+.sig-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+.sig-cancel,
+.sig-insert {
+  padding: 8px 16px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  cursor: pointer;
+}
+.sig-cancel {
+  background: transparent;
+  color: var(--fg);
+}
+.sig-insert {
+  background: var(--fg);
+  color: var(--surface);
+  border-color: var(--fg);
+}
+.split-hint {
+  font-size: 13px;
+  color: var(--muted, var(--fg));
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+.split-hint code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: oklch(60% 0.02 250 / 0.12);
+  font-size: 12px;
+}
+
 /* Keyframes ------------------------------------------------------------ */
 
 @keyframes ocr-spin {

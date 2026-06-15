@@ -5,6 +5,9 @@ import { PdfViewer } from "./components/PdfViewer";
 import { BottomBar } from "./components/BottomBar";
 import { Toaster } from "./components/Toaster";
 import { CommandPalette } from "./components/CommandPalette";
+import { SignatureModal } from "./components/SignatureModal";
+import { SplitDialog } from "./components/SplitDialog";
+import { FindBar } from "./components/FindBar";
 import { useEditorStore } from "./store/useEditorStore";
 import { useEditorActions } from "./hooks/useEditorActions";
 import { openFiles } from "./lib/openFiles";
@@ -16,6 +19,8 @@ export default function App() {
   const [isDragging, setIsDragging] = useState(false);
   const dragDepth = useRef(0);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [pagesOpen, setPagesOpen] = useState(false);
+  const [findOpen, setFindOpen] = useState(false);
   const { addText } = useEditorActions();
 
   function hasFiles(e: React.DragEvent) {
@@ -31,6 +36,15 @@ export default function App() {
         e.preventDefault();
         setPaletteOpen((open) => !open);
         return;
+      }
+
+      // ⌘F / Ctrl+F opens find-in-page (only with a doc open).
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+        if (useEditorStore.getState().file) {
+          e.preventDefault();
+          setFindOpen(true);
+          return;
+        }
       }
 
       const target = e.target as HTMLElement | null;
@@ -56,6 +70,26 @@ export default function App() {
         if (k === "t") {
           e.preventDefault();
           addText();
+          return;
+        }
+        if (k === "h") {
+          e.preventDefault();
+          store.setMode("highlight");
+          return;
+        }
+        if (k === "u") {
+          e.preventDefault();
+          store.setMode("underline");
+          return;
+        }
+        if (k === "c") {
+          e.preventDefault();
+          store.setMode("comment");
+          return;
+        }
+        if (k === "d") {
+          e.preventDefault();
+          store.setMode("ink");
           return;
         }
       }
@@ -116,17 +150,26 @@ export default function App() {
       }}
     >
       <TopBar />
-      <ToolRail onOpenPalette={() => setPaletteOpen(true)} />
-      <PdfViewer />
+      <ToolRail
+        onOpenPalette={() => setPaletteOpen(true)}
+        onTogglePages={() => setPagesOpen((v) => !v)}
+        pagesActive={pagesOpen}
+      />
+      <PdfViewer pagePanelOpen={pagesOpen} />
       <BottomBar />
 
       <Toaster />
+      <SignatureModal />
+      <SplitDialog />
 
+      {findOpen && <FindBar onClose={() => setFindOpen(false)} />}
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
 
       {isDragging && (
         <div className="drop-overlay">
-          <div className="drop-overlay-card">Drop PDF to open · drop image to add</div>
+          <div className="drop-overlay-card">
+            Drop PDF, Word, Excel, or image to open · drop image to add
+          </div>
         </div>
       )}
     </main>

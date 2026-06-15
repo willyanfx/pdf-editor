@@ -54,18 +54,67 @@ export type TextEdit = {
   coverRect?: { x: number; y: number; width: number; height: number };
 };
 
+export type ImageEdit = {
+  id: string;
+  type: "image";
+  pageIndex: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  dataUrl: string;
+  /** "added" = new overlay. "existing" = replaces an image already in the PDF,
+   * so on export we first paint a cover rectangle over the original pixels. */
+  origin?: "added" | "existing";
+  /** Fill for the cover rectangle when replacing an existing PDF image. */
+  coverColor?: string;
+  /** Original on-screen bbox of the replaced image, locked at swap time. */
+  coverRect?: { x: number; y: number; width: number; height: number };
+};
+
+/** Highlight / underline / strikeout — a rectangular text-markup annotation. */
+export type MarkupEdit = {
+  id: string;
+  type: "highlight" | "underline" | "strikeout";
+  pageIndex: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color: string; // hex
+};
+
+/** A sticky-note comment: a pin with attached text shown on hover/click. */
+export type CommentEdit = {
+  id: string;
+  type: "comment";
+  pageIndex: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  text: string;
+  color: string; // hex pin color
+};
+
+/** Freehand ink: a polyline in screen-px points relative to the page. */
+export type InkEdit = {
+  id: string;
+  type: "ink";
+  pageIndex: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** Points relative to (x, y), in screen px at VIEWER_WIDTH. */
+  points: { x: number; y: number }[];
+  color: string; // hex
+  strokeWidth: number;
+};
+
 export type PdfEdit =
   | TextEdit
-  | {
-      id: string;
-      type: "image";
-      pageIndex: number;
-      x: number;
-      y: number;
-      width: number;
-      height: number;
-      dataUrl: string;
-    }
+  | ImageEdit
   | {
       id: string;
       type: "rectangle";
@@ -74,12 +123,33 @@ export type PdfEdit =
       y: number;
       width: number;
       height: number;
-    };
+    }
+  | MarkupEdit
+  | CommentEdit
+  | InkEdit;
+
+/** Per-page geometry mutation, kept separate from overlay edits so page
+ * transforms survive independently. Insets/dimensions are in screen px at
+ * VIEWER_WIDTH; export converts them to PDF user units. */
+export type PageOp = {
+  pageIndex: number;
+  /** Clockwise rotation in degrees, normalized to a multiple of 90. */
+  rotation: number;
+  /** Crop insets from each edge, in screen px at VIEWER_WIDTH. */
+  crop?: { top: number; right: number; bottom: number; left: number };
+};
 
 /** Select vs. Edit-Text vs. OCR. In edit-text mode, clicking existing PDF text
  * turns it into an editable box. In ocr mode, dragging a rectangle runs OCR on
  * that region and turns recognized text into editable boxes. */
-export type EditorMode = "select" | "editText" | "ocr";
+export type EditorMode =
+  | "select"
+  | "editText"
+  | "ocr"
+  | "highlight"
+  | "underline"
+  | "comment"
+  | "ink";
 
 type EditorState = {
   /** The source PDF. We keep the File (not a detachable ArrayBuffer) so we can
@@ -87,6 +157,11 @@ type EditorState = {
    * receives for rendering, so a shared ArrayBuffer would be empty by export time. */
   file: File | null;
   edits: PdfEdit[];
+  /** Per-page rotate/crop transforms, keyed by original page index. */
+  pageOps: PageOp[];
+  /** Display/export order of original page indices. Starts as [0..n-1].
+   * Pages removed from this array are dropped from the export. */
+  pageOrder: number[];
   selectedEditId: string | null;
   selectedPageIndex: number;
   /** Total page count of the open PDF (0 until loaded). Set by PdfViewer once
@@ -116,6 +191,15 @@ type EditorState = {
    * The editor consumes it once (clears it back to null). */
   pendingFocus: { editId: string; caretOffset: number } | null;
 
+  /** Find-in-page: the active query and the ordered ids of matching text edits. */
+  searchQuery: string;
+  searchMatchIds: string[];
+
+  /** Whether the freehand/typed signature modal is open. */
+  signatureModalOpen: boolean;
+  /** Whether the split-by-range dialog is open. */
+  splitDialogOpen: boolean;
+
   setFile: (file: File) => void;
   addEdit: (edit: PdfEdit) => void;
   updateEdit: (id: string, patch: Partial<PdfEdit>) => void;
@@ -123,6 +207,15 @@ type EditorState = {
   selectEdit: (id: string | null) => void;
   setSelectedPageIndex: (pageIndex: number) => void;
   setNumPages: (numPages: number) => void;
+  /** Set or merge a page's rotate/crop transform (by original page index). */
+  setPageOp: (pageIndex: number, patch: Partial<Omit<PageOp, "pageIndex">>) => void;
+  /** Replace the page display/export order. */
+  setPageOrder: (order: number[]) => void;
+  /** Remove a page from the export and drop its edits/transforms. */
+  deletePage: (pageIndex: number) => void;
+  setSearchQuery: (query: string) => void;
+  setSignatureModalOpen: (open: boolean) => void;
+  setSplitDialogOpen: (open: boolean) => void;
   setMode: (mode: EditorMode) => void;
   setZoom: (zoom: number) => void;
   zoomIn: () => void;
@@ -138,6 +231,8 @@ type EditorState = {
 export const useEditorStore = create<EditorState>((set) => ({
   file: null,
   edits: [],
+  pageOps: [],
+  pageOrder: [],
   selectedEditId: null,
   selectedPageIndex: 0,
   numPages: 0,
@@ -148,11 +243,17 @@ export const useEditorStore = create<EditorState>((set) => ({
   ocrRequestPageIndex: null,
   scrollToPage: null,
   pendingFocus: null,
+  searchQuery: "",
+  searchMatchIds: [],
+  signatureModalOpen: false,
+  splitDialogOpen: false,
 
   setFile: (file) =>
     set({
       file,
       edits: [],
+      pageOps: [],
+      pageOrder: [],
       selectedEditId: null,
       selectedPageIndex: 0,
       numPages: 0,
@@ -161,6 +262,10 @@ export const useEditorStore = create<EditorState>((set) => ({
       ocrProgress: 0,
       ocrRequestPageIndex: null,
       pendingFocus: null,
+      searchQuery: "",
+      searchMatchIds: [],
+      signatureModalOpen: false,
+      splitDialogOpen: false,
     }),
 
   addEdit: (edit) =>
@@ -186,7 +291,58 @@ export const useEditorStore = create<EditorState>((set) => ({
 
   setSelectedPageIndex: (pageIndex) => set({ selectedPageIndex: pageIndex }),
 
-  setNumPages: (numPages) => set({ numPages }),
+  setNumPages: (numPages) =>
+    set((state) => ({
+      numPages,
+      // Seed the page order once the count is known (and only if not already set
+      // for this document, so reorder/delete survive incidental re-reports).
+      pageOrder:
+        state.pageOrder.length === numPages
+          ? state.pageOrder
+          : Array.from({ length: numPages }, (_, i) => i),
+    })),
+
+  setPageOp: (pageIndex, patch) =>
+    set((state) => {
+      const existing = state.pageOps.find((op) => op.pageIndex === pageIndex);
+      const next: PageOp = existing
+        ? { ...existing, ...patch }
+        : { pageIndex, rotation: 0, ...patch };
+      return {
+        pageOps: [
+          ...state.pageOps.filter((op) => op.pageIndex !== pageIndex),
+          next,
+        ],
+      };
+    }),
+
+  setPageOrder: (order) => set({ pageOrder: order }),
+
+  deletePage: (pageIndex) =>
+    set((state) => ({
+      pageOrder: state.pageOrder.filter((i) => i !== pageIndex),
+      edits: state.edits.filter((e) => e.pageIndex !== pageIndex),
+      pageOps: state.pageOps.filter((op) => op.pageIndex !== pageIndex),
+      selectedEditId: null,
+    })),
+
+  setSearchQuery: (searchQuery) =>
+    set((state) => {
+      const q = searchQuery.trim().toLowerCase();
+      const matchIds = q
+        ? state.edits
+            .filter(
+              (e): e is TextEdit =>
+                e.type === "text" && runsToText(e.runs).toLowerCase().includes(q),
+            )
+            .map((e) => e.id)
+        : [];
+      return { searchQuery, searchMatchIds: matchIds };
+    }),
+
+  setSignatureModalOpen: (signatureModalOpen) => set({ signatureModalOpen }),
+
+  setSplitDialogOpen: (splitDialogOpen) => set({ splitDialogOpen }),
 
   setMode: (mode) => set({ mode }),
 
@@ -233,6 +389,29 @@ export function makeTextEdit(
     origin: "added",
     coverColor: "#ffffff",
     ...partial,
+  };
+}
+
+/** Build an image edit that REPLACES an existing embedded PDF image: covers the
+ * original pixels with a sampled color and draws the replacement on top. */
+export function makeCoverImageEdit(
+  rect: { x: number; y: number; width: number; height: number },
+  pageIndex: number,
+  dataUrl: string,
+  coverColor: string,
+): ImageEdit {
+  return {
+    id: crypto.randomUUID(),
+    type: "image",
+    pageIndex,
+    x: rect.x,
+    y: rect.y,
+    width: rect.width,
+    height: rect.height,
+    dataUrl,
+    origin: "existing",
+    coverColor,
+    coverRect: { ...rect },
   };
 }
 
