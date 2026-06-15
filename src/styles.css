@@ -771,7 +771,12 @@ button {
   font-size: 13px;
   cursor: pointer;
   white-space: nowrap;
+  /* Keep enough room for the font name so the label never collapses to just the
+     arrow when the toolbar is squeezed in a tight flex row. */
+  min-width: 96px;
   max-width: 140px;
+  /* Don't let the surrounding flex layout shrink the trigger below min-width. */
+  flex: 0 0 auto;
   transition: background var(--t-fast);
 }
 
