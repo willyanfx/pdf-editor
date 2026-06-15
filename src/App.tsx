@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { TopBar } from "./components/TopBar";
 import { ToolRail } from "./components/ToolRail";
 import { PdfViewer } from "./components/PdfViewer";
+import { BottomBar } from "./components/BottomBar";
 import { Toaster } from "./components/Toaster";
 import { CommandPalette } from "./components/CommandPalette";
 import { useEditorStore } from "./store/useEditorStore";
@@ -117,6 +118,7 @@ export default function App() {
       <TopBar />
       <ToolRail onOpenPalette={() => setPaletteOpen(true)} />
       <PdfViewer />
+      <BottomBar />
 
       <Toaster />
 

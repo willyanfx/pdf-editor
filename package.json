@@ -4,7 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "sync-pdf-wasm": "mkdir -p public/wasm && cp node_modules/pdfjs-dist/wasm/openjpeg.wasm node_modules/pdfjs-dist/wasm/qcms_bg.wasm public/wasm/",
+    "predev": "pnpm sync-pdf-wasm",
     "dev": "vp dev",
+    "prebuild": "pnpm sync-pdf-wasm",
     "build": "tsc && vp build",
     "preview": "vp preview",
     "lint": "vp lint",

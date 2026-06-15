@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { pdfjs } from "react-pdf";
 import { VIEWER_WIDTH } from "../lib/pdfGeometry";
+import { PDF_DOCUMENT_OPTIONS } from "../lib/pdfOptions";
 
 /**
  * Measure every page's on-screen height (at VIEWER_WIDTH) without rasterizing
@@ -29,7 +30,7 @@ export function usePageHeights(file: File | null, numPages: number): number[] {
         // Read fresh bytes: pdf.js neuters the ArrayBuffer it loads, and the
         // render path consumes its own copy, so we hand this a separate buffer.
         const data = await file.arrayBuffer();
-        const doc = await pdfjs.getDocument({ data }).promise;
+        const doc = await pdfjs.getDocument({ data, ...PDF_DOCUMENT_OPTIONS }).promise;
         if (cancelled) {
           void doc.destroy();
           return;

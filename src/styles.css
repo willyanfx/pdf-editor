@@ -79,7 +79,7 @@ button {
 /* App shell: top bar spans the full width; below it a slim rail + the canvas. */
 .app {
   display: grid;
-  grid-template: 44px 1fr / 52px 1fr;
+  grid-template: 44px 1fr 36px / 52px 1fr;
   height: 100vh;
 }
 
@@ -199,6 +199,69 @@ button {
 
 .dl-pop {
   animation: check-pop 0.3s ease both;
+}
+
+/* Bottom bar ----------------------------------------------------------- */
+
+.bottombar {
+  grid-area: 3 / 1 / 4 / 3;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 12px;
+  background: var(--topbar-bg);
+  border-top: 1px solid var(--topbar-border);
+}
+
+.bottombar-zoom {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.bottombar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--topbar-fg);
+  cursor: pointer;
+  transition: background var(--t-fast);
+}
+
+.bottombar-btn:hover:not(:disabled) {
+  background: var(--topbar-btn-bg);
+}
+
+.bottombar-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.bottombar-zoom-level {
+  min-width: 48px;
+  height: 24px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--topbar-fg);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  text-align: center;
+  cursor: pointer;
+  transition: background var(--t-fast);
+}
+
+.bottombar-zoom-level:hover {
+  background: var(--topbar-btn-bg);
 }
 
 /* Tool rail ------------------------------------------------------------ */
@@ -577,11 +640,20 @@ button {
   background: var(--bg-subtle);
 }
 
-/* Holds the full scroll height of all pages; windowed page-shells are absolutely
-   positioned inside it by the virtualizer. */
-.pdf-virtual-spacer {
+/* Reserves the scaled scroll height/width so the scroll container scrolls the
+   full zoomed document. Sized inline (totalSize * zoom, VIEWER_WIDTH * zoom). */
+.pdf-zoom-sizer {
   position: relative;
-  width: 100%;
+}
+
+/* Holds the full scroll height of all pages; windowed page-shells are absolutely
+   positioned inside it by the virtualizer. Centered in the zoom-sizer and scaled
+   by the inline zoom transform (origin: top center). */
+.pdf-virtual-spacer {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform-origin: top center;
 }
 
 .page-shell {

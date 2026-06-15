@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Document, Page, pdfjs } from "react-pdf";
+import { Document, Page } from "react-pdf";
 import type { PDFPageProxy } from "pdfjs-dist";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { UploadCloud, Loader2 } from "lucide-react";
@@ -11,6 +11,7 @@ import { useToastStore } from "../store/useToastStore";
 import { openFiles } from "../lib/openFiles";
 import { sampleBackgroundColor } from "../lib/textLayer";
 import { VIEWER_WIDTH } from "../lib/pdfGeometry";
+import { PDF_DOCUMENT_OPTIONS } from "../lib/pdfOptions";
 import { usePageHeights } from "../hooks/usePageHeights";
 
 /** Vertical gap between page shells, reserved inside each virtual slot. */
@@ -24,12 +25,8 @@ const OVERSCAN = 3;
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 
-// Load the worker bundled with our single pdfjs-dist copy so the worker version
-// always matches the API version react-pdf was built against.
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url,
-).toString();
+// Worker + wasm config lives in pdfOptions (imported above for its side effect of
+// setting GlobalWorkerOptions.workerSrc, and for PDF_DOCUMENT_OPTIONS).
 
 export function PdfViewer() {
   // `file` is a stable reference (changes only when a new PDF is opened), so
@@ -47,6 +44,7 @@ export function PdfViewer() {
   const addEdit = useEditorStore((s) => s.addEdit);
   const numPages = useEditorStore((s) => s.numPages);
   const setNumPages = useEditorStore((s) => s.setNumPages);
+  const zoom = useEditorStore((s) => s.zoom);
   const setScrollToPage = useEditorStore((s) => s.setScrollToPage);
   const addToast = useToastStore((s) => s.addToast);
 
@@ -181,16 +179,36 @@ export function PdfViewer() {
     <section ref={scrollRef} className={`pdf-wrapper mode-${mode}`}>
       <Document
         file={file}
+        options={PDF_DOCUMENT_OPTIONS}
         onLoadSuccess={(pdf) => setNumPages(pdf.numPages)}
+        onLoadError={(err) => {
+          console.error("PDF load failed:", err);
+          addToast("Could not open this PDF.", "error");
+        }}
         loading={<p className="muted">Loading PDF…</p>}
         error={<p className="muted">Could not open this PDF.</p>}
       >
-        {/* Spacer sized to all pages; only the windowed pages below are mounted,
-            each absolutely positioned at its virtual offset. */}
+        {/* Zoom sizer: reserves the scaled height so the scroll container scrolls
+            the full zoomed document. The inner spacer is scaled from its top
+            center — pages render at VIEWER_WIDTH (keeping every stored coordinate
+            in that space) and zoom is purely presentational. */}
         <div
-          className="pdf-virtual-spacer"
-          style={{ height: virtualizer.getTotalSize() }}
+          className="pdf-zoom-sizer"
+          style={{
+            height: virtualizer.getTotalSize() * zoom,
+            width: VIEWER_WIDTH * zoom,
+          }}
         >
+          {/* Spacer sized to all pages; only the windowed pages below are mounted,
+              each absolutely positioned at its virtual offset. */}
+          <div
+            className="pdf-virtual-spacer"
+            style={{
+              height: virtualizer.getTotalSize(),
+              width: VIEWER_WIDTH,
+              transform: `translateX(-50%) scale(${zoom})`,
+            }}
+          >
           {virtualItems.map((item) => {
             const index = item.index;
             return (
@@ -240,6 +258,7 @@ export function PdfViewer() {
               </div>
             );
           })}
+          </div>
         </div>
       </Document>
 

@@ -1,5 +1,14 @@
 import { create } from "zustand";
 
+/** Zoom bounds and step for the bottom-bar zoom controls. */
+export const MIN_ZOOM = 0.5;
+export const MAX_ZOOM = 3;
+export const ZOOM_STEP = 0.1;
+
+/** Clamp + round a zoom value to avoid float drift past the bounds. */
+const clampZoom = (z: number) =>
+  Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(z * 100) / 100));
+
 /** The three built-in PDF standard fonts (fast path — no download). */
 export type StandardFontFamily = "Helvetica" | "Times" | "Courier";
 
@@ -85,6 +94,11 @@ type EditorState = {
   numPages: number;
   mode: EditorMode;
 
+  /** Presentational zoom for the page stage. Pages always render at VIEWER_WIDTH
+   * (so every stored edit/OCR coordinate stays in that space); zoom is applied as
+   * a CSS transform on the page stage only. 1 = 100%. */
+  zoom: number;
+
   /** OCR runs in a WASM worker and takes seconds; surface a global spinner. */
   ocrBusy: boolean;
   ocrProgress: number; // 0..1
@@ -110,6 +124,10 @@ type EditorState = {
   setSelectedPageIndex: (pageIndex: number) => void;
   setNumPages: (numPages: number) => void;
   setMode: (mode: EditorMode) => void;
+  setZoom: (zoom: number) => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  resetZoom: () => void;
   setOcrBusy: (busy: boolean) => void;
   setOcrProgress: (progress: number) => void;
   requestOcrPage: (pageIndex: number | null) => void;
@@ -124,6 +142,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   selectedPageIndex: 0,
   numPages: 0,
   mode: "select",
+  zoom: 1,
   ocrBusy: false,
   ocrProgress: 0,
   ocrRequestPageIndex: null,
@@ -170,6 +189,11 @@ export const useEditorStore = create<EditorState>((set) => ({
   setNumPages: (numPages) => set({ numPages }),
 
   setMode: (mode) => set({ mode }),
+
+  setZoom: (zoom) => set({ zoom: clampZoom(zoom) }),
+  zoomIn: () => set((state) => ({ zoom: clampZoom(state.zoom + ZOOM_STEP) })),
+  zoomOut: () => set((state) => ({ zoom: clampZoom(state.zoom - ZOOM_STEP) })),
+  resetZoom: () => set({ zoom: 1 }),
 
   setOcrBusy: (ocrBusy) => set({ ocrBusy }),
 
