@@ -1112,6 +1112,42 @@ button {
   cursor: pointer;
 }
 
+/* Grab handle for moving an edit box. Hidden until hover/selection so it stays
+   out of the way; centered below the box to clear the delete button (top-right),
+   image-btn-row (top-left) and text-format-toolbar (above). Not in the Rnd
+   cancel list, so dragging from it moves the box for every edit type. */
+.drag-handle {
+  position: absolute;
+  bottom: -13px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 16px;
+  border-radius: var(--r-sm);
+  background: var(--fg);
+  color: var(--surface);
+  cursor: grab;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--t-fast);
+  /* Stop touch-scroll from swallowing the drag on mobile. */
+  touch-action: none;
+}
+
+.edit-box:hover .drag-handle,
+.edit-box.selected .drag-handle {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
 /* Page transform wrapper (rotate/crop preview). Transform origin centered so a
    rotation pivots in place; clip-path applies the crop preview. */
 .page-transform {
