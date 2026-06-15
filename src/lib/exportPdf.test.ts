@@ -157,9 +157,7 @@ test("getGoogleFontEntry returns undefined for standard fonts", () => {
 test("fetchFontTtf is called with the correct URL for a Google Font (mocked)", async () => {
   // Arrange: stub fetchFontTtf to avoid real network calls.
   const fakeBuffer = new ArrayBuffer(8);
-  const fetchSpy = vi
-    .spyOn(fonts, "fetchFontTtf")
-    .mockResolvedValueOnce(fakeBuffer);
+  const fetchSpy = vi.spyOn(fonts, "fetchFontTtf").mockResolvedValueOnce(fakeBuffer);
 
   // Verify the spy works by calling the function directly.
   const result = await fonts.fetchFontTtf(

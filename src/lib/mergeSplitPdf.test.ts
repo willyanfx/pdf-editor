@@ -2,11 +2,7 @@ import { test, expect } from "vite-plus/test";
 import { parsePageRanges } from "./mergeSplitPdf";
 
 test("parses single pages and ranges into 0-based groups", () => {
-  expect(parsePageRanges("1-3, 5, 8-10", 10)).toEqual([
-    [0, 1, 2],
-    [4],
-    [7, 8, 9],
-  ]);
+  expect(parsePageRanges("1-3, 5, 8-10", 10)).toEqual([[0, 1, 2], [4], [7, 8, 9]]);
 });
 
 test("clamps out-of-range pages and ignores junk tokens", () => {

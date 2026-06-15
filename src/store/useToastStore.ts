@@ -40,6 +40,5 @@ export const useToastStore = create<ToastState>((set) => ({
     return id;
   },
 
-  dismissToast: (id) =>
-    set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
+  dismissToast: (id) => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
 }));

@@ -117,7 +117,9 @@ export function ExistingTextLayer({ pageIndex, page, getCanvas }: Props) {
       y: it.y,
       width: Math.max(it.width + 8, 40),
       height: Math.max(it.height, 16),
-      runs: it.runs ?? textToRuns(it.str, { bold: it.bold || undefined, italic: it.italic || undefined }),
+      runs:
+        it.runs ??
+        textToRuns(it.str, { bold: it.bold || undefined, italic: it.italic || undefined }),
       fontSize: it.fontSize,
       fontFamily: it.fontFamily,
       bold: it.bold,
@@ -161,9 +163,7 @@ export function ExistingTextLayer({ pageIndex, page, getCanvas }: Props) {
               // Alt+click lifts just the original run under the cursor, opting out
               // of line grouping (useful for tables / mixed layouts).
               const target =
-                e.altKey && it.subItems
-                  ? (pickSubItem(it, e.clientX, e.currentTarget) ?? it)
-                  : it;
+                e.altKey && it.subItems ? (pickSubItem(it, e.clientX, e.currentTarget) ?? it) : it;
               lift(target, computeCaretOffset(target, e.clientX, e.currentTarget));
             }}
           >

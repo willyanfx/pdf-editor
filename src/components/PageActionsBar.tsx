@@ -31,7 +31,7 @@ export function PageActionsBar({ pageIndex, pageHeight }: Props) {
 
   const width = 800; // VIEWER_WIDTH
 
-  function pointIn(e: React.MouseEvent) {
+  function pointIn(e: React.PointerEvent) {
     const b = overlayRef.current!.getBoundingClientRect();
     return { x: e.clientX - b.left, y: e.clientY - b.top };
   }
@@ -54,31 +54,55 @@ export function PageActionsBar({ pageIndex, pageHeight }: Props) {
   return (
     <>
       <div className="page-actions-bar" onMouseDown={(e) => e.stopPropagation()}>
-        <button type="button" title="Rotate counter-clockwise" onClick={() => rotatePage(-90, pageIndex)}>
-          <RotateCcw size={15} />
+        <button
+          type="button"
+          title="Rotate counter-clockwise"
+          aria-label="Rotate page counter-clockwise"
+          onClick={() => rotatePage(-90, pageIndex)}
+        >
+          <RotateCcw size={15} aria-hidden="true" />
         </button>
-        <button type="button" title="Rotate clockwise" onClick={() => rotatePage(90, pageIndex)}>
-          <RotateCw size={15} />
+        <button
+          type="button"
+          title="Rotate clockwise"
+          aria-label="Rotate page clockwise"
+          onClick={() => rotatePage(90, pageIndex)}
+        >
+          <RotateCw size={15} aria-hidden="true" />
         </button>
         <button
           type="button"
           className={cropping ? "active" : ""}
           title="Crop page"
+          aria-label="Crop page"
+          aria-pressed={cropping}
           onClick={() => setCropping((v) => !v)}
         >
-          <Crop size={15} />
+          <Crop size={15} aria-hidden="true" />
         </button>
         {(op?.rotation || op?.crop) && (
           <button
             type="button"
             title="Reset page transforms"
+            aria-label="Reset page transforms"
             onClick={() => setPageOp(pageIndex, { rotation: 0, crop: undefined })}
           >
-            <Undo2 size={15} />
+            <Undo2 size={15} aria-hidden="true" />
           </button>
         )}
-        <button type="button" className="danger" title="Delete page" onClick={() => deletePage(pageIndex)}>
-          <Trash2 size={15} />
+        <button
+          type="button"
+          className="danger"
+          title="Delete page"
+          aria-label="Delete page"
+          onClick={() => {
+            // Page deletion drops content from the export with no undo — confirm.
+            if (window.confirm("Delete this page? This can't be undone.")) {
+              deletePage(pageIndex);
+            }
+          }}
+        >
+          <Trash2 size={15} aria-hidden="true" />
         </button>
       </div>
 
@@ -86,13 +110,14 @@ export function PageActionsBar({ pageIndex, pageHeight }: Props) {
         <div
           ref={overlayRef}
           className="crop-overlay"
-          onMouseDown={(e) => {
+          onPointerDown={(e) => {
             e.stopPropagation();
+            overlayRef.current?.setPointerCapture(e.pointerId);
             const p = pointIn(e);
             startRef.current = p;
             setRect({ x: p.x, y: p.y, width: 0, height: 0 });
           }}
-          onMouseMove={(e) => {
+          onPointerMove={(e) => {
             const start = startRef.current;
             if (!start) return;
             const p = pointIn(e);
@@ -103,7 +128,7 @@ export function PageActionsBar({ pageIndex, pageHeight }: Props) {
               height: Math.abs(p.y - start.y),
             });
           }}
-          onMouseUp={() => {
+          onPointerUp={() => {
             startRef.current = null;
           }}
         >
@@ -116,7 +141,8 @@ export function PageActionsBar({ pageIndex, pageHeight }: Props) {
                 type="button"
                 className="crop-confirm"
                 title="Apply crop"
-                onMouseDown={(e) => e.stopPropagation()}
+                aria-label="Apply crop"
+                onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
                   confirmCrop();

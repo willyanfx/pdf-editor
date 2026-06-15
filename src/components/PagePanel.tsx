@@ -23,16 +23,35 @@ export function PagePanel(_props: Props) {
 
   const [dragPos, setDragPos] = useState<number | null>(null);
 
+  /** Move the page at `from` to `to`, clamped to the list bounds. */
+  function move(from: number, to: number) {
+    if (to < 0 || to >= pageOrder.length || from === to) return;
+    const next = [...pageOrder];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setPageOrder(next);
+  }
+
   function onDrop(targetPos: number) {
     if (dragPos === null || dragPos === targetPos) {
       setDragPos(null);
       return;
     }
-    const next = [...pageOrder];
-    const [moved] = next.splice(dragPos, 1);
-    next.splice(targetPos, 0, moved);
-    setPageOrder(next);
+    move(dragPos, targetPos);
     setDragPos(null);
+  }
+
+  function onRowKeyDown(e: React.KeyboardEvent, origIndex: number, pos: number) {
+    // Alt+Arrow reorders the page; Enter/Space navigates to it.
+    if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+      e.preventDefault();
+      move(pos, pos + (e.key === "ArrowUp" ? -1 : 1));
+      return;
+    }
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      scrollToPage?.(origIndex);
+    }
   }
 
   return (
@@ -40,8 +59,13 @@ export function PagePanel(_props: Props) {
       <div className="page-panel-title">Pages</div>
       <div className="page-panel-list">
         {pageOrder.map((origIndex, pos) => (
+          // role=button (not <button>) so the delete control can legally nest.
           <div
             key={origIndex}
+            role="button"
+            tabIndex={0}
+            aria-label={`Go to page ${pos + 1}. Alt plus arrow keys to reorder.`}
+            aria-current={origIndex === selectedPageIndex ? "true" : undefined}
             className={
               "page-thumb" +
               (origIndex === selectedPageIndex ? " current" : "") +
@@ -52,8 +76,9 @@ export function PagePanel(_props: Props) {
             onDragOver={(e) => e.preventDefault()}
             onDrop={() => onDrop(pos)}
             onClick={() => scrollToPage?.(origIndex)}
+            onKeyDown={(e) => onRowKeyDown(e, origIndex, pos)}
           >
-            <GripVertical size={13} className="page-thumb-grip" />
+            <GripVertical size={13} className="page-thumb-grip" aria-hidden="true" />
             <Thumbnail
               pageNumber={origIndex + 1}
               width={110}
@@ -64,12 +89,17 @@ export function PagePanel(_props: Props) {
               type="button"
               className="page-thumb-del"
               title="Delete page"
+              aria-label={`Delete page ${pos + 1}`}
+              disabled={pageOrder.length <= 1}
               onClick={(e) => {
                 e.stopPropagation();
-                if (pageOrder.length > 1) deletePage(origIndex);
+                if (pageOrder.length <= 1) return;
+                if (window.confirm("Delete this page? This can't be undone.")) {
+                  deletePage(origIndex);
+                }
               }}
             >
-              <Trash2 size={13} />
+              <Trash2 size={13} aria-hidden="true" />
             </button>
           </div>
         ))}

@@ -47,7 +47,11 @@ export function FindBar({ onClose }: Props) {
       <input
         ref={inputRef}
         className="find-input"
+        type="text"
+        aria-label="Find in page"
         placeholder="Find in page"
+        autoComplete="off"
+        spellCheck={false}
         value={query}
         onChange={(e) => setSearchQuery(e.target.value)}
         onKeyDown={(e) => {
@@ -60,24 +64,37 @@ export function FindBar({ onClose }: Props) {
           }
         }}
       />
-      <span className="find-count">
+      <span className="find-count" aria-live="polite">
         {matchIds.length ? `${cursor + 1}/${matchIds.length}` : query ? "0/0" : ""}
       </span>
-      <button type="button" title="Previous" disabled={!matchIds.length} onClick={() => go(-1)}>
-        <ChevronUp size={14} />
-      </button>
-      <button type="button" title="Next" disabled={!matchIds.length} onClick={() => go(1)}>
-        <ChevronDown size={14} />
+      <button
+        type="button"
+        title="Previous match"
+        aria-label="Previous match"
+        disabled={!matchIds.length}
+        onClick={() => go(-1)}
+      >
+        <ChevronUp size={14} aria-hidden="true" />
       </button>
       <button
         type="button"
-        title="Close"
+        title="Next match"
+        aria-label="Next match"
+        disabled={!matchIds.length}
+        onClick={() => go(1)}
+      >
+        <ChevronDown size={14} aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        title="Close find"
+        aria-label="Close find"
         onClick={() => {
           setSearchQuery("");
           onClose();
         }}
       >
-        <X size={14} />
+        <X size={14} aria-hidden="true" />
       </button>
     </div>
   );

@@ -11,7 +11,7 @@ import { AnnotateLayer } from "./AnnotateLayer";
 import { InkLayer } from "./InkLayer";
 import { PageActionsBar } from "./PageActionsBar";
 import { PagePanel } from "./PagePanel";
-import { useEditorStore, makeCoverTextEdit } from "../store/useEditorStore";
+import { useEditorStore, makeCoverTextEdit, clampZoom } from "../store/useEditorStore";
 import { useToastStore } from "../store/useToastStore";
 import { openFiles } from "../lib/openFiles";
 import { sampleBackgroundColor } from "../lib/textLayer";
@@ -59,6 +59,8 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
   const pageOrder = useEditorStore((s) => s.pageOrder);
   const pageOps = useEditorStore((s) => s.pageOps);
   const zoom = useEditorStore((s) => s.zoom);
+  const setZoom = useEditorStore((s) => s.setZoom);
+  const zoomPreset = useEditorStore((s) => s.zoomPreset);
   const setScrollToPage = useEditorStore((s) => s.setScrollToPage);
   const addToast = useToastStore((s) => s.addToast);
 
@@ -98,6 +100,32 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
     return () => setScrollToPage(null);
   }, [virtualizer, setScrollToPage]);
 
+  // Ctrl/⌘ + wheel zooms (matches Acrobat / browser PDF viewers / map UIs).
+  // Registered non-passive so preventDefault() can suppress the browser's own
+  // page zoom. Delta is normalized across the three WheelEvent deltaMode units
+  // so a line/page-scrolling mouse zooms at the same rate as a pixel trackpad.
+  // Depends on `file`: the scroll container only mounts once a doc is open, so
+  // the effect must re-run then to attach to a non-null scrollRef.
+  // NOTE: macOS hardware pinch-zoom (trackpad / Magic Mouse two-finger swipe)
+  // arrives as a wheel event with ctrlKey synthesized — so this same handler
+  // covers pinch-to-zoom. Plain ⌘+wheel is the explicit-key path.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    function onWheel(e: WheelEvent) {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      let delta = e.deltaY;
+      if (e.deltaMode === 1) delta *= 16; // DOM_DELTA_LINE → ~px per line
+      else if (e.deltaMode === 2) delta *= 100; // DOM_DELTA_PAGE → ~px per page
+      // Scroll up (negative delta) zooms in. Scale the step to wheel magnitude.
+      const next = useEditorStore.getState().zoom - (delta / 100) * 0.1;
+      setZoom(next);
+    }
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [setZoom, file]);
+
   const virtualItems = virtualizer.getVirtualItems();
 
   // Keep the top-bar page readout in sync with scroll: the "current" page is the
@@ -112,6 +140,37 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
   useEffect(() => {
     if (numPages > 0) setSelectedPageIndex(topVisibleIndex);
   }, [topVisibleIndex, numPages, setSelectedPageIndex]);
+
+  // Auto-fit zoom: when a preset is active, derive `zoom` from the live container
+  // size and keep it updated as the window resizes. VIEWER_WIDTH is never touched
+  // — only the presentational CSS zoom changes, so stored edit coordinates stay
+  // valid. We write `zoom` via setState (not setZoom) so updating it doesn't clear
+  // the preset and cancel the auto-fit.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !zoomPreset) return;
+
+    function applyFit() {
+      if (!el) return;
+      // clientWidth excludes the scrollbar; subtract the wrapper's 24px h-padding
+      // (both sides) plus a small gutter so the page never butts the scrollbar.
+      const availW = el.clientWidth - 48 - 4;
+      const availH = el.clientHeight - 48;
+      const fitWidth = availW / VIEWER_WIDTH;
+      let next = fitWidth;
+      if (zoomPreset === "fit-page") {
+        // Fit the currently-visible page fully in view (width OR height bound).
+        const pageH = pageHeights[topVisibleIndex] ?? ESTIMATED_PAGE_HEIGHT;
+        next = Math.min(fitWidth, availH / pageH);
+      }
+      useEditorStore.setState({ zoom: clampZoom(next) });
+    }
+
+    applyFit();
+    const ro = new ResizeObserver(applyFit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [zoomPreset, pageHeights, topVisibleIndex]);
 
   // Whole-page OCR: the toolbar sets ocrRequestPageIndex; we own the page
   // canvases, so we run the recognition here and clear the request when done.

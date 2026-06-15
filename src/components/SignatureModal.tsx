@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { useEditorStore } from "../store/useEditorStore";
 import { addImageDataUrl } from "../lib/openFiles";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 type Tab = "draw" | "type";
 
@@ -17,6 +18,7 @@ const CANVAS_H = 180;
 export function SignatureModal() {
   const open = useEditorStore((s) => s.signatureModalOpen);
   const close = () => useEditorStore.getState().setSignatureModalOpen(false);
+  const trapRef = useFocusTrap<HTMLDivElement>(open, close);
 
   const [tab, setTab] = useState<Tab>("draw");
   const [typed, setTyped] = useState("");
@@ -43,7 +45,10 @@ export function SignatureModal() {
   function pos(e: React.PointerEvent) {
     const c = canvasRef.current!;
     const b = c.getBoundingClientRect();
-    return { x: ((e.clientX - b.left) / b.width) * c.width, y: ((e.clientY - b.top) / b.height) * c.height };
+    return {
+      x: ((e.clientX - b.left) / b.width) * c.width,
+      y: ((e.clientY - b.top) / b.height) * c.height,
+    };
   }
 
   function onPointerDown(e: React.PointerEvent) {
@@ -111,7 +116,13 @@ export function SignatureModal() {
   return (
     <>
       <div className="sig-backdrop" onClick={close} />
-      <div className="sig-modal" role="dialog" aria-modal="true" aria-label="Add signature">
+      <div
+        ref={trapRef}
+        className="sig-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Add signature"
+      >
         <div className="sig-header">
           <span>Add signature</span>
           <button type="button" className="sig-close" onClick={close} aria-label="Close">
@@ -119,17 +130,29 @@ export function SignatureModal() {
           </button>
         </div>
 
-        <div className="sig-tabs">
-          <button type="button" className={tab === "draw" ? "active" : ""} onClick={() => setTab("draw")}>
+        <div className="sig-tabs" role="tablist" aria-label="Signature input method">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "draw"}
+            className={tab === "draw" ? "active" : ""}
+            onClick={() => setTab("draw")}
+          >
             Draw
           </button>
-          <button type="button" className={tab === "type" ? "active" : ""} onClick={() => setTab("type")}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "type"}
+            className={tab === "type" ? "active" : ""}
+            onClick={() => setTab("type")}
+          >
             Type
           </button>
         </div>
 
         {tab === "draw" ? (
-          <div className="sig-canvas-wrap">
+          <div className="sig-canvas-wrap" role="tabpanel" aria-label="Draw signature">
             <canvas
               ref={canvasRef}
               width={CANVAS_W}
@@ -144,12 +167,14 @@ export function SignatureModal() {
             </button>
           </div>
         ) : (
-          <div className="sig-type-wrap">
+          <div className="sig-type-wrap" role="tabpanel" aria-label="Type signature">
             <input
               className="sig-type-input"
+              aria-label="Your name"
               placeholder="Type your name"
               value={typed}
               onChange={(e) => setTyped(e.target.value)}
+              autoComplete="name"
               autoFocus
             />
             <div className="sig-type-preview">{typed || "Preview"}</div>

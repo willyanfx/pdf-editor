@@ -162,12 +162,42 @@ button {
 }
 
 .topbar-page-info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: 12px;
   color: var(--topbar-fg);
   min-width: 56px;
-  text-align: center;
+}
+
+.topbar-page-input {
+  width: 2.4em;
+  padding: 1px 2px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  -moz-appearance: textfield;
+}
+
+.topbar-page-input:hover {
+  border-color: var(--topbar-btn-bg);
+}
+
+.topbar-page-input:focus {
+  outline: none;
+  border-color: var(--accent, #4c8bf5);
+  background: var(--topbar-btn-bg);
+}
+
+.topbar-page-total {
+  white-space: nowrap;
 }
 
 .topbar-page-nav {
@@ -244,6 +274,7 @@ button {
 }
 
 .bottombar-zoom {
+  position: relative; /* anchor for the zoom-level dropdown */
   display: flex;
   align-items: center;
   gap: 2px;
@@ -273,7 +304,11 @@ button {
 }
 
 .bottombar-zoom-level {
-  min-width: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 72px;
   height: 24px;
   padding: 0 6px;
   border: 0;
@@ -283,13 +318,77 @@ button {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: 12px;
-  text-align: center;
   cursor: pointer;
   transition: background var(--t-fast);
 }
 
 .bottombar-zoom-level:hover {
   background: var(--topbar-btn-bg);
+}
+
+.bottombar-zoom-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  min-width: 120px;
+  padding: 4px;
+  border: 1px solid var(--topbar-border);
+  border-radius: var(--r-md, 8px);
+  background: var(--topbar-bg);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.28);
+}
+
+.bottombar-zoom-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--topbar-fg);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast);
+}
+
+.bottombar-zoom-menu button:hover {
+  background: var(--topbar-btn-bg);
+}
+
+.bottombar-zoom-menu button.is-active {
+  background: var(--topbar-btn-bg);
+  font-weight: 600;
+}
+
+.bottombar-zoom-menu-sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--topbar-border);
+}
+
+.bottombar-zoom-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border: 1px solid var(--topbar-border);
+  border-radius: var(--r-sm);
+  background: var(--bg-subtle);
+  color: var(--topbar-fg);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  opacity: 0.7;
 }
 
 /* Tool rail ------------------------------------------------------------ */

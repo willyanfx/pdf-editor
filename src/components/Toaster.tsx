@@ -21,15 +21,15 @@ export function Toaster() {
         const Icon = ICONS[toast.variant];
         return (
           <div key={toast.id} className={`toast toast-${toast.variant}`}>
-            <Icon size={16} className="toast-icon" />
+            <Icon size={16} className="toast-icon" aria-hidden="true" />
             <span className="toast-message">{toast.message}</span>
             <button
               type="button"
               className="toast-dismiss"
-              aria-label="Dismiss"
+              aria-label={`Dismiss: ${toast.message}`}
               onClick={() => dismissToast(toast.id)}
             >
-              <X size={14} />
+              <X size={14} aria-hidden="true" />
             </button>
           </div>
         );
