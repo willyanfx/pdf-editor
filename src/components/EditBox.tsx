@@ -1,9 +1,13 @@
+import { useRef } from "react";
 import { Rnd } from "react-rnd";
 import { X, ScanText } from "lucide-react";
 import type { PdfEdit } from "../store/useEditorStore";
-import { useEditorStore, makeTextEdit } from "../store/useEditorStore";
+import { useEditorStore, makeTextEdit, textToRuns } from "../store/useEditorStore";
 import { useToastStore } from "../store/useToastStore";
-import { TextFormatToolbar, cssFontStack } from "./TextFormatToolbar";
+import { TextFormatToolbar } from "./TextFormatToolbar";
+import { RichTextEditor } from "./RichTextEditor";
+
+type SelectionRangeGetter = () => { start: number; end: number } | null;
 
 type Props = {
   edit: PdfEdit;
@@ -19,6 +23,9 @@ export function EditBox({ edit }: Props) {
   const addToast = useToastStore((s) => s.addToast);
   const ocrBusy = useEditorStore((s) => s.ocrBusy);
   const selected = useEditorStore((s) => s.selectedEditId === edit.id);
+  // The editor registers a selection-range getter here so the toolbar can apply
+  // formatting to just the selected characters.
+  const getSelectionRange = useRef<SelectionRangeGetter | null>(null);
 
   async function ocrImage() {
     if (edit.type !== "image") return;
@@ -41,7 +48,7 @@ export function EditBox({ edit }: Props) {
             y: it.y,
             width: Math.max(it.width + 8, 40),
             height: Math.max(it.height, 16),
-            text: it.str,
+            runs: textToRuns(it.str),
             fontSize: it.fontSize,
             fontFamily: it.fontFamily,
           }),
@@ -61,9 +68,9 @@ export function EditBox({ edit }: Props) {
       size={{ width: edit.width, height: edit.height }}
       position={{ x: edit.x, y: edit.y }}
       bounds="parent"
-      // Don't start a drag from inside the textarea/toolbar, so text selection
+      // Don't start a drag from inside the editor/toolbar, so text selection
       // and typing work; the box still drags from its border/handles.
-      cancel="textarea, .text-format-toolbar, .delete"
+      cancel=".rich-text-editor, .text-format-toolbar, .delete"
       onMouseDown={(event) => {
         event.stopPropagation();
         selectEdit(edit.id);
@@ -85,21 +92,16 @@ export function EditBox({ edit }: Props) {
         <>
           {/* The cover for the original glyphs is rendered by EditableLayer,
               pinned to the original location so it stays put when this box moves. */}
-          <textarea
-            value={edit.text}
-            spellCheck={false}
-            style={{
-              fontSize: edit.fontSize,
-              fontFamily: cssFontStack(edit.fontFamily),
-              fontWeight: edit.bold ? 700 : 400,
-              fontStyle: edit.italic ? "italic" : "normal",
-              color: edit.color,
-              textAlign: edit.align,
+          <RichTextEditor
+            edit={edit}
+            selected={selected}
+            onSelectionRef={(getter) => {
+              getSelectionRange.current = getter;
             }}
-            onMouseDown={(e) => e.stopPropagation()}
-            onChange={(event) => updateEdit(edit.id, { text: event.target.value })}
           />
-          {selected && <TextFormatToolbar edit={edit} />}
+          {selected && (
+            <TextFormatToolbar edit={edit} getSelectionRange={() => getSelectionRange.current?.() ?? null} />
+          )}
         </>
       )}
 
