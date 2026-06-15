@@ -602,26 +602,44 @@ button {
 
 .edit-box {
   pointer-events: auto;
-  border: 1px dashed transparent;
+  /* Faint always-on dashed border so edit boxes are discoverable without hover. */
+  border: 1.5px dashed oklch(55% 0 0 / 0.18);
+  border-radius: var(--r-sm);
   line-height: normal;
+  transition:
+    border-color var(--t-fast),
+    box-shadow var(--t-fast);
+}
+
+.edit-box:hover {
+  border-color: oklch(40% 0 0 / 0.4);
 }
 
 .edit-box.selected {
-  border-color: oklch(18% 0 0 / 0.6);
+  border: 1.5px solid oklch(18% 0 0 / 0.7);
+  /* Soft focus ring echoing the text-edit accent. */
+  box-shadow: 0 0 0 2px oklch(60% 0.12 250 / 0.2);
 }
 
-.edit-box textarea {
+.rich-text-editor {
   position: relative;
   z-index: 1;
   width: 100%;
   height: 100%;
-  resize: none;
   border: 0;
   outline: none;
   padding: 0;
   background: transparent;
   line-height: 1.15;
   overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  cursor: text;
+  caret-color: currentColor;
+}
+
+.rich-text-editor:focus {
+  outline: none;
 }
 
 /* Opaque fill that hides the original PDF glyphs. Pinned by EditableLayer to the
@@ -657,6 +675,172 @@ button {
   background: var(--surface);
   color: var(--fg);
   cursor: pointer;
+}
+
+/* Font Picker --------------------------------------------------------------- */
+
+.fp-container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Trigger button — matches the size/shape of the size <select>. */
+.fp-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 140px;
+  transition: background var(--t-fast);
+}
+
+.fp-trigger:hover {
+  background: var(--bg-subtle);
+}
+
+.fp-trigger[aria-expanded="true"] {
+  background: var(--bg-subtle);
+}
+
+.fp-trigger-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.fp-trigger-arrow {
+  font-size: 9px;
+  opacity: 0.6;
+  flex: 0 0 auto;
+}
+
+/* Popup — floats below the trigger, dark chrome to match the toolbar. */
+.fp-popup {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 200;
+  width: 240px;
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: 0 8px 24px oklch(0% 0 0 / 0.18);
+  overflow: hidden;
+  animation: fp-in 0.13s ease both;
+}
+
+@keyframes fp-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Search input */
+.fp-search-wrap {
+  flex: 0 0 auto;
+  padding: 6px 6px 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.fp-search {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-subtle);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  outline: none;
+  /* Remove browser default search decorations */
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.fp-search:focus {
+  border-color: var(--border-strong);
+}
+
+.fp-search::placeholder {
+  color: var(--fg-faint);
+}
+
+/* Scrollable list */
+.fp-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  overflow-y: auto;
+  flex: 1 1 auto;
+}
+
+/* Group label row */
+.fp-group-label {
+  padding: 8px 10px 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  user-select: none;
+}
+
+/* Option row — previewed in its own font. */
+.fp-option {
+  padding: 6px 10px;
+  font-size: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg);
+  border-radius: var(--r-sm);
+  margin: 0 4px;
+  transition: background var(--t-fast);
+}
+
+.fp-option:hover,
+.fp-option--active {
+  background: var(--bg-subtle);
+}
+
+.fp-option--selected {
+  background: oklch(92% 0 0);
+  font-weight: 600;
+}
+
+.fp-option--selected.fp-option--active {
+  background: var(--bg-subtle);
+}
+
+/* Empty state */
+.fp-empty {
+  padding: 14px 10px;
+  font-size: 12px;
+  color: var(--fg-faint);
+  text-align: center;
+  cursor: default;
+  list-style: none;
 }
 
 .text-format-toolbar button {
@@ -716,9 +900,11 @@ button {
   pointer-events: auto;
   margin: 0;
   padding: 0;
-  border: 1px solid transparent;
+  /* Subtle but visible resting outline so the editable text structure reads at a
+     glance the moment you enter Edit Text mode (Acrobat-style blue blocks). */
+  border: 1px solid oklch(55% 0.12 250 / 0.28);
   border-radius: var(--r-sm);
-  background: oklch(18% 0 0 / 0.04);
+  background: oklch(60% 0.1 250 / 0.06);
   color: transparent;
   cursor: text;
   overflow: hidden;
@@ -726,12 +912,18 @@ button {
   text-align: left;
   transition:
     background var(--t-fast),
-    border-color var(--t-fast);
+    border-color var(--t-fast),
+    box-shadow var(--t-fast);
 }
 
 .existing-text-hit:hover {
-  background: oklch(18% 0 0 / 0.12);
-  border-color: oklch(18% 0 0 / 0.45);
+  background: oklch(60% 0.12 250 / 0.14);
+  border-color: oklch(45% 0.14 250 / 0.6);
+}
+
+.existing-text-hit:focus-visible {
+  outline: 2px solid oklch(50% 0.16 250 / 0.75);
+  outline-offset: 1px;
 }
 
 .existing-text-hit span {

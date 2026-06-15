@@ -1,7 +1,22 @@
 import { create } from "zustand";
 
-/** Font families we can both render in the browser and embed on export. */
-export type FontFamily = "Helvetica" | "Times" | "Courier";
+/** The three built-in PDF standard fonts (fast path — no download). */
+export type StandardFontFamily = "Helvetica" | "Times" | "Courier";
+
+/** Any font family string: standard fonts or a Google Font family name. */
+export type FontFamily = string;
+
+/** A styled span of text inside a TextEdit. Style fields are optional overrides;
+ * when omitted, the run inherits the box-level value (fontSize/fontFamily/…).
+ * A single-run box (the common case) carries one run with no overrides. */
+export type TextRun = {
+  text: string;
+  bold?: boolean;
+  italic?: boolean;
+  color?: string; // hex; undefined → inherit box color
+  fontSize?: number; // px; undefined → inherit box fontSize
+  fontFamily?: FontFamily; // undefined → inherit box fontFamily
+};
 
 export type TextEdit = {
   id: string;
@@ -11,7 +26,9 @@ export type TextEdit = {
   y: number;
   width: number;
   height: number;
-  text: string;
+  /** The text content as styled runs. Box-level fontSize/fontFamily/bold/italic/
+   * color below are the paragraph defaults each run inherits unless it overrides. */
+  runs: TextRun[];
   fontSize: number;
   fontFamily: FontFamily;
   bold: boolean;
@@ -80,6 +97,11 @@ type EditorState = {
    * scrollIntoView can't reach an unmounted page, so we route through here. */
   scrollToPage: ((pageIndex: number) => void) | null;
 
+  /** Set when a text edit is created from a click on existing text, so the newly
+   * mounted editor can grab focus and drop the caret at the clicked character.
+   * The editor consumes it once (clears it back to null). */
+  pendingFocus: { editId: string; caretOffset: number } | null;
+
   setFile: (file: File) => void;
   addEdit: (edit: PdfEdit) => void;
   updateEdit: (id: string, patch: Partial<PdfEdit>) => void;
@@ -92,6 +114,7 @@ type EditorState = {
   setOcrProgress: (progress: number) => void;
   requestOcrPage: (pageIndex: number | null) => void;
   setScrollToPage: (fn: ((pageIndex: number) => void) | null) => void;
+  setPendingFocus: (pf: { editId: string; caretOffset: number } | null) => void;
 };
 
 export const useEditorStore = create<EditorState>((set) => ({
@@ -105,6 +128,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   ocrProgress: 0,
   ocrRequestPageIndex: null,
   scrollToPage: null,
+  pendingFocus: null,
 
   setFile: (file) =>
     set({
@@ -117,6 +141,7 @@ export const useEditorStore = create<EditorState>((set) => ({
       ocrBusy: false,
       ocrProgress: 0,
       ocrRequestPageIndex: null,
+      pendingFocus: null,
     }),
 
   addEdit: (edit) =>
@@ -153,7 +178,19 @@ export const useEditorStore = create<EditorState>((set) => ({
   requestOcrPage: (ocrRequestPageIndex) => set({ ocrRequestPageIndex }),
 
   setScrollToPage: (scrollToPage) => set({ scrollToPage }),
+
+  setPendingFocus: (pendingFocus) => set({ pendingFocus }),
 }));
+
+/** Flatten a runs array to a plain string. */
+export function runsToText(runs: TextRun[]): string {
+  return runs.map((r) => r.text).join("");
+}
+
+/** Wrap a plain string as a single run, optionally carrying style overrides. */
+export function textToRuns(text: string, patch: Partial<TextRun> = {}): TextRun[] {
+  return [{ text, ...patch }];
+}
 
 /** Shared default for newly-added text boxes. */
 export function makeTextEdit(
@@ -162,7 +199,7 @@ export function makeTextEdit(
   return {
     id: crypto.randomUUID(),
     type: "text",
-    text: "Your text",
+    runs: textToRuns("Your text"),
     fontSize: 18,
     fontFamily: "Helvetica",
     bold: false,
@@ -180,6 +217,9 @@ export function makeTextEdit(
  * output shape so both sources share one edit-creation path. */
 export type RecognizedTextRun = {
   str: string;
+  /** Pre-formed styled runs (grouped existing-PDF text). When absent (OCR path,
+   * which only has a plain `str`), makeCoverTextEdit derives a single run. */
+  runs?: TextRun[];
   x: number;
   y: number;
   width: number;
@@ -201,13 +241,18 @@ export function makeCoverTextEdit(
   pageIndex: number,
   coverColor: string,
 ): TextEdit {
+  // Prefer pre-formed runs (grouped existing text); otherwise derive a single
+  // run from the plain `str` (OCR), carrying its bold/italic flags.
+  const runs =
+    run.runs ??
+    textToRuns(run.str, { bold: run.bold || undefined, italic: run.italic || undefined });
   return makeTextEdit({
     pageIndex,
     x: run.x,
     y: run.y,
     width: Math.max(run.width + 8, 40),
     height: Math.max(run.height, 16),
-    text: run.str,
+    runs,
     fontSize: run.fontSize,
     fontFamily: run.fontFamily,
     bold: run.bold,
