@@ -49,6 +49,8 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
   const ocrProgress = useEditorStore((s) => s.ocrProgress);
   const ocrRequestPageIndex = useEditorStore((s) => s.ocrRequestPageIndex);
   const requestOcrPage = useEditorStore((s) => s.requestOcrPage);
+  const ocrAllRequest = useEditorStore((s) => s.ocrAllRequest);
+  const ocrAllProgress = useEditorStore((s) => s.ocrAllProgress);
   const setOcrBusy = useEditorStore((s) => s.setOcrBusy);
   const setOcrProgress = useEditorStore((s) => s.setOcrProgress);
   const addEdit = useEditorStore((s) => s.addEdit);
@@ -92,9 +94,7 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
 
   // Let the top bar's page nav jump to any page, even an unmounted one.
   useEffect(() => {
-    setScrollToPage((pageIndex) =>
-      virtualizer.scrollToIndex(pageIndex, { align: "start" }),
-    );
+    setScrollToPage((pageIndex) => virtualizer.scrollToIndex(pageIndex, { align: "start" }));
     return () => setScrollToPage(null);
   }, [virtualizer, setScrollToPage]);
 
@@ -163,6 +163,92 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ocrRequestPageIndex]);
 
+  // Whole-document OCR: render every page off-screen (we can't rely on the
+  // virtualizer's canvases — most pages aren't mounted) and OCR them in order.
+  useEffect(() => {
+    if (!ocrAllRequest) return;
+    const store = useEditorStore.getState();
+    const docFile = store.file;
+    if (!docFile) {
+      store.clearOcrAll();
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      const { pdfjs } = await import("react-pdf");
+      const { recognizePageRegion } = await import("../lib/ocr");
+      setOcrBusy(true);
+      let doc: Awaited<ReturnType<typeof pdfjs.getDocument>["promise"]> | null = null;
+      try {
+        // Fresh buffer: pdf.js neuters the one it loads (same as usePageHeights).
+        const data = await docFile.arrayBuffer();
+        doc = await pdfjs.getDocument({ data, ...PDF_DOCUMENT_OPTIONS }).promise;
+        const total = doc.numPages;
+        useEditorStore.getState().setOcrAllProgress({ current: 0, total });
+
+        for (let i = 1; i <= total; i++) {
+          if (cancelled || useEditorStore.getState().ocrAllCancelled) break;
+          useEditorStore.getState().setOcrAllProgress({ current: i, total });
+          try {
+            const page = await doc.getPage(i);
+            const vp = page.getViewport({ scale: 1 });
+            const scale = VIEWER_WIDTH / vp.width;
+            const scaled = page.getViewport({ scale });
+            const canvas = document.createElement("canvas");
+            canvas.width = Math.ceil(scaled.width);
+            canvas.height = Math.ceil(scaled.height);
+            const ctx = canvas.getContext("2d");
+            if (!ctx) {
+              page.cleanup();
+              continue;
+            }
+            await page.render({ canvas, canvasContext: ctx, viewport: scaled }).promise;
+            const items = await recognizePageRegion(canvas, VIEWER_WIDTH, undefined);
+            if (cancelled || useEditorStore.getState().ocrAllCancelled) {
+              page.cleanup();
+              break;
+            }
+            for (const it of items) {
+              const coverColor = sampleBackgroundColor(
+                canvas,
+                it.x,
+                it.y,
+                it.width,
+                it.height,
+                VIEWER_WIDTH,
+              );
+              addEdit(makeCoverTextEdit(it, i - 1, coverColor));
+            }
+            page.cleanup();
+            // Release the canvas before the next page so memory stays bounded.
+            canvas.width = canvas.height = 0;
+          } catch {
+            // One bad page shouldn't abort the whole run.
+            // eslint-disable-next-line no-console
+            console.warn(`OCR failed on page ${i}`);
+          }
+        }
+        const wasCancelled = cancelled || useEditorStore.getState().ocrAllCancelled;
+        addToast(
+          wasCancelled ? "Stopped OCR" : `OCR complete — ${doc.numPages} pages read`,
+          wasCancelled ? "info" : "success",
+        );
+      } catch {
+        if (!cancelled) addToast("Could not OCR this document.", "error");
+      } finally {
+        if (doc) void doc.destroy();
+        setOcrBusy(false);
+        useEditorStore.getState().clearOcrAll();
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ocrAllRequest]);
+
   if (!file) {
     return (
       <section className="empty">
@@ -222,83 +308,83 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
               transform: `translateX(-50%) scale(${zoom})`,
             }}
           >
-          {virtualItems.map((item) => {
-            const index = item.index;
-            // Pages removed in the organizer are dropped from the view too.
-            const deleted = pageOrder.length > 0 && !pageOrder.includes(index);
-            if (deleted) return null;
-            const op = pageOps.find((o) => o.pageIndex === index);
-            const rotation = op?.rotation ? ((op.rotation % 360) + 360) % 360 : 0;
-            // Preview crop by clipping the page-shell to the kept region.
-            const clip = op?.crop
-              ? `inset(${op.crop.top}px ${op.crop.right}px ${op.crop.bottom}px ${op.crop.left}px)`
-              : undefined;
-            return (
-              <div
-                className="page-shell"
-                key={item.key}
-                data-page-index={index}
-                data-index={index}
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: "50%",
-                  // Reserve the inter-page gap inside the slot the virtualizer
-                  // sized (estimateSize adds PAGE_GAP), so pages don't overlap.
-                  height: item.size - PAGE_GAP,
-                  width: VIEWER_WIDTH,
-                  transform: `translate(-50%, ${item.start}px)`,
-                }}
-                onMouseDown={() => {
-                  setSelectedPageIndex(index);
-                  selectEdit(null);
-                }}
-              >
+            {virtualItems.map((item) => {
+              const index = item.index;
+              // Pages removed in the organizer are dropped from the view too.
+              const deleted = pageOrder.length > 0 && !pageOrder.includes(index);
+              if (deleted) return null;
+              const op = pageOps.find((o) => o.pageIndex === index);
+              const rotation = op?.rotation ? ((op.rotation % 360) + 360) % 360 : 0;
+              // Preview crop by clipping the page-shell to the kept region.
+              const clip = op?.crop
+                ? `inset(${op.crop.top}px ${op.crop.right}px ${op.crop.bottom}px ${op.crop.left}px)`
+                : undefined;
+              return (
                 <div
-                  className="page-transform"
+                  className="page-shell"
+                  key={item.key}
+                  data-page-index={index}
+                  data-index={index}
                   style={{
-                    transform: rotation ? `rotate(${rotation}deg)` : undefined,
-                    clipPath: clip,
+                    position: "absolute",
+                    top: 0,
+                    left: "50%",
+                    // Reserve the inter-page gap inside the slot the virtualizer
+                    // sized (estimateSize adds PAGE_GAP), so pages don't overlap.
+                    height: item.size - PAGE_GAP,
+                    width: VIEWER_WIDTH,
+                    transform: `translate(-50%, ${item.start}px)`,
+                  }}
+                  onMouseDown={() => {
+                    setSelectedPageIndex(index);
+                    selectEdit(null);
                   }}
                 >
-                  <Page
-                    pageNumber={index + 1}
-                    width={VIEWER_WIDTH}
-                    renderTextLayer={false}
-                    renderAnnotationLayer={false}
-                    canvasRef={(el) => {
-                      canvasRefs.current.set(index, el);
+                  <div
+                    className="page-transform"
+                    style={{
+                      transform: rotation ? `rotate(${rotation}deg)` : undefined,
+                      clipPath: clip,
                     }}
-                    onLoadSuccess={(page) => {
-                      pagesRef.current.set(index, page as unknown as PDFPageProxy);
-                      force((n) => n + 1);
-                    }}
-                  />
-                  <ExistingTextLayer
+                  >
+                    <Page
+                      pageNumber={index + 1}
+                      width={VIEWER_WIDTH}
+                      renderTextLayer={false}
+                      renderAnnotationLayer={false}
+                      canvasRef={(el) => {
+                        canvasRefs.current.set(index, el);
+                      }}
+                      onLoadSuccess={(page) => {
+                        pagesRef.current.set(index, page as unknown as PDFPageProxy);
+                        force((n) => n + 1);
+                      }}
+                    />
+                    <ExistingTextLayer
+                      pageIndex={index}
+                      page={pagesRef.current.get(index) ?? null}
+                      getCanvas={() => canvasRefs.current.get(index) ?? null}
+                    />
+                    <ExistingImageLayer
+                      pageIndex={index}
+                      page={pagesRef.current.get(index) ?? null}
+                      getCanvas={() => canvasRefs.current.get(index) ?? null}
+                    />
+                    <OcrLayer
+                      pageIndex={index}
+                      getCanvas={() => canvasRefs.current.get(index) ?? null}
+                    />
+                    <AnnotateLayer pageIndex={index} />
+                    <InkLayer pageIndex={index} />
+                    <EditableLayer pageIndex={index} />
+                  </div>
+                  <PageActionsBar
                     pageIndex={index}
-                    page={pagesRef.current.get(index) ?? null}
-                    getCanvas={() => canvasRefs.current.get(index) ?? null}
+                    pageHeight={pageHeights[index] ?? ESTIMATED_PAGE_HEIGHT}
                   />
-                  <ExistingImageLayer
-                    pageIndex={index}
-                    page={pagesRef.current.get(index) ?? null}
-                    getCanvas={() => canvasRefs.current.get(index) ?? null}
-                  />
-                  <OcrLayer
-                    pageIndex={index}
-                    getCanvas={() => canvasRefs.current.get(index) ?? null}
-                  />
-                  <AnnotateLayer pageIndex={index} />
-                  <InkLayer pageIndex={index} />
-                  <EditableLayer pageIndex={index} />
                 </div>
-                <PageActionsBar
-                  pageIndex={index}
-                  pageHeight={(pageHeights[index] ?? ESTIMATED_PAGE_HEIGHT)}
-                />
-              </div>
-            );
-          })}
+              );
+            })}
           </div>
         </div>
       </Document>
@@ -307,7 +393,22 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
         <div className="ocr-overlay" role="status" aria-live="polite">
           <div className="ocr-overlay-card">
             <Loader2 size={20} className="ocr-spinner" />
-            <span>Reading text… {Math.round(ocrProgress * 100)}%</span>
+            {ocrAllProgress ? (
+              <>
+                <span>
+                  Reading page {ocrAllProgress.current} of {ocrAllProgress.total}…
+                </span>
+                <button
+                  type="button"
+                  className="ocr-cancel"
+                  onClick={() => useEditorStore.getState().cancelOcrAll()}
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <span>Reading text… {Math.round(ocrProgress * 100)}%</span>
+            )}
           </div>
         </div>
       )}

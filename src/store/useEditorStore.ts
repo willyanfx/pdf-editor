@@ -6,8 +6,7 @@ export const MAX_ZOOM = 3;
 export const ZOOM_STEP = 0.1;
 
 /** Clamp + round a zoom value to avoid float drift past the bounds. */
-const clampZoom = (z: number) =>
-  Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(z * 100) / 100));
+const clampZoom = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(z * 100) / 100));
 
 /** The three built-in PDF standard fonts (fast path — no download). */
 export type StandardFontFamily = "Helvetica" | "Times" | "Courier";
@@ -180,6 +179,13 @@ type EditorState = {
   /** Set by the toolbar's "Extract Text" button to ask PdfViewer (which owns the
    * page canvases) to OCR a whole page. PdfViewer clears it after handling. */
   ocrRequestPageIndex: number | null;
+  /** Set true to ask PdfViewer to OCR EVERY page of the document. PdfViewer
+   * renders each page off-screen and clears this when done or cancelled. */
+  ocrAllRequest: boolean;
+  /** Page-by-page progress for the whole-document run; null when not running. */
+  ocrAllProgress: { current: number; total: number } | null;
+  /** Flipped by cancelOcrAll() to abort the whole-document loop between pages. */
+  ocrAllCancelled: boolean;
 
   /** Registered by PdfViewer (which owns the virtualizer) so the top bar's
    * page nav can jump to a page even when that page isn't currently mounted.
@@ -224,6 +230,11 @@ type EditorState = {
   setOcrBusy: (busy: boolean) => void;
   setOcrProgress: (progress: number) => void;
   requestOcrPage: (pageIndex: number | null) => void;
+  /** Start / clear a whole-document OCR run. */
+  requestOcrAll: () => void;
+  clearOcrAll: () => void;
+  cancelOcrAll: () => void;
+  setOcrAllProgress: (progress: { current: number; total: number } | null) => void;
   setScrollToPage: (fn: ((pageIndex: number) => void) | null) => void;
   setPendingFocus: (pf: { editId: string; caretOffset: number } | null) => void;
 };
@@ -241,6 +252,9 @@ export const useEditorStore = create<EditorState>((set) => ({
   ocrBusy: false,
   ocrProgress: 0,
   ocrRequestPageIndex: null,
+  ocrAllRequest: false,
+  ocrAllProgress: null,
+  ocrAllCancelled: false,
   scrollToPage: null,
   pendingFocus: null,
   searchQuery: "",
@@ -261,6 +275,9 @@ export const useEditorStore = create<EditorState>((set) => ({
       ocrBusy: false,
       ocrProgress: 0,
       ocrRequestPageIndex: null,
+      ocrAllRequest: false,
+      ocrAllProgress: null,
+      ocrAllCancelled: false,
       pendingFocus: null,
       searchQuery: "",
       searchMatchIds: [],
@@ -309,10 +326,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         ? { ...existing, ...patch }
         : { pageIndex, rotation: 0, ...patch };
       return {
-        pageOps: [
-          ...state.pageOps.filter((op) => op.pageIndex !== pageIndex),
-          next,
-        ],
+        pageOps: [...state.pageOps.filter((op) => op.pageIndex !== pageIndex), next],
       };
     }),
 
@@ -356,6 +370,10 @@ export const useEditorStore = create<EditorState>((set) => ({
   setOcrProgress: (ocrProgress) => set({ ocrProgress }),
 
   requestOcrPage: (ocrRequestPageIndex) => set({ ocrRequestPageIndex }),
+  requestOcrAll: () => set({ ocrAllRequest: true, ocrAllCancelled: false, ocrAllProgress: null }),
+  clearOcrAll: () => set({ ocrAllRequest: false, ocrAllProgress: null, ocrAllCancelled: false }),
+  cancelOcrAll: () => set({ ocrAllCancelled: true }),
+  setOcrAllProgress: (ocrAllProgress) => set({ ocrAllProgress }),
 
   setScrollToPage: (scrollToPage) => set({ scrollToPage }),
 

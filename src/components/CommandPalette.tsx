@@ -8,6 +8,8 @@ import {
   ImagePlus,
   Square,
   ScanText,
+  ScanSearch,
+  FileText,
   Download,
   Highlighter,
   Underline,
@@ -23,6 +25,7 @@ import {
 } from "lucide-react";
 import { useEditorStore } from "../store/useEditorStore";
 import { useEditorActions } from "../hooks/useEditorActions";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 type Props = {
   onClose: () => void;
@@ -56,6 +59,7 @@ export function CommandPalette({ onClose }: Props) {
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const trapRef = useFocusTrap<HTMLDivElement>(true, onClose);
 
   const noFile = !file;
 
@@ -216,12 +220,28 @@ export function CommandPalette({ onClose }: Props) {
         run: () => runAndClose(actions.extractText),
       },
       {
+        id: "extract-all",
+        group: "Export",
+        label: "Extract Text (OCR all pages)",
+        icon: <ScanSearch size={16} />,
+        disabled: noFile || ocrBusy,
+        run: () => runAndClose(actions.extractAllPages),
+      },
+      {
         id: "download",
         group: "Export",
         label: "Download PDF",
         icon: <Download size={16} />,
         disabled: noFile,
         run: () => runAndClose(() => void actions.downloadPdf()),
+      },
+      {
+        id: "download-docx",
+        group: "Export",
+        label: "Export DOCX (formatted)",
+        icon: <FileText size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(() => void actions.downloadDocx()),
       },
       {
         id: "compress",
@@ -277,10 +297,23 @@ export function CommandPalette({ onClose }: Props) {
   return (
     <>
       <div className="palette-backdrop" onClick={onClose} />
-      <div className="palette" role="dialog" aria-modal="true" aria-label="Command palette">
+      <div
+        ref={trapRef}
+        className="palette"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
+      >
         <input
           ref={inputRef}
           className="palette-input"
+          role="combobox"
+          aria-label="Search commands"
+          aria-expanded="true"
+          aria-controls="palette-listbox"
+          aria-activedescendant={filtered.length ? `palette-opt-${activeIndex}` : undefined}
+          autoComplete="off"
+          spellCheck={false}
           placeholder="Type a command…"
           value={query}
           onChange={(e) => {
@@ -289,14 +322,16 @@ export function CommandPalette({ onClose }: Props) {
           }}
           onKeyDown={onKeyDown}
         />
-        <div className="palette-list">
+        <div className="palette-list" id="palette-listbox" role="listbox" aria-label="Commands">
           {filtered.length === 0 && <div className="palette-empty">No matching commands</div>}
           {GROUP_ORDER.map((group) => {
             const items = filtered.filter((a) => a.group === group);
             if (items.length === 0) return null;
             return (
-              <div key={group}>
-                <div className="palette-group-label">{group}</div>
+              <div key={group} role="group" aria-label={group}>
+                <div className="palette-group-label" role="presentation">
+                  {group}
+                </div>
                 {items.map((action) => {
                   flatIndex += 1;
                   const isActive = flatIndex === activeIndex;
@@ -304,6 +339,9 @@ export function CommandPalette({ onClose }: Props) {
                     <button
                       key={action.id}
                       type="button"
+                      id={`palette-opt-${flatIndex}`}
+                      role="option"
+                      aria-selected={isActive}
                       className={isActive ? "palette-item active" : "palette-item"}
                       disabled={action.disabled}
                       onClick={action.run}
