@@ -7,6 +7,7 @@ import {
   ImagePlus,
   Square,
   ScanText,
+  ScanSearch,
   Command,
   Highlighter,
   Underline,
@@ -23,16 +24,20 @@ type RailButtonProps = {
   icon: ReactNode;
   tip: string;
   active?: boolean;
+  /** When true, the button is a toggle and exposes its state via aria-pressed. */
+  toggle?: boolean;
   disabled?: boolean;
   onClick: () => void;
 };
 
-function RailButton({ icon, tip, active, disabled, onClick }: RailButtonProps) {
+function RailButton({ icon, tip, active, toggle, disabled, onClick }: RailButtonProps) {
   return (
     <button
       type="button"
       className={active ? "rail-btn active" : "rail-btn"}
       data-tip={tip}
+      aria-label={tip}
+      aria-pressed={toggle ? !!active : undefined}
       disabled={disabled}
       onClick={onClick}
     >
@@ -51,8 +56,16 @@ export function ToolRail({ onOpenPalette, onTogglePages, pagesActive }: Props) {
   const file = useEditorStore((s) => s.file);
   const mode = useEditorStore((s) => s.mode);
   const ocrBusy = useEditorStore((s) => s.ocrBusy);
-  const { setMode, addText, pickImage, addRectangle, extractText, openSignature, convertFile } =
-    useEditorActions();
+  const {
+    setMode,
+    addText,
+    pickImage,
+    addRectangle,
+    extractText,
+    extractAllPages,
+    openSignature,
+    convertFile,
+  } = useEditorActions();
 
   const noFile = !file;
 
@@ -62,6 +75,7 @@ export function ToolRail({ onOpenPalette, onTogglePages, pagesActive }: Props) {
         icon={icon}
         tip={tip}
         active={mode === value}
+        toggle
         disabled={noFile || disabled}
         onClick={() => setMode(value)}
       />
@@ -76,7 +90,12 @@ export function ToolRail({ onOpenPalette, onTogglePages, pagesActive }: Props) {
 
       <span className="rail-divider" />
 
-      <RailButton icon={<Type size={18} />} tip="Add Text (T)" disabled={noFile} onClick={addText} />
+      <RailButton
+        icon={<Type size={18} />}
+        tip="Add Text (T)"
+        disabled={noFile}
+        onClick={addText}
+      />
       <RailButton
         icon={<ImagePlus size={18} />}
         tip="Add Image"
@@ -89,7 +108,12 @@ export function ToolRail({ onOpenPalette, onTogglePages, pagesActive }: Props) {
         disabled={noFile}
         onClick={openSignature}
       />
-      <RailButton icon={<Square size={18} />} tip="Add Box" disabled={noFile} onClick={addRectangle} />
+      <RailButton
+        icon={<Square size={18} />}
+        tip="Add Box"
+        disabled={noFile}
+        onClick={addRectangle}
+      />
 
       <span className="rail-divider" />
 
@@ -104,6 +128,7 @@ export function ToolRail({ onOpenPalette, onTogglePages, pagesActive }: Props) {
         icon={<Files size={18} />}
         tip="Organize pages"
         active={pagesActive}
+        toggle
         disabled={noFile}
         onClick={onTogglePages}
       />
@@ -114,10 +139,12 @@ export function ToolRail({ onOpenPalette, onTogglePages, pagesActive }: Props) {
         onClick={extractText}
       />
       <RailButton
-        icon={<FileInput size={18} />}
-        tip="Convert file to PDF"
-        onClick={convertFile}
+        icon={<ScanSearch size={18} />}
+        tip="Extract Text (OCR all pages)"
+        disabled={noFile || ocrBusy}
+        onClick={extractAllPages}
       />
+      <RailButton icon={<FileInput size={18} />} tip="Convert file to PDF" onClick={convertFile} />
 
       <span className="rail-spacer" />
 

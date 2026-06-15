@@ -112,6 +112,13 @@ export function useEditorActions() {
     requestOcrPage(selectedPageIndex);
   }
 
+  /** OCR every page of the document (renders each off-screen in PdfViewer). */
+  function extractAllPages() {
+    const { file, ocrBusy, requestOcrAll } = useEditorStore.getState();
+    if (!file || ocrBusy) return;
+    requestOcrAll();
+  }
+
   function setMode(mode: import("../store/useEditorStore").EditorMode) {
     if (!useEditorStore.getState().file) return;
     useEditorStore.getState().setMode(mode);
@@ -176,6 +183,31 @@ export function useEditorActions() {
       hooks.onSuccess?.();
     } catch {
       useToastStore.getState().addToast("Could not export this PDF.", "error");
+      hooks.onError?.();
+    }
+  }
+
+  /** Export the OCR/text edits as a formatted .docx (headings + bullet lists). */
+  async function downloadDocx(hooks: DownloadHooks = {}) {
+    const { file, edits, pageOrder, numPages } = useEditorStore.getState();
+    if (!file) return;
+
+    hooks.onStart?.();
+    try {
+      const { exportDocx } = await import("../lib/exportDocx");
+      const order = pageOrder.length ? pageOrder : Array.from({ length: numPages }, (_, i) => i);
+      const ok = await exportDocx(edits, file.name.replace(/\.pdf$/i, "") + ".docx", order);
+      if (ok) {
+        useToastStore.getState().addToast("DOCX exported", "success");
+        hooks.onSuccess?.();
+      } else {
+        useToastStore
+          .getState()
+          .addToast("No text to export — run OCR or add text first.", "info");
+        hooks.onError?.();
+      }
+    } catch {
+      useToastStore.getState().addToast("Could not export DOCX.", "error");
       hooks.onError?.();
     }
   }
@@ -250,6 +282,7 @@ export function useEditorActions() {
     addText,
     addRectangle,
     extractText,
+    extractAllPages,
     setMode,
     rotatePage,
     deletePage,
@@ -257,6 +290,7 @@ export function useEditorActions() {
     setSearch,
     openSplit,
     downloadPdf,
+    downloadDocx,
     compressPdf,
     mergePdfs,
     splitPdf,

@@ -49,8 +49,8 @@
   --r-pill: 999px;
 
   /* Type — system sans + native mono (no font dependency) */
-  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
+  --font-sans:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace;
 
   /* The PDF page reads as elevated paper — the one place a shadow earns its keep. */
@@ -70,10 +70,38 @@ body {
   background: var(--bg);
   color: var(--fg);
   -webkit-font-smoothing: antialiased;
+  /* The document surface (scroll area, page canvas) is light; dark chrome opts
+     back in to color-scheme: dark locally so its native controls render right. */
+  color-scheme: light;
 }
 
 button {
   font: inherit;
+  /* Remove the 300ms double-tap zoom delay on touch devices. */
+  touch-action: manipulation;
+}
+
+/* Dark-surface chrome: fixes native <select>, scrollbars, and form controls
+   rendered inside these regions under OS dark mode. */
+.topbar,
+.tool-rail,
+.text-format-toolbar,
+.palette,
+.sig-modal,
+.split-dialog {
+  color-scheme: dark;
+}
+
+/* Honor reduced-motion: drop entrance animations and shorten transitions. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* App shell: top bar spans the full width; below it a slim rail + the canvas. */
@@ -560,12 +588,17 @@ button {
   outline: none;
 }
 
+.palette-input:focus-visible {
+  border-bottom-color: oklch(60% 0.16 250 / 0.9);
+}
+
 .palette-input::placeholder {
   color: var(--fg-faint);
 }
 
 .palette-list {
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 6px;
 }
 
@@ -867,6 +900,7 @@ button {
   margin: 0;
   padding: 4px 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   flex: 1 1 auto;
 }
 
@@ -1020,6 +1054,8 @@ button {
   inset: 0;
   z-index: 4;
   cursor: crosshair;
+  /* Pointer-drag to select a region must not scroll/zoom the page on touch. */
+  touch-action: none;
 }
 
 .ocr-selection-rect {
@@ -1085,6 +1121,21 @@ button {
 
 .ocr-spinner {
   animation: ocr-spin 0.9s linear infinite;
+}
+
+.ocr-cancel {
+  margin-left: 6px;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--fg);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ocr-cancel:hover {
+  background: var(--surface-2, rgba(255, 255, 255, 0.08));
 }
 
 .edit-box img {
@@ -1239,6 +1290,8 @@ button {
   inset: 0;
   z-index: 4;
   cursor: crosshair;
+  /* Pointer-drag to draw/markup must not scroll/zoom the page on touch. */
+  touch-action: none;
 }
 .annotate-preview {
   position: absolute;
@@ -1325,6 +1378,7 @@ button {
   z-index: 5;
   cursor: crosshair;
   background: oklch(0% 0 0 / 0.18);
+  touch-action: none;
 }
 .crop-rect {
   position: absolute;
@@ -1371,6 +1425,7 @@ button {
 .page-panel-list {
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 8px;
   display: flex;
   flex-direction: column;
@@ -1390,6 +1445,10 @@ button {
 .page-thumb.current {
   border-color: oklch(55% 0.14 250 / 0.7);
   box-shadow: 0 0 0 1px oklch(55% 0.14 250 / 0.5);
+}
+.page-thumb:focus-visible {
+  outline: 2px solid oklch(55% 0.16 250 / 0.85);
+  outline-offset: 2px;
 }
 .page-thumb.dragging {
   opacity: 0.5;
@@ -1423,12 +1482,18 @@ button {
   opacity: 0;
   transition: opacity var(--t-fast);
 }
-.page-thumb:hover .page-thumb-del {
+.page-thumb:hover .page-thumb-del,
+.page-thumb:focus-within .page-thumb-del,
+.page-thumb-del:focus-visible {
   opacity: 1;
 }
-.page-thumb-del:hover {
+.page-thumb-del:hover:not(:disabled) {
   background: var(--error);
   color: white;
+}
+.page-thumb-del:disabled {
+  opacity: 0;
+  cursor: not-allowed;
 }
 .page-thumb-skeleton {
   width: 110px;
@@ -1452,6 +1517,9 @@ button {
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   box-shadow: 0 8px 24px oklch(0% 0 0 / 0.18);
+}
+.find-bar:focus-within {
+  border-color: oklch(60% 0.16 250 / 0.7);
 }
 .find-icon {
   color: var(--muted, var(--fg));
@@ -1489,6 +1557,10 @@ button {
 .find-bar button:disabled {
   opacity: 0.4;
   cursor: default;
+}
+.find-bar button:focus-visible {
+  outline: 2px solid oklch(60% 0.16 250 / 0.85);
+  outline-offset: 1px;
 }
 
 /* Signature + split dialogs --------------------------------------------- */
@@ -1547,6 +1619,10 @@ button {
   color: var(--surface);
   border-color: var(--fg);
 }
+.sig-tabs button:focus-visible {
+  outline: 2px solid oklch(60% 0.16 250 / 0.85);
+  outline-offset: 2px;
+}
 .sig-canvas-wrap {
   position: relative;
 }
@@ -1585,6 +1661,10 @@ button {
   color: var(--fg);
   font-size: 14px;
   outline: none;
+}
+.sig-type-input:focus-visible {
+  border-color: oklch(60% 0.16 250 / 0.9);
+  box-shadow: 0 0 0 2px oklch(60% 0.16 250 / 0.25);
 }
 .sig-type-preview {
   height: 90px;
