@@ -149,9 +149,7 @@ function blockFromRuns(items: RawItem[], id: number): ScreenTextItem {
       const prev = items[idx - 1];
       const gap = it.x - (prev.x + prev.width);
       const needsSpace =
-        gap > it.fontSize * 0.15 &&
-        !prev.str.endsWith(" ") &&
-        !it.str.startsWith(" ");
+        gap > it.fontSize * 0.15 && !prev.str.endsWith(" ") && !it.str.startsWith(" ");
       if (needsSpace) text = ` ${text}`;
     }
     return {

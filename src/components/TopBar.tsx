@@ -1,5 +1,13 @@
 import { useState } from "react";
-import { FilePlus2, Download, Loader2, Check, ChevronLeft, ChevronRight, Minimize2 } from "lucide-react";
+import {
+  FilePlus2,
+  Download,
+  Loader2,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Minimize2,
+} from "lucide-react";
 import { useEditorStore } from "../store/useEditorStore";
 import { useEditorActions } from "../hooks/useEditorActions";
 
@@ -17,11 +25,20 @@ export function TopBar() {
 
   const [downloadState, setDownloadState] = useState<DownloadState>("idle");
   const [compressState, setCompressState] = useState<DownloadState>("idle");
+  // Draft text for the page-jump input; null means "mirror the live page".
+  const [pageDraft, setPageDraft] = useState<string | null>(null);
 
   function goToPage(index: number) {
     if (index < 0 || index >= numPages) return;
     setSelectedPageIndex(index);
     scrollToPage?.(index);
+  }
+
+  function commitPageDraft() {
+    if (pageDraft === null) return;
+    const n = parseInt(pageDraft, 10);
+    if (!Number.isNaN(n)) goToPage(Math.min(Math.max(n, 1), numPages) - 1);
+    setPageDraft(null); // snap back to mirroring the live page
   }
 
   function onDownload() {
@@ -72,9 +89,40 @@ export function TopBar() {
           >
             <ChevronLeft size={15} />
           </button>
-          <span className="topbar-page-info">
-            {selectedPageIndex + 1} / {numPages}
-          </span>
+          <form
+            className="topbar-page-info"
+            onSubmit={(e) => {
+              e.preventDefault();
+              commitPageDraft();
+              (e.currentTarget.querySelector("input") as HTMLInputElement | null)?.blur();
+            }}
+          >
+            <input
+              type="text"
+              inputMode="numeric"
+              className="topbar-page-input"
+              aria-label="Page number"
+              value={pageDraft ?? String(selectedPageIndex + 1)}
+              onChange={(e) => setPageDraft(e.target.value.replace(/[^0-9]/g, ""))}
+              onFocus={(e) => e.target.select()}
+              onBlur={commitPageDraft}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  goToPage(selectedPageIndex + 1);
+                  setPageDraft(null);
+                } else if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  goToPage(selectedPageIndex - 1);
+                  setPageDraft(null);
+                } else if (e.key === "Escape") {
+                  setPageDraft(null);
+                  (e.target as HTMLInputElement).blur();
+                }
+              }}
+            />
+            <span className="topbar-page-total"> / {numPages}</span>
+          </form>
           <button
             type="button"
             className="topbar-page-nav"

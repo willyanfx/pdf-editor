@@ -22,6 +22,8 @@ import {
   Minimize2,
   RotateCw,
   Trash2,
+  MoveHorizontal,
+  Maximize,
 } from "lucide-react";
 import { useEditorStore } from "../store/useEditorStore";
 import { useEditorActions } from "../hooks/useEditorActions";
@@ -33,7 +35,7 @@ type Props = {
 
 type PaletteAction = {
   id: string;
-  group: "File" | "Mode" | "Add" | "Annotate" | "Pages" | "Export";
+  group: "File" | "Mode" | "Add" | "Annotate" | "Pages" | "View" | "Export";
   label: string;
   icon: ReactNode;
   shortcut?: string;
@@ -47,6 +49,7 @@ const GROUP_ORDER: PaletteAction["group"][] = [
   "Add",
   "Annotate",
   "Pages",
+  "View",
   "Export",
 ];
 
@@ -210,6 +213,33 @@ export function CommandPalette({ onClose }: Props) {
         icon: <Trash2 size={16} />,
         disabled: noFile,
         run: () => runAndClose(() => actions.deletePage()),
+      },
+      {
+        id: "fit-width",
+        group: "View",
+        label: "Zoom: Fit Width",
+        icon: <MoveHorizontal size={16} />,
+        shortcut: "W",
+        disabled: noFile,
+        run: () => runAndClose(() => useEditorStore.getState().setZoomPreset("fit-width")),
+      },
+      {
+        id: "fit-page",
+        group: "View",
+        label: "Zoom: Fit Page",
+        icon: <Maximize size={16} />,
+        shortcut: "P",
+        disabled: noFile,
+        run: () => runAndClose(() => useEditorStore.getState().setZoomPreset("fit-page")),
+      },
+      {
+        id: "zoom-reset",
+        group: "View",
+        label: "Zoom: Reset to 100%",
+        icon: <Maximize size={16} />,
+        shortcut: "⌘0",
+        disabled: noFile,
+        run: () => runAndClose(() => useEditorStore.getState().resetZoom()),
       },
       {
         id: "extract",

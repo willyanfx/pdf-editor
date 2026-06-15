@@ -38,11 +38,33 @@ export default function App() {
         return;
       }
 
-      // ⌘F / Ctrl+F opens find-in-page (only with a doc open).
+      // ⌘F / Ctrl+F toggles find-in-page (only with a doc open).
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
         if (useEditorStore.getState().file) {
           e.preventDefault();
-          setFindOpen(true);
+          setFindOpen((v) => !v);
+          return;
+        }
+      }
+
+      // ⌘/Ctrl + +/-/0 zoom (the browser-PDF-viewer convention). These clear any
+      // active fit preset via the store's manual zoom actions.
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && useEditorStore.getState().file) {
+        const store = useEditorStore.getState();
+        // "=" is the unshifted "+" key; accept both, plus the numpad variants.
+        if (e.key === "=" || e.key === "+") {
+          e.preventDefault();
+          store.zoomIn();
+          return;
+        }
+        if (e.key === "-" || e.key === "_") {
+          e.preventDefault();
+          store.zoomOut();
+          return;
+        }
+        if (e.key === "0") {
+          e.preventDefault();
+          store.resetZoom();
           return;
         }
       }
@@ -92,6 +114,16 @@ export default function App() {
           store.setMode("ink");
           return;
         }
+        if (k === "w") {
+          e.preventDefault();
+          store.setZoomPreset("fit-width");
+          return;
+        }
+        if (k === "p") {
+          e.preventDefault();
+          store.setZoomPreset("fit-page");
+          return;
+        }
       }
 
       // Nudge / delete the selected edit.
@@ -120,6 +152,22 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [addText]);
+
+  // Warn before leaving if the open document has unsaved edits. Edits live only
+  // in memory (no backend), so a reload/close would silently discard them.
+  useEffect(() => {
+    function onBeforeUnload(e: BeforeUnloadEvent) {
+      const { file, edits, pageOps } = useEditorStore.getState();
+      const dirty = !!file && (edits.length > 0 || pageOps.length > 0);
+      if (dirty) {
+        e.preventDefault();
+        // Legacy requirement for some browsers to show the prompt.
+        e.returnValue = "";
+      }
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, []);
 
   return (
     <main

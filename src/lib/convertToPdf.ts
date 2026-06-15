@@ -82,7 +82,15 @@ async function spreadsheetToPdf(file: File): Promise<Uint8Array> {
     for (const row of rows) {
       // Pad cells into fixed-width columns and join with spaces (WinAnsi standard
       // fonts can't encode tab 0x09), then render with the monospace Courier path.
-      lines.push((row ?? []).map((c) => String(c ?? "").padEnd(16).slice(0, 16)).join(" "));
+      lines.push(
+        (row ?? [])
+          .map((c) =>
+            String(c ?? "")
+              .padEnd(16)
+              .slice(0, 16),
+          )
+          .join(" "),
+      );
     }
     lines.push("");
   }
@@ -124,7 +132,13 @@ async function layoutTextPdf(paragraphs: string[], mono = false): Promise<Uint8A
 
   const drawLine = (text: string) => {
     if (y < MARGIN) newPage();
-    page.drawText(sanitize(text), { x: MARGIN, y, size: FONT_SIZE, font, color: rgb(0.1, 0.1, 0.1) });
+    page.drawText(sanitize(text), {
+      x: MARGIN,
+      y,
+      size: FONT_SIZE,
+      font,
+      color: rgb(0.1, 0.1, 0.1),
+    });
     y -= LINE_HEIGHT;
   };
 

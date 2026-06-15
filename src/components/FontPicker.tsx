@@ -1,10 +1,4 @@
-import {
-  useState,
-  useRef,
-  useEffect,
-  useCallback,
-  type KeyboardEvent,
-} from "react";
+import { useState, useRef, useEffect, useCallback, type KeyboardEvent } from "react";
 import type { FontFamily } from "../store/useEditorStore";
 import {
   STANDARD_FAMILIES,
@@ -91,9 +85,7 @@ export function FontPicker({ value, onChange }: FontPickerProps) {
 
   // Filtered flat option list.
   const filtered: FontOption[] = query.trim()
-    ? ALL_OPTIONS.filter((o) =>
-        o.family.toLowerCase().includes(query.trim().toLowerCase()),
-      )
+    ? ALL_OPTIONS.filter((o) => o.family.toLowerCase().includes(query.trim().toLowerCase()))
     : ALL_OPTIONS;
 
   // Open the popup.
@@ -142,9 +134,7 @@ export function FontPicker({ value, onChange }: FontPickerProps) {
   // Scroll active item into view.
   useEffect(() => {
     if (activeIdx < 0 || !listRef.current) return;
-    const el = listRef.current.querySelector<HTMLElement>(
-      `[data-idx="${activeIdx}"]`,
-    );
+    const el = listRef.current.querySelector<HTMLElement>(`[data-idx="${activeIdx}"]`);
     el?.scrollIntoView({ block: "nearest" });
 
     // Lazy-load preview for active item.
@@ -250,16 +240,14 @@ export function FontPicker({ value, onChange }: FontPickerProps) {
         }}
       >
         <span className="fp-trigger-label">{value}</span>
-        <span className="fp-trigger-arrow" aria-hidden="true">&#9660;</span>
+        <span className="fp-trigger-arrow" aria-hidden="true">
+          &#9660;
+        </span>
       </button>
 
       {/* Popup */}
       {open && (
-        <div
-          className="fp-popup"
-          role="dialog"
-          aria-label="Choose font family"
-        >
+        <div className="fp-popup" role="dialog" aria-label="Choose font family">
           {/* Search */}
           <div className="fp-search-wrap">
             <input
@@ -274,9 +262,7 @@ export function FontPicker({ value, onChange }: FontPickerProps) {
               aria-autocomplete="list"
               aria-controls="fp-list"
               aria-expanded={true}
-              aria-activedescendant={
-                activeIdx >= 0 ? `fp-opt-${activeIdx}` : undefined
-              }
+              aria-activedescendant={activeIdx >= 0 ? `fp-opt-${activeIdx}` : undefined}
               autoComplete="off"
               spellCheck={false}
             />

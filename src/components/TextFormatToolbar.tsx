@@ -63,7 +63,8 @@ export function TextFormatToolbar({ edit, getSelectionRange }: Props) {
 
       <select
         value={edit.fontSize}
-        title="Size"
+        title="Font size"
+        aria-label="Font size"
         onChange={(e) => {
           const size = Number(e.target.value);
           applyRunStyle({ fontSize: size }, { fontSize: size });
@@ -80,23 +81,27 @@ export function TextFormatToolbar({ edit, getSelectionRange }: Props) {
         type="button"
         className={isActive("bold", edit.bold) ? "active" : ""}
         title="Bold"
+        aria-label="Bold"
+        aria-pressed={isActive("bold", edit.bold)}
         // Don't steal focus from the editor, so its selection stays live and the
         // formatted range can be re-highlighted after the runs update.
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => applyRunStyle({ bold: !isActive("bold", edit.bold) }, { bold: !edit.bold })}
       >
-        <Bold size={15} />
+        <Bold size={15} aria-hidden="true" />
       </button>
       <button
         type="button"
         className={isActive("italic", edit.italic) ? "active" : ""}
         title="Italic"
+        aria-label="Italic"
+        aria-pressed={isActive("italic", edit.italic)}
         onMouseDown={(e) => e.preventDefault()}
         onClick={() =>
           applyRunStyle({ italic: !isActive("italic", edit.italic) }, { italic: !edit.italic })
         }
       >
-        <Italic size={15} />
+        <Italic size={15} aria-hidden="true" />
       </button>
 
       <span className="tft-divider" />
@@ -105,25 +110,31 @@ export function TextFormatToolbar({ edit, getSelectionRange }: Props) {
         type="button"
         className={edit.align === "left" ? "active" : ""}
         title="Align left"
+        aria-label="Align left"
+        aria-pressed={edit.align === "left"}
         onClick={() => updateEdit(edit.id, { align: "left" })}
       >
-        <AlignLeft size={15} />
+        <AlignLeft size={15} aria-hidden="true" />
       </button>
       <button
         type="button"
         className={edit.align === "center" ? "active" : ""}
         title="Align center"
+        aria-label="Align center"
+        aria-pressed={edit.align === "center"}
         onClick={() => updateEdit(edit.id, { align: "center" })}
       >
-        <AlignCenter size={15} />
+        <AlignCenter size={15} aria-hidden="true" />
       </button>
       <button
         type="button"
         className={edit.align === "right" ? "active" : ""}
         title="Align right"
+        aria-label="Align right"
+        aria-pressed={edit.align === "right"}
         onClick={() => updateEdit(edit.id, { align: "right" })}
       >
-        <AlignRight size={15} />
+        <AlignRight size={15} aria-hidden="true" />
       </button>
 
       <span className="tft-divider" />
@@ -131,6 +142,7 @@ export function TextFormatToolbar({ edit, getSelectionRange }: Props) {
       <label className="tft-color" title="Text color">
         <input
           type="color"
+          aria-label="Text color"
           value={edit.color}
           onChange={(e) => applyRunStyle({ color: e.target.value }, { color: e.target.value })}
         />
@@ -138,4 +150,3 @@ export function TextFormatToolbar({ edit, getSelectionRange }: Props) {
     </div>
   );
 }
-

@@ -32,13 +32,14 @@ export function AnnotateLayer({ pageIndex }: Props) {
   const isMarkup = mode === "highlight" || mode === "underline";
   if (!isMarkup && mode !== "comment") return null;
 
-  function pointIn(e: React.MouseEvent): { x: number; y: number } {
+  function pointIn(e: React.PointerEvent): { x: number; y: number } {
     const bounds = layerRef.current!.getBoundingClientRect();
     return { x: e.clientX - bounds.left, y: e.clientY - bounds.top };
   }
 
-  function onMouseDown(e: React.MouseEvent) {
+  function onPointerDown(e: React.PointerEvent) {
     e.stopPropagation();
+    layerRef.current?.setPointerCapture(e.pointerId);
     const p = pointIn(e);
 
     if (mode === "comment") {
@@ -61,7 +62,7 @@ export function AnnotateLayer({ pageIndex }: Props) {
     setRect({ x: p.x, y: p.y, width: 0, height: 0 });
   }
 
-  function onMouseMove(e: React.MouseEvent) {
+  function onPointerMove(e: React.PointerEvent) {
     const start = startRef.current;
     if (!start) return;
     const p = pointIn(e);
@@ -73,7 +74,7 @@ export function AnnotateLayer({ pageIndex }: Props) {
     });
   }
 
-  function onMouseUp() {
+  function onPointerUp() {
     const region = rect;
     startRef.current = null;
     setRect(null);
@@ -97,14 +98,12 @@ export function AnnotateLayer({ pageIndex }: Props) {
     <div
       ref={layerRef}
       className="annotate-layer"
-      onMouseDown={onMouseDown}
-      onMouseMove={onMouseMove}
-      onMouseUp={onMouseUp}
-      onMouseLeave={() => {
-        if (startRef.current) {
-          startRef.current = null;
-          setRect(null);
-        }
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={() => {
+        startRef.current = null;
+        setRect(null);
       }}
     >
       {rect && (

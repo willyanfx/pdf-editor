@@ -2,6 +2,7 @@ import { useState } from "react";
 import { X } from "lucide-react";
 import { useEditorStore } from "../store/useEditorStore";
 import { useEditorActions } from "../hooks/useEditorActions";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 /**
  * Split-by-range dialog. The spec is a comma-separated list of 1-based pages or
@@ -15,13 +16,20 @@ export function SplitDialog() {
   const [spec, setSpec] = useState("");
 
   const onClose = () => useEditorStore.getState().setSplitDialogOpen(false);
+  const trapRef = useFocusTrap<HTMLDivElement>(open, onClose);
 
   if (!open) return null;
 
   return (
     <>
       <div className="palette-backdrop" onClick={onClose} />
-      <div className="split-dialog" role="dialog" aria-modal="true" aria-label="Split PDF">
+      <div
+        ref={trapRef}
+        className="split-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Split PDF"
+      >
         <div className="sig-header">
           <span>Split PDF</span>
           <button type="button" className="sig-close" onClick={onClose} aria-label="Close">
@@ -29,15 +37,17 @@ export function SplitDialog() {
           </button>
         </div>
         <p className="split-hint">
-          Document has {numPages} page{numPages === 1 ? "" : "s"}. Enter page ranges
-          (e.g. <code>1-3, 5, 8-10</code>) — each becomes one file. Leave blank to
-          split every page.
+          Document has {numPages} page{numPages === 1 ? "" : "s"}. Enter page ranges (e.g.{" "}
+          <code>1-3, 5, 8-10</code>) — each becomes one file. Leave blank to split every page.
         </p>
         <input
           className="sig-type-input"
+          aria-label="Page ranges to split"
           placeholder="e.g. 1-3, 5, 8-10"
           value={spec}
           onChange={(e) => setSpec(e.target.value)}
+          autoComplete="off"
+          spellCheck={false}
           autoFocus
         />
         <div className="sig-actions">

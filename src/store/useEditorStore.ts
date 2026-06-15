@@ -2,11 +2,17 @@ import { create } from "zustand";
 
 /** Zoom bounds and step for the bottom-bar zoom controls. */
 export const MIN_ZOOM = 0.5;
-export const MAX_ZOOM = 3;
+// 4x (not 3x) so fit-width on a wide monitor — which can resolve above 300% for
+// a narrow page — isn't clipped by the clamp.
+export const MAX_ZOOM = 4;
 export const ZOOM_STEP = 0.1;
 
+/** Auto-fit zoom modes. null = a manual numeric zoom is in effect. */
+export type ZoomPreset = "fit-width" | "fit-page" | null;
+
 /** Clamp + round a zoom value to avoid float drift past the bounds. */
-const clampZoom = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(z * 100) / 100));
+export const clampZoom = (z: number) =>
+  Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(z * 100) / 100));
 
 /** The three built-in PDF standard fonts (fast path — no download). */
 export type StandardFontFamily = "Helvetica" | "Times" | "Courier";
@@ -172,6 +178,9 @@ type EditorState = {
    * (so every stored edit/OCR coordinate stays in that space); zoom is applied as
    * a CSS transform on the page stage only. 1 = 100%. */
   zoom: number;
+  /** When set, PdfViewer derives `zoom` from the live container size and keeps
+   * it updated on resize. Any manual zoom (buttons / wheel / reset) clears it. */
+  zoomPreset: ZoomPreset;
 
   /** OCR runs in a WASM worker and takes seconds; surface a global spinner. */
   ocrBusy: boolean;
@@ -227,6 +236,8 @@ type EditorState = {
   zoomIn: () => void;
   zoomOut: () => void;
   resetZoom: () => void;
+  /** Toggle an auto-fit mode. Passing the active preset turns it off (→ null). */
+  setZoomPreset: (preset: ZoomPreset) => void;
   setOcrBusy: (busy: boolean) => void;
   setOcrProgress: (progress: number) => void;
   requestOcrPage: (pageIndex: number | null) => void;
@@ -239,51 +250,42 @@ type EditorState = {
   setPendingFocus: (pf: { editId: string; caretOffset: number } | null) => void;
 };
 
-export const useEditorStore = create<EditorState>((set) => ({
-  file: null,
-  edits: [],
-  pageOps: [],
-  pageOrder: [],
-  selectedEditId: null,
+/**
+ * Per-document state, all at their fresh-document defaults. setFile() resets to
+ * this on every open, so a new field added here is automatically cleared without
+ * having to remember to also reset it in setFile(). `scrollToPage` is excluded —
+ * it holds the live virtualizer callback wired up by PdfViewer, not document
+ * data, so reloading a document must not clobber it.
+ */
+const initialState = {
+  file: null as File | null,
+  edits: [] as PdfEdit[],
+  pageOps: [] as PageOp[],
+  pageOrder: [] as number[],
+  selectedEditId: null as string | null,
   selectedPageIndex: 0,
   numPages: 0,
-  mode: "select",
+  mode: "select" as EditorMode,
   zoom: 1,
+  zoomPreset: null as ZoomPreset,
   ocrBusy: false,
   ocrProgress: 0,
-  ocrRequestPageIndex: null,
+  ocrRequestPageIndex: null as number | null,
   ocrAllRequest: false,
-  ocrAllProgress: null,
+  ocrAllProgress: null as { current: number; total: number } | null,
   ocrAllCancelled: false,
-  scrollToPage: null,
-  pendingFocus: null,
+  pendingFocus: null as { editId: string; caretOffset: number } | null,
   searchQuery: "",
-  searchMatchIds: [],
+  searchMatchIds: [] as string[],
   signatureModalOpen: false,
   splitDialogOpen: false,
+};
 
-  setFile: (file) =>
-    set({
-      file,
-      edits: [],
-      pageOps: [],
-      pageOrder: [],
-      selectedEditId: null,
-      selectedPageIndex: 0,
-      numPages: 0,
-      mode: "select",
-      ocrBusy: false,
-      ocrProgress: 0,
-      ocrRequestPageIndex: null,
-      ocrAllRequest: false,
-      ocrAllProgress: null,
-      ocrAllCancelled: false,
-      pendingFocus: null,
-      searchQuery: "",
-      searchMatchIds: [],
-      signatureModalOpen: false,
-      splitDialogOpen: false,
-    }),
+export const useEditorStore = create<EditorState>((set) => ({
+  ...initialState,
+  scrollToPage: null,
+
+  setFile: (file) => set({ ...initialState, file }),
 
   addEdit: (edit) =>
     set((state) => ({
@@ -360,10 +362,15 @@ export const useEditorStore = create<EditorState>((set) => ({
 
   setMode: (mode) => set({ mode }),
 
-  setZoom: (zoom) => set({ zoom: clampZoom(zoom) }),
-  zoomIn: () => set((state) => ({ zoom: clampZoom(state.zoom + ZOOM_STEP) })),
-  zoomOut: () => set((state) => ({ zoom: clampZoom(state.zoom - ZOOM_STEP) })),
-  resetZoom: () => set({ zoom: 1 }),
+  // Manual zoom controls take over from any auto-fit mode, so they clear the
+  // preset. The auto-fit path (PdfViewer's ResizeObserver) writes `zoom` via
+  // setState directly so it can keep the derived value live without self-cancel.
+  setZoom: (zoom) => set({ zoom: clampZoom(zoom), zoomPreset: null }),
+  zoomIn: () => set((state) => ({ zoom: clampZoom(state.zoom + ZOOM_STEP), zoomPreset: null })),
+  zoomOut: () => set((state) => ({ zoom: clampZoom(state.zoom - ZOOM_STEP), zoomPreset: null })),
+  resetZoom: () => set({ zoom: 1, zoomPreset: null }),
+  setZoomPreset: (preset) =>
+    set((state) => ({ zoomPreset: state.zoomPreset === preset ? null : preset })),
 
   setOcrBusy: (ocrBusy) => set({ ocrBusy }),
 

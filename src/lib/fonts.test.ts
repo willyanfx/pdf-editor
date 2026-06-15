@@ -93,9 +93,18 @@ test("every catalog entry has at least an 'r' variant with a non-empty ttfUrl", 
 test("catalog contains the expected well-known families", () => {
   const families = new Set(GOOGLE_FONTS.map((e) => e.family));
   const required = [
-    "Roboto", "Open Sans", "Lato", "Montserrat", "Poppins",
-    "Inter", "Merriweather", "Playfair Display", "Source Code Pro",
-    "Nunito", "Raleway", "Oswald",
+    "Roboto",
+    "Open Sans",
+    "Lato",
+    "Montserrat",
+    "Poppins",
+    "Inter",
+    "Merriweather",
+    "Playfair Display",
+    "Source Code Pro",
+    "Nunito",
+    "Raleway",
+    "Oswald",
   ];
   for (const name of required) {
     expect(families.has(name), `catalog missing "${name}"`).toBe(true);
@@ -163,7 +172,5 @@ test("fetchFontTtf throws on non-ok response", async () => {
     ok: false,
     status: 404,
   } as unknown as Response);
-  await expect(fetchFontTtf("https://example.com/missing.ttf")).rejects.toThrow(
-    "404",
-  );
+  await expect(fetchFontTtf("https://example.com/missing.ttf")).rejects.toThrow("404");
 });

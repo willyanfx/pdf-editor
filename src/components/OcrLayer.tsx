@@ -32,20 +32,21 @@ export function OcrLayer({ pageIndex, getCanvas }: Props) {
 
   if (mode !== "ocr") return null;
 
-  function pointIn(e: React.MouseEvent): { x: number; y: number } {
+  function pointIn(e: React.PointerEvent): { x: number; y: number } {
     const bounds = layerRef.current!.getBoundingClientRect();
     return { x: e.clientX - bounds.left, y: e.clientY - bounds.top };
   }
 
-  function onMouseDown(e: React.MouseEvent) {
+  function onPointerDown(e: React.PointerEvent) {
     if (ocrBusy) return;
     e.stopPropagation();
+    layerRef.current?.setPointerCapture(e.pointerId);
     const p = pointIn(e);
     startRef.current = p;
     setRect({ x: p.x, y: p.y, width: 0, height: 0 });
   }
 
-  function onMouseMove(e: React.MouseEvent) {
+  function onPointerMove(e: React.PointerEvent) {
     const start = startRef.current;
     if (!start) return;
     const p = pointIn(e);
@@ -103,15 +104,13 @@ export function OcrLayer({ pageIndex, getCanvas }: Props) {
     <div
       ref={layerRef}
       className="ocr-layer"
-      onMouseDown={onMouseDown}
-      onMouseMove={onMouseMove}
-      onMouseUp={() => void onMouseUp()}
-      onMouseLeave={() => {
-        // Cancel an in-progress drag that leaves the page.
-        if (startRef.current) {
-          startRef.current = null;
-          setRect(null);
-        }
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={() => void onMouseUp()}
+      onPointerCancel={() => {
+        // Cancel an in-progress drag.
+        startRef.current = null;
+        setRect(null);
       }}
     >
       {rect && (

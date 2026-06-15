@@ -25,18 +25,19 @@ export function InkLayer({ pageIndex }: Props) {
 
   if (mode !== "ink") return null;
 
-  function pointIn(e: React.MouseEvent): Pt {
+  function pointIn(e: React.PointerEvent): Pt {
     const bounds = layerRef.current!.getBoundingClientRect();
     return { x: e.clientX - bounds.left, y: e.clientY - bounds.top };
   }
 
-  function onMouseDown(e: React.MouseEvent) {
+  function onPointerDown(e: React.PointerEvent) {
     e.stopPropagation();
+    layerRef.current?.setPointerCapture(e.pointerId);
     drawingRef.current = true;
     setPoints([pointIn(e)]);
   }
 
-  function onMouseMove(e: React.MouseEvent) {
+  function onPointerMove(e: React.PointerEvent) {
     if (!drawingRef.current) return;
     setPoints((prev) => [...prev, pointIn(e)]);
   }
@@ -71,10 +72,10 @@ export function InkLayer({ pageIndex }: Props) {
     <div
       ref={layerRef}
       className="ink-layer"
-      onMouseDown={onMouseDown}
-      onMouseMove={onMouseMove}
-      onMouseUp={commit}
-      onMouseLeave={commit}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={commit}
+      onPointerCancel={commit}
     >
       {points.length > 1 && (
         <svg className="ink-live">

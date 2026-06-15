@@ -1,5 +1,13 @@
 import fontkit from "@pdf-lib/fontkit";
-import { PDFDocument, degrees, rgb, StandardFonts, type PDFFont, type PDFPage, type RGB } from "pdf-lib";
+import {
+  PDFDocument,
+  degrees,
+  rgb,
+  StandardFonts,
+  type PDFFont,
+  type PDFPage,
+  type RGB,
+} from "pdf-lib";
 import type {
   FontFamily,
   InkEdit,
@@ -118,7 +126,12 @@ export async function wrapRuns(
     width: number,
   ) => {
     const last = line[line.length - 1];
-    if (last && last.font === style.font && last.fontSize === style.fontSize && colorEqual(last.color, style.color)) {
+    if (
+      last &&
+      last.font === style.font &&
+      last.fontSize === style.fontSize &&
+      colorEqual(last.color, style.color)
+    ) {
       last.text += text;
     } else {
       line.push({ text, font: style.font, fontSize: style.fontSize, color: style.color });
@@ -180,8 +193,7 @@ export async function exportEditedPdf(
   const order = (options.pageOrder ?? Array.from({ length: srcCount }, (_, i) => i)).filter(
     (i) => i >= 0 && i < srcCount,
   );
-  const isReordered =
-    order.length !== srcCount || order.some((origIdx, pos) => origIdx !== pos);
+  const isReordered = order.length !== srcCount || order.some((origIdx, pos) => origIdx !== pos);
 
   let pdfDoc: PDFDocument;
   // Maps an ORIGINAL page index to its position in the output (or -1 if dropped).
@@ -251,9 +263,7 @@ export async function exportEditedPdf(
   ): string | undefined {
     const { variants } = entry;
     if (variant === "bi") {
-      return (
-        variants.bi?.ttfUrl ?? variants.b?.ttfUrl ?? variants.r?.ttfUrl
-      );
+      return variants.bi?.ttfUrl ?? variants.b?.ttfUrl ?? variants.r?.ttfUrl;
     }
     if (variant === "i") {
       return variants.i?.ttfUrl ?? variants.r?.ttfUrl;
@@ -265,8 +275,7 @@ export async function exportEditedPdf(
   }
 
   const getFont = async (family: FontFamily, bold: boolean, italic: boolean): Promise<PDFFont> => {
-    const variant: FontVariantKey =
-      bold && italic ? "bi" : bold ? "b" : italic ? "i" : "r";
+    const variant: FontVariantKey = bold && italic ? "bi" : bold ? "b" : italic ? "i" : "r";
     const key = `${family}-${variant}` as FontKey;
 
     const cached = fontCache.get(key);
@@ -303,10 +312,13 @@ export async function exportEditedPdf(
 
     // Graceful fallback: use standard Helvetica matching the weight/style.
     const fallbackStdFont =
-      bold && italic ? StandardFonts.HelveticaBoldOblique
-      : bold         ? StandardFonts.HelveticaBold
-      : italic       ? StandardFonts.HelveticaOblique
-                     : StandardFonts.Helvetica;
+      bold && italic
+        ? StandardFonts.HelveticaBoldOblique
+        : bold
+          ? StandardFonts.HelveticaBold
+          : italic
+            ? StandardFonts.HelveticaOblique
+            : StandardFonts.Helvetica;
     const fallbackKey = `Helvetica-${variant}` as FontKey;
     let fallbackEmbedded = fontCache.get(fallbackKey);
     if (!fallbackEmbedded) {
@@ -384,9 +396,7 @@ export async function exportEditedPdf(
       // A thin colored rule along the baseline (underline) or middle (strikeout).
       const thickness = Math.max(1, pdfRect.height * 0.08);
       const ruleY =
-        edit.type === "underline"
-          ? pdfRect.y + thickness
-          : pdfRect.y + pdfRect.height / 2;
+        edit.type === "underline" ? pdfRect.y + thickness : pdfRect.y + pdfRect.height / 2;
       page.drawLine({
         start: { x: pdfRect.x, y: ruleY },
         end: { x: pdfRect.x + pdfRect.width, y: ruleY },
@@ -404,15 +414,13 @@ export async function exportEditedPdf(
     }
   }
 
-  return pdfDoc.save(
-    options.compress ? { useObjectStreams: true } : undefined,
-  );
+  return pdfDoc.save(options.compress ? { useObjectStreams: true } : undefined);
 }
 
 /** Apply a rotate/crop transform to an output page. */
 function applyPageOp(page: PDFPage, op: PageOp) {
   if (op.rotation) {
-    const norm = ((Math.round(op.rotation / 90) * 90) % 360 + 360) % 360;
+    const norm = (((Math.round(op.rotation / 90) * 90) % 360) + 360) % 360;
     if (norm) page.setRotation(degrees(norm));
   }
   if (op.crop) {
@@ -431,7 +439,11 @@ function applyPageOp(page: PDFPage, op: PageOp) {
 }
 
 /** Draw a small sticky-note marker (filled square + fold) for a comment. */
-function drawCommentMarker(page: PDFPage, rect: { x: number; y: number; width: number; height: number }, color: string) {
+function drawCommentMarker(
+  page: PDFPage,
+  rect: { x: number; y: number; width: number; height: number },
+  color: string,
+) {
   const size = Math.min(Math.max(rect.width, 14), 22);
   page.drawRectangle({
     x: rect.x,
@@ -583,7 +595,9 @@ async function downsampleImages(pdfBytes: Uint8Array): Promise<Uint8Array | null
     outPage.drawImage(jpeg, { x: 0, y: 0, width: base.width, height: base.height });
   }
 
-  await doc.cleanup();
+  // Fully tear down the worker-side document (not just doc.cleanup(), which only
+  // frees per-page caches) now that every page has been rasterized.
+  await loadingTask.destroy();
   return out.save({ useObjectStreams: true });
 }
 

@@ -89,6 +89,7 @@ export function ExistingImageLayer({ pageIndex, page, getCanvas }: Props) {
             type="button"
             className="existing-image-hit"
             title="Replace this image"
+            aria-label="Replace this image"
             style={{ left: item.x, top: item.y, width: item.width, height: item.height }}
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => {

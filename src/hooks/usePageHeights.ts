@@ -30,9 +30,12 @@ export function usePageHeights(file: File | null, numPages: number): number[] {
         // Read fresh bytes: pdf.js neuters the ArrayBuffer it loads, and the
         // render path consumes its own copy, so we hand this a separate buffer.
         const data = await file.arrayBuffer();
-        const doc = await pdfjs.getDocument({ data, ...PDF_DOCUMENT_OPTIONS }).promise;
+        // Keep the loadingTask: destroying it (not the resolved doc) is the
+        // pdf.js teardown that also aborts a load still in flight if we cancel.
+        const loadingTask = pdfjs.getDocument({ data, ...PDF_DOCUMENT_OPTIONS });
+        const doc = await loadingTask.promise;
         if (cancelled) {
-          void doc.destroy();
+          void loadingTask.destroy();
           return;
         }
 
@@ -44,7 +47,7 @@ export function usePageHeights(file: File | null, numPages: number): number[] {
           measured[i - 1] = (VIEWER_WIDTH / vp.width) * vp.height;
           page.cleanup();
         }
-        void doc.destroy();
+        void loadingTask.destroy();
         if (!cancelled) setHeights(measured);
       } catch {
         // On failure, leave heights empty so the caller uses its estimate.
