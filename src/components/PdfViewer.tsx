@@ -5,7 +5,12 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { UploadCloud, Loader2 } from "lucide-react";
 import { EditableLayer } from "./EditableLayer";
 import { ExistingTextLayer } from "./ExistingTextLayer";
+import { ExistingImageLayer } from "./ExistingImageLayer";
 import { OcrLayer } from "./OcrLayer";
+import { AnnotateLayer } from "./AnnotateLayer";
+import { InkLayer } from "./InkLayer";
+import { PageActionsBar } from "./PageActionsBar";
+import { PagePanel } from "./PagePanel";
 import { useEditorStore, makeCoverTextEdit } from "../store/useEditorStore";
 import { useToastStore } from "../store/useToastStore";
 import { openFiles } from "../lib/openFiles";
@@ -28,7 +33,12 @@ import "react-pdf/dist/Page/TextLayer.css";
 // Worker + wasm config lives in pdfOptions (imported above for its side effect of
 // setting GlobalWorkerOptions.workerSrc, and for PDF_DOCUMENT_OPTIONS).
 
-export function PdfViewer() {
+type PdfViewerProps = {
+  /** Whether the page-organizer thumbnail sidebar is shown. */
+  pagePanelOpen?: boolean;
+};
+
+export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
   // `file` is a stable reference (changes only when a new PDF is opened), so
   // react-pdf won't re-load on every render.
   const file = useEditorStore((s) => s.file);
@@ -44,6 +54,8 @@ export function PdfViewer() {
   const addEdit = useEditorStore((s) => s.addEdit);
   const numPages = useEditorStore((s) => s.numPages);
   const setNumPages = useEditorStore((s) => s.setNumPages);
+  const pageOrder = useEditorStore((s) => s.pageOrder);
+  const pageOps = useEditorStore((s) => s.pageOps);
   const zoom = useEditorStore((s) => s.zoom);
   const setScrollToPage = useEditorStore((s) => s.setScrollToPage);
   const addToast = useToastStore((s) => s.addToast);
@@ -188,6 +200,7 @@ export function PdfViewer() {
         loading={<p className="muted">Loading PDF…</p>}
         error={<p className="muted">Could not open this PDF.</p>}
       >
+        {pagePanelOpen && <PagePanel onClose={() => {}} />}
         {/* Zoom sizer: reserves the scaled height so the scroll container scrolls
             the full zoomed document. The inner spacer is scaled from its top
             center — pages render at VIEWER_WIDTH (keeping every stored coordinate
@@ -211,6 +224,15 @@ export function PdfViewer() {
           >
           {virtualItems.map((item) => {
             const index = item.index;
+            // Pages removed in the organizer are dropped from the view too.
+            const deleted = pageOrder.length > 0 && !pageOrder.includes(index);
+            if (deleted) return null;
+            const op = pageOps.find((o) => o.pageIndex === index);
+            const rotation = op?.rotation ? ((op.rotation % 360) + 360) % 360 : 0;
+            // Preview crop by clipping the page-shell to the kept region.
+            const clip = op?.crop
+              ? `inset(${op.crop.top}px ${op.crop.right}px ${op.crop.bottom}px ${op.crop.left}px)`
+              : undefined;
             return (
               <div
                 className="page-shell"
@@ -232,29 +254,48 @@ export function PdfViewer() {
                   selectEdit(null);
                 }}
               >
-                <Page
-                  pageNumber={index + 1}
-                  width={VIEWER_WIDTH}
-                  renderTextLayer={false}
-                  renderAnnotationLayer={false}
-                  canvasRef={(el) => {
-                    canvasRefs.current.set(index, el);
+                <div
+                  className="page-transform"
+                  style={{
+                    transform: rotation ? `rotate(${rotation}deg)` : undefined,
+                    clipPath: clip,
                   }}
-                  onLoadSuccess={(page) => {
-                    pagesRef.current.set(index, page as unknown as PDFPageProxy);
-                    force((n) => n + 1);
-                  }}
-                />
-                <ExistingTextLayer
+                >
+                  <Page
+                    pageNumber={index + 1}
+                    width={VIEWER_WIDTH}
+                    renderTextLayer={false}
+                    renderAnnotationLayer={false}
+                    canvasRef={(el) => {
+                      canvasRefs.current.set(index, el);
+                    }}
+                    onLoadSuccess={(page) => {
+                      pagesRef.current.set(index, page as unknown as PDFPageProxy);
+                      force((n) => n + 1);
+                    }}
+                  />
+                  <ExistingTextLayer
+                    pageIndex={index}
+                    page={pagesRef.current.get(index) ?? null}
+                    getCanvas={() => canvasRefs.current.get(index) ?? null}
+                  />
+                  <ExistingImageLayer
+                    pageIndex={index}
+                    page={pagesRef.current.get(index) ?? null}
+                    getCanvas={() => canvasRefs.current.get(index) ?? null}
+                  />
+                  <OcrLayer
+                    pageIndex={index}
+                    getCanvas={() => canvasRefs.current.get(index) ?? null}
+                  />
+                  <AnnotateLayer pageIndex={index} />
+                  <InkLayer pageIndex={index} />
+                  <EditableLayer pageIndex={index} />
+                </div>
+                <PageActionsBar
                   pageIndex={index}
-                  page={pagesRef.current.get(index) ?? null}
-                  getCanvas={() => canvasRefs.current.get(index) ?? null}
+                  pageHeight={(pageHeights[index] ?? ESTIMATED_PAGE_HEIGHT)}
                 />
-                <OcrLayer
-                  pageIndex={index}
-                  getCanvas={() => canvasRefs.current.get(index) ?? null}
-                />
-                <EditableLayer pageIndex={index} />
               </div>
             );
           })}

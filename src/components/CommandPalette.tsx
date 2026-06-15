@@ -9,6 +9,17 @@ import {
   Square,
   ScanText,
   Download,
+  Highlighter,
+  Underline,
+  MessageSquare,
+  PenTool,
+  Signature,
+  FileInput,
+  Combine,
+  Scissors,
+  Minimize2,
+  RotateCw,
+  Trash2,
 } from "lucide-react";
 import { useEditorStore } from "../store/useEditorStore";
 import { useEditorActions } from "../hooks/useEditorActions";
@@ -19,7 +30,7 @@ type Props = {
 
 type PaletteAction = {
   id: string;
-  group: "File" | "Mode" | "Add" | "Export";
+  group: "File" | "Mode" | "Add" | "Annotate" | "Pages" | "Export";
   label: string;
   icon: ReactNode;
   shortcut?: string;
@@ -27,7 +38,14 @@ type PaletteAction = {
   run: () => void;
 };
 
-const GROUP_ORDER: PaletteAction["group"][] = ["File", "Mode", "Add", "Export"];
+const GROUP_ORDER: PaletteAction["group"][] = [
+  "File",
+  "Mode",
+  "Add",
+  "Annotate",
+  "Pages",
+  "Export",
+];
 
 /** In-house command palette (no cmdk dependency). Opened with ⌘K from App. */
 export function CommandPalette({ onClose }: Props) {
@@ -55,6 +73,28 @@ export function CommandPalette({ onClose }: Props) {
         label: "Open PDF",
         icon: <FilePlus2 size={16} />,
         run: () => runAndClose(actions.pickPdf),
+      },
+      {
+        id: "convert",
+        group: "File",
+        label: "Convert file to PDF…",
+        icon: <FileInput size={16} />,
+        run: () => runAndClose(actions.convertFile),
+      },
+      {
+        id: "merge",
+        group: "File",
+        label: "Merge PDFs…",
+        icon: <Combine size={16} />,
+        run: () => runAndClose(actions.mergePdfs),
+      },
+      {
+        id: "split",
+        group: "File",
+        label: "Split PDF…",
+        icon: <Scissors size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(actions.openSplit),
       },
       {
         id: "mode-select",
@@ -108,6 +148,66 @@ export function CommandPalette({ onClose }: Props) {
         run: () => runAndClose(actions.addRectangle),
       },
       {
+        id: "add-signature",
+        group: "Add",
+        label: "Sign (draw / type)…",
+        icon: <Signature size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(actions.openSignature),
+      },
+      {
+        id: "ann-highlight",
+        group: "Annotate",
+        label: "Highlight",
+        icon: <Highlighter size={16} />,
+        shortcut: "H",
+        disabled: noFile,
+        run: () => runAndClose(() => actions.setMode("highlight")),
+      },
+      {
+        id: "ann-underline",
+        group: "Annotate",
+        label: "Underline",
+        icon: <Underline size={16} />,
+        shortcut: "U",
+        disabled: noFile,
+        run: () => runAndClose(() => actions.setMode("underline")),
+      },
+      {
+        id: "ann-comment",
+        group: "Annotate",
+        label: "Add Comment",
+        icon: <MessageSquare size={16} />,
+        shortcut: "C",
+        disabled: noFile,
+        run: () => runAndClose(() => actions.setMode("comment")),
+      },
+      {
+        id: "ann-ink",
+        group: "Annotate",
+        label: "Draw (freehand)",
+        icon: <PenTool size={16} />,
+        shortcut: "D",
+        disabled: noFile,
+        run: () => runAndClose(() => actions.setMode("ink")),
+      },
+      {
+        id: "page-rotate",
+        group: "Pages",
+        label: "Rotate Page Clockwise",
+        icon: <RotateCw size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(() => actions.rotatePage(90)),
+      },
+      {
+        id: "page-delete",
+        group: "Pages",
+        label: "Delete Current Page",
+        icon: <Trash2 size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(() => actions.deletePage()),
+      },
+      {
         id: "extract",
         group: "Export",
         label: "Extract Text (OCR page)",
@@ -122,6 +222,14 @@ export function CommandPalette({ onClose }: Props) {
         icon: <Download size={16} />,
         disabled: noFile,
         run: () => runAndClose(() => void actions.downloadPdf()),
+      },
+      {
+        id: "compress",
+        group: "Export",
+        label: "Compress PDF",
+        icon: <Minimize2 size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(() => void actions.compressPdf()),
       },
     ],
     // actions is recreated each render but its handlers read the store at call

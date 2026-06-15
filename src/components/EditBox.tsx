@@ -1,9 +1,10 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { Rnd } from "react-rnd";
-import { X, ScanText } from "lucide-react";
+import { X, ScanText, RefreshCw } from "lucide-react";
 import type { PdfEdit } from "../store/useEditorStore";
 import { useEditorStore, makeTextEdit, textToRuns } from "../store/useEditorStore";
 import { useToastStore } from "../store/useToastStore";
+import { fileToDataUrl } from "../lib/file";
 import { TextFormatToolbar } from "./TextFormatToolbar";
 import { RichTextEditor } from "./RichTextEditor";
 
@@ -26,6 +27,26 @@ export function EditBox({ edit }: Props) {
   // The editor registers a selection-range getter here so the toolbar can apply
   // formatting to just the selected characters.
   const getSelectionRange = useRef<SelectionRangeGetter | null>(null);
+  const [showComment, setShowComment] = useState(false);
+
+  /** Swap the picture of an image edit in place, keeping its box geometry. */
+  function swapImage() {
+    if (edit.type !== "image") return;
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/png,image/jpeg";
+    input.onchange = async () => {
+      const picked = input.files?.[0];
+      if (!picked) return;
+      try {
+        const dataUrl = await fileToDataUrl(picked);
+        updateEdit(edit.id, { dataUrl });
+      } catch {
+        addToast("Could not decode that image.", "error");
+      }
+    };
+    input.click();
+  }
 
   async function ocrImage() {
     if (edit.type !== "image") return;
@@ -109,23 +130,85 @@ export function EditBox({ edit }: Props) {
         <>
           <img src={edit.dataUrl} alt="" draggable={false} />
           {selected && (
-            <button
-              className="ocr-image-btn"
-              title="Recognize text in this image (OCR)"
-              disabled={ocrBusy}
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation();
-                void ocrImage();
-              }}
-            >
-              <ScanText size={14} /> OCR
-            </button>
+            <div className="image-btn-row">
+              <button
+                className="ocr-image-btn"
+                title="Recognize text in this image (OCR)"
+                disabled={ocrBusy}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void ocrImage();
+                }}
+              >
+                <ScanText size={14} /> OCR
+              </button>
+              <button
+                className="ocr-image-btn"
+                title="Replace this image"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  swapImage();
+                }}
+              >
+                <RefreshCw size={14} /> Swap
+              </button>
+            </div>
           )}
         </>
       )}
 
       {edit.type === "rectangle" && <div className="rectangle-preview" />}
+
+      {edit.type === "highlight" && (
+        <div className="markup-preview highlight" style={{ background: edit.color }} />
+      )}
+
+      {edit.type === "underline" && (
+        <div className="markup-preview underline" style={{ borderColor: edit.color }} />
+      )}
+
+      {edit.type === "strikeout" && (
+        <div className="markup-preview strikeout" style={{ "--rule": edit.color } as React.CSSProperties} />
+      )}
+
+      {edit.type === "ink" && (
+        <svg className="ink-preview" viewBox={`0 0 ${edit.width} ${edit.height}`} preserveAspectRatio="none">
+          <polyline
+            points={edit.points.map((p) => `${p.x},${p.y}`).join(" ")}
+            fill="none"
+            stroke={edit.color}
+            strokeWidth={edit.strokeWidth}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      )}
+
+      {edit.type === "comment" && (
+        <>
+          <button
+            className="comment-pin"
+            style={{ background: edit.color }}
+            title={edit.text || "Comment"}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowComment((v) => !v);
+            }}
+          />
+          {(showComment || selected) && (
+            <textarea
+              className="comment-body"
+              value={edit.text}
+              placeholder="Add a comment…"
+              onMouseDown={(e) => e.stopPropagation()}
+              onChange={(e) => updateEdit(edit.id, { text: e.target.value })}
+            />
+          )}
+        </>
+      )}
 
       {selected && (
         <button

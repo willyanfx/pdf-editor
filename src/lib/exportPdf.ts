@@ -1,8 +1,15 @@
 import fontkit from "@pdf-lib/fontkit";
-import { PDFDocument, rgb, StandardFonts, type PDFFont, type RGB } from "pdf-lib";
-import type { FontFamily, PdfEdit, TextEdit, TextRun } from "../store/useEditorStore";
+import { PDFDocument, degrees, rgb, StandardFonts, type PDFFont, type PDFPage, type RGB } from "pdf-lib";
+import type {
+  FontFamily,
+  InkEdit,
+  PageOp,
+  PdfEdit,
+  TextEdit,
+  TextRun,
+} from "../store/useEditorStore";
 import { runsToText } from "../store/useEditorStore";
-import { mapScreenRectToPdf } from "./pdfGeometry";
+import { mapScreenRectToPdf, VIEWER_WIDTH as VIEWER_W } from "./pdfGeometry";
 import {
   isStandardFont,
   getGoogleFontEntry,
@@ -140,16 +147,73 @@ export async function wrapRuns(
   return lines;
 }
 
+/** Options controlling page selection/order, transforms, and output size. */
+export type ExportOptions = {
+  /** Original page indices in output order. When omitted, all pages in order.
+   * Pages not listed are dropped from the export. */
+  pageOrder?: number[];
+  /** Per-page rotate/crop transforms, keyed by original page index. */
+  pageOps?: PageOp[];
+  /** Compress the output (object streams; images are downsampled separately). */
+  compress?: boolean;
+};
+
 /**
  * Render the overlay edits onto a fresh copy of the original PDF and return the
  * new PDF bytes. Existing-text edits first paint a cover rectangle over the
  * original glyphs, then draw the replacement text on top.
+ *
+ * When `options.pageOrder` is given the output is rebuilt page-by-page in that
+ * order (dropping unlisted pages); `options.pageOps` applies rotate/crop.
  */
-export async function exportEditedPdf(sourceFile: File, edits: PdfEdit[]): Promise<Uint8Array> {
+export async function exportEditedPdf(
+  sourceFile: File,
+  edits: PdfEdit[],
+  options: ExportOptions = {},
+): Promise<Uint8Array> {
   const originalBytes = await sourceFile.arrayBuffer();
-  const pdfDoc = await PDFDocument.load(originalBytes);
+  const srcDoc = await PDFDocument.load(originalBytes);
+  const srcCount = srcDoc.getPageCount();
+
+  // Default order = every page as-is. An order that differs (reordered or with
+  // deletions) means we rebuild the document; the simple path keeps srcDoc.
+  const order = (options.pageOrder ?? Array.from({ length: srcCount }, (_, i) => i)).filter(
+    (i) => i >= 0 && i < srcCount,
+  );
+  const isReordered =
+    order.length !== srcCount || order.some((origIdx, pos) => origIdx !== pos);
+
+  let pdfDoc: PDFDocument;
+  // Maps an ORIGINAL page index to its position in the output (or -1 if dropped).
+  const origToOut = new Array<number>(srcCount).fill(-1);
+
+  if (isReordered) {
+    pdfDoc = await PDFDocument.create();
+    const copied = await pdfDoc.copyPages(srcDoc, order);
+    copied.forEach((p, pos) => {
+      pdfDoc.addPage(p);
+      origToOut[order[pos]] = pos;
+    });
+  } else {
+    pdfDoc = srcDoc;
+    order.forEach((origIdx, pos) => (origToOut[origIdx] = pos));
+  }
+
   pdfDoc.registerFontkit(fontkit);
   const pages = pdfDoc.getPages();
+
+  // Apply per-page rotate/crop transforms before drawing edits.
+  for (const op of options.pageOps ?? []) {
+    const outIdx = origToOut[op.pageIndex];
+    if (outIdx < 0) continue;
+    applyPageOp(pages[outIdx], op);
+  }
+
+  // Edits are stored against ORIGINAL page indices; remap to output pages and
+  // drop any whose page was deleted.
+  const remappedEdits = edits
+    .map((e) => ({ edit: e, outIdx: origToOut[e.pageIndex] }))
+    .filter((r) => r.outIdx >= 0);
 
   // Pre-warm browser font loading for any Google families in this export so
   // that canvas measurement (used by callers) uses the real face.
@@ -254,8 +318,8 @@ export async function exportEditedPdf(sourceFile: File, edits: PdfEdit[]): Promi
     return fallbackEmbedded;
   };
 
-  for (const edit of edits) {
-    const page = pages[edit.pageIndex];
+  for (const { edit } of remappedEdits) {
+    const page = pages[origToOut[edit.pageIndex]];
     if (!page) continue;
 
     const pageWidth = page.getWidth();
@@ -278,6 +342,19 @@ export async function exportEditedPdf(sourceFile: File, edits: PdfEdit[]): Promi
     }
 
     if (edit.type === "image") {
+      // Replacing an existing PDF image: cover the original pixels first, locked
+      // to the original bbox so dragging the replacement won't re-expose it.
+      if (edit.origin === "existing" && edit.coverRect) {
+        const cover = mapScreenRectToPdf(edit.coverRect, pageWidth, pageHeight);
+        page.drawRectangle({
+          x: cover.x,
+          y: cover.y,
+          width: cover.width,
+          height: cover.height,
+          color: hexToRgb(edit.coverColor ?? "#ffffff"),
+        });
+      }
+
       const imageBytes = dataUrlToBytes(edit.dataUrl);
       const image = edit.dataUrl.startsWith("data:image/png")
         ? await pdfDoc.embedPng(imageBytes)
@@ -290,9 +367,100 @@ export async function exportEditedPdf(sourceFile: File, edits: PdfEdit[]): Promi
         height: pdfRect.height,
       });
     }
+
+    if (edit.type === "highlight") {
+      // Highlight: a translucent colored fill over the marked text band.
+      page.drawRectangle({
+        x: pdfRect.x,
+        y: pdfRect.y,
+        width: pdfRect.width,
+        height: pdfRect.height,
+        color: hexToRgb(edit.color),
+        opacity: 0.4,
+      });
+    }
+
+    if (edit.type === "underline" || edit.type === "strikeout") {
+      // A thin colored rule along the baseline (underline) or middle (strikeout).
+      const thickness = Math.max(1, pdfRect.height * 0.08);
+      const ruleY =
+        edit.type === "underline"
+          ? pdfRect.y + thickness
+          : pdfRect.y + pdfRect.height / 2;
+      page.drawLine({
+        start: { x: pdfRect.x, y: ruleY },
+        end: { x: pdfRect.x + pdfRect.width, y: ruleY },
+        thickness,
+        color: hexToRgb(edit.color),
+      });
+    }
+
+    if (edit.type === "comment") {
+      drawCommentMarker(page, pdfRect, edit.color);
+    }
+
+    if (edit.type === "ink") {
+      drawInkEdit(page, edit, pageWidth, pageHeight);
+    }
   }
 
-  return pdfDoc.save();
+  return pdfDoc.save(
+    options.compress ? { useObjectStreams: true } : undefined,
+  );
+}
+
+/** Apply a rotate/crop transform to an output page. */
+function applyPageOp(page: PDFPage, op: PageOp) {
+  if (op.rotation) {
+    const norm = ((Math.round(op.rotation / 90) * 90) % 360 + 360) % 360;
+    if (norm) page.setRotation(degrees(norm));
+  }
+  if (op.crop) {
+    // Crop insets are screen px at VIEWER_WIDTH; scale to PDF units. The page
+    // may already carry a non-zero crop box origin, so offset from it.
+    const scale = page.getWidth() / VIEWER_W;
+    const box = page.getCropBox();
+    const left = box.x + op.crop.left * scale;
+    const bottom = box.y + op.crop.bottom * scale;
+    const width = box.width - (op.crop.left + op.crop.right) * scale;
+    const height = box.height - (op.crop.top + op.crop.bottom) * scale;
+    if (width > 0 && height > 0) {
+      page.setCropBox(left, bottom, width, height);
+    }
+  }
+}
+
+/** Draw a small sticky-note marker (filled square + fold) for a comment. */
+function drawCommentMarker(page: PDFPage, rect: { x: number; y: number; width: number; height: number }, color: string) {
+  const size = Math.min(Math.max(rect.width, 14), 22);
+  page.drawRectangle({
+    x: rect.x,
+    y: rect.y + rect.height - size,
+    width: size,
+    height: size,
+    color: hexToRgb(color),
+    borderColor: rgb(0.2, 0.2, 0.2),
+    borderWidth: 0.75,
+  });
+}
+
+/** Draw a freehand ink stroke as a connected polyline. */
+function drawInkEdit(page: PDFPage, edit: InkEdit, pageWidth: number, pageHeight: number) {
+  if (edit.points.length < 2) return;
+  const scale = pageWidth / VIEWER_W;
+  // Points are relative to the edit's (x, y) in screen space; map to PDF space.
+  const toPdf = (p: { x: number; y: number }) => ({
+    x: (edit.x + p.x) * scale,
+    y: pageHeight - (edit.y + p.y) * scale,
+  });
+  for (let i = 1; i < edit.points.length; i++) {
+    page.drawLine({
+      start: toPdf(edit.points[i - 1]),
+      end: toPdf(edit.points[i]),
+      thickness: edit.strokeWidth * scale,
+      color: hexToRgb(edit.color),
+    });
+  }
 }
 
 async function drawTextEdit(
@@ -354,6 +522,69 @@ async function drawTextEdit(
     }
     baselineY -= lineHeight;
   }
+}
+
+/**
+ * The Compress export: object streams + image downsampling. Loads the edited
+ * bytes (after all edits are baked in) and re-encodes large raster images at a
+ * lower resolution/quality, then saves with object streams on. Falls back to a
+ * plain object-stream save if downsampling isn't possible in this environment.
+ */
+export async function compressEditedPdf(
+  sourceFile: File,
+  edits: PdfEdit[],
+  options: ExportOptions = {},
+): Promise<Uint8Array> {
+  const edited = await exportEditedPdf(sourceFile, edits, { ...options, compress: true });
+  try {
+    const downsampled = await downsampleImages(edited);
+    return downsampled ?? edited;
+  } catch (err) {
+    console.warn("[exportPdf] image downsampling skipped:", err);
+    return edited;
+  }
+}
+
+/**
+ * Re-encode the rasterized pages of a PDF at a capped resolution to shrink it.
+ * Renders each page with pdf.js to a JPEG, then rebuilds a flat PDF from those
+ * images. This is a pragmatic, fully client-side "reduce file size" pass — it
+ * trades vector fidelity for size, mirroring Acrobat's "reduced size" option.
+ * Returns null (caller keeps the original) if pdf.js can't render here.
+ */
+async function downsampleImages(pdfBytes: Uint8Array): Promise<Uint8Array | null> {
+  if (typeof document === "undefined") return null; // no canvas (e.g. tests)
+  const pdfjs = await import("pdfjs-dist");
+  const loadingTask = pdfjs.getDocument({ data: pdfBytes.slice() });
+  const doc = await loadingTask.promise;
+
+  const out = await PDFDocument.create();
+  const TARGET_WIDTH = 1240; // ~150 DPI for US Letter; good for sharing.
+  const JPEG_QUALITY = 0.7;
+
+  for (let i = 1; i <= doc.numPages; i++) {
+    const page = await doc.getPage(i);
+    const base = page.getViewport({ scale: 1 });
+    const scale = Math.min(1, TARGET_WIDTH / base.width);
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    // White matte so transparent regions don't turn black in JPEG.
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvas, canvasContext: ctx, viewport }).promise;
+
+    const jpegUrl = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
+    const jpeg = await out.embedJpg(dataUrlToBytes(jpegUrl));
+    const outPage = out.addPage([base.width, base.height]);
+    outPage.drawImage(jpeg, { x: 0, y: 0, width: base.width, height: base.height });
+  }
+
+  await doc.cleanup();
+  return out.save({ useObjectStreams: true });
 }
 
 function dataUrlToBytes(dataUrl: string): Uint8Array {
