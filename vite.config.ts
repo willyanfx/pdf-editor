@@ -18,5 +18,16 @@ export default defineConfig({
   define: {
     "process.env.DRAGGABLE_DEBUG": "false",
   },
+  // @huggingface/transformers (Transformers.js) loads its ONNX runtime via
+  // dynamic WASM imports that esbuild's pre-bundler mangles — exclude it so the
+  // Florence-2 VLM OCR worker can import it correctly.
+  optimizeDeps: {
+    exclude: ["@huggingface/transformers"],
+  },
+  // The VLM OCR worker uses ES `import`s, so workers must be emitted as ESM for
+  // the `{ type: "module" }` Worker to load after a production build.
+  worker: {
+    format: "es",
+  },
   lint: { options: { typeAware: true, typeCheck: true } },
 });
