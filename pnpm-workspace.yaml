@@ -1,5 +1,5 @@
-onlyBuiltDependencies:
-  - tesseract.js
+allowBuilds:
+  tesseract.js: true
 
 overrides:
   vite: npm:@voidzero-dev/vite-plus-core@latest
