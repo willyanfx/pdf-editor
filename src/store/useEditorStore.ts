@@ -1,4 +1,14 @@
 import { create } from "zustand";
+import type { OcrEngine } from "../lib/vlmOcr/types";
+
+export type { OcrEngine };
+
+/** A history snapshot of the three mutable document arrays. */
+type HistoryEntry = { edits: PdfEdit[]; pageOps: PageOp[]; pageOrder: number[] };
+
+/** Module-level coalesce tracker for updateEdit bursts (typing, arrow nudge). */
+let lastCoalesce: { id: string; timestamp: number } | null = null;
+const COALESCE_MS = 600;
 
 /** Zoom bounds and step for the bottom-bar zoom controls. */
 export const MIN_ZOOM = 0.5;
@@ -146,11 +156,13 @@ export type PageOp = {
 
 /** Select vs. Edit-Text vs. OCR. In edit-text mode, clicking existing PDF text
  * turns it into an editable box. In ocr mode, dragging a rectangle runs OCR on
- * that region and turns recognized text into editable boxes. */
+ * that region and turns recognized text into editable boxes. In addText mode,
+ * dragging (or clicking) places a new empty text box where the user draws it. */
 export type EditorMode =
   | "select"
   | "editText"
   | "ocr"
+  | "addText"
   | "highlight"
   | "underline"
   | "comment"
@@ -182,7 +194,17 @@ type EditorState = {
    * it updated on resize. Any manual zoom (buttons / wheel / reset) clears it. */
   zoomPreset: ZoomPreset;
 
-  /** OCR runs in a WASM worker and takes seconds; surface a global spinner. */
+  /** Which OCR backend to run. "tesseract" is the default WASM engine; "florence2"
+   * is the Transformers.js + WebGPU vision model that returns text with layout
+   * boxes (and per-box font-size estimation). Persisted only in-session. */
+  ocrEngine: OcrEngine;
+
+  /** Non-null while the Florence-2 model is downloading/loading for the first
+   * time after toggling to the AI engine. Distinct from ocrProgress (which tracks
+   * recognition). Both the popover progress bar and the live toast read this. */
+  ocrModelLoad: { fraction: number } | null;
+
+  /** OCR runs in a WASM/GPU worker and takes seconds; surface a global spinner. */
   ocrBusy: boolean;
   ocrProgress: number; // 0..1
   /** Set by the toolbar's "Extract Text" button to ask PdfViewer (which owns the
@@ -215,6 +237,13 @@ type EditorState = {
   /** Whether the split-by-range dialog is open. */
   splitDialogOpen: boolean;
 
+  /** History stacks — NOT in initialState so setFile does not reset them. */
+  _past: HistoryEntry[];
+  _future: HistoryEntry[];
+
+  undo: () => void;
+  redo: () => void;
+
   setFile: (file: File) => void;
   addEdit: (edit: PdfEdit) => void;
   updateEdit: (id: string, patch: Partial<PdfEdit>) => void;
@@ -238,6 +267,8 @@ type EditorState = {
   resetZoom: () => void;
   /** Toggle an auto-fit mode. Passing the active preset turns it off (→ null). */
   setZoomPreset: (preset: ZoomPreset) => void;
+  setOcrEngine: (engine: OcrEngine) => void;
+  setOcrModelLoad: (load: { fraction: number } | null) => void;
   setOcrBusy: (busy: boolean) => void;
   setOcrProgress: (progress: number) => void;
   requestOcrPage: (pageIndex: number | null) => void;
@@ -268,6 +299,8 @@ const initialState = {
   mode: "select" as EditorMode,
   zoom: 1,
   zoomPreset: null as ZoomPreset,
+  ocrEngine: "tesseract" as OcrEngine,
+  ocrModelLoad: null as { fraction: number } | null,
   ocrBusy: false,
   ocrProgress: 0,
   ocrRequestPageIndex: null as number | null,
@@ -281,30 +314,110 @@ const initialState = {
   splitDialogOpen: false,
 };
 
+/** Capture a snapshot of the three document arrays from state. */
+function snapshot(state: {
+  edits: PdfEdit[];
+  pageOps: PageOp[];
+  pageOrder: number[];
+}): HistoryEntry {
+  return structuredClone({ edits: state.edits, pageOps: state.pageOps, pageOrder: state.pageOrder });
+}
+
+/** Push an entry onto _past, capping at 100 entries, and clear _future. */
+function pushHistory(
+  state: { _past: HistoryEntry[]; _future: HistoryEntry[] },
+  entry: HistoryEntry,
+): { _past: HistoryEntry[]; _future: HistoryEntry[] } {
+  const past = state._past.length >= 100 ? state._past.slice(1) : state._past;
+  return { _past: [...past, entry], _future: [] };
+}
+
 export const useEditorStore = create<EditorState>((set) => ({
   ...initialState,
   scrollToPage: null,
+  // History stacks live outside initialState so setFile does not reset them.
+  _past: [],
+  _future: [],
 
-  setFile: (file) => set({ ...initialState, file }),
+  // Clear history stacks explicitly on file open so undo doesn't bleed across docs.
+  setFile: (file) => {
+    lastCoalesce = null;
+    set({ ...initialState, file, _past: [], _future: [] });
+  },
+
+  undo: () =>
+    set((state) => {
+      lastCoalesce = null;
+      if (state._past.length === 0) return {};
+      const entry = state._past[state._past.length - 1];
+      const current = snapshot(state);
+      return {
+        edits: entry.edits,
+        pageOps: entry.pageOps,
+        pageOrder: entry.pageOrder,
+        selectedEditId: null,
+        _past: state._past.slice(0, -1),
+        _future: [current, ...state._future],
+      };
+    }),
+
+  redo: () =>
+    set((state) => {
+      lastCoalesce = null;
+      if (state._future.length === 0) return {};
+      const entry = state._future[0];
+      const current = snapshot(state);
+      return {
+        edits: entry.edits,
+        pageOps: entry.pageOps,
+        pageOrder: entry.pageOrder,
+        selectedEditId: null,
+        _past: [...state._past, current],
+        _future: state._future.slice(1),
+      };
+    }),
 
   addEdit: (edit) =>
-    set((state) => ({
-      edits: [...state.edits, edit],
-      selectedEditId: edit.id,
-    })),
+    set((state) => {
+      lastCoalesce = null;
+      const hist = pushHistory(state, snapshot(state));
+      return {
+        ...hist,
+        edits: [...state.edits, edit],
+        selectedEditId: edit.id,
+      };
+    }),
 
-  updateEdit: (id, patch) =>
-    set((state) => ({
-      edits: state.edits.map((edit) =>
+  updateEdit: (id, patch) => {
+    // Decide whether this update coalesces into the current burst. The decision
+    // and the lastCoalesce mutation live OUTSIDE the set() updater: Zustand/React
+    // may invoke updaters twice (StrictMode), so mutating module state in there
+    // would corrupt coalesce timing.
+    const now = Date.now();
+    const coalesce =
+      lastCoalesce !== null &&
+      lastCoalesce.id === id &&
+      now - lastCoalesce.timestamp < COALESCE_MS;
+    lastCoalesce = { id, timestamp: now };
+    set((state) => {
+      const edits = state.edits.map((edit) =>
         edit.id === id ? ({ ...edit, ...patch } as PdfEdit) : edit,
-      ),
-    })),
+      );
+      // Coalescing keeps the existing burst's snapshot; otherwise capture one.
+      return coalesce ? { edits } : { ...pushHistory(state, snapshot(state)), edits };
+    });
+  },
 
   deleteEdit: (id) =>
-    set((state) => ({
-      edits: state.edits.filter((edit) => edit.id !== id),
-      selectedEditId: state.selectedEditId === id ? null : state.selectedEditId,
-    })),
+    set((state) => {
+      lastCoalesce = null;
+      const hist = pushHistory(state, snapshot(state));
+      return {
+        ...hist,
+        edits: state.edits.filter((edit) => edit.id !== id),
+        selectedEditId: state.selectedEditId === id ? null : state.selectedEditId,
+      };
+    }),
 
   selectEdit: (id) => set({ selectedEditId: id }),
 
@@ -323,24 +436,37 @@ export const useEditorStore = create<EditorState>((set) => ({
 
   setPageOp: (pageIndex, patch) =>
     set((state) => {
+      lastCoalesce = null;
+      const hist = pushHistory(state, snapshot(state));
       const existing = state.pageOps.find((op) => op.pageIndex === pageIndex);
       const next: PageOp = existing
         ? { ...existing, ...patch }
         : { pageIndex, rotation: 0, ...patch };
       return {
+        ...hist,
         pageOps: [...state.pageOps.filter((op) => op.pageIndex !== pageIndex), next],
       };
     }),
 
-  setPageOrder: (order) => set({ pageOrder: order }),
+  setPageOrder: (order) =>
+    set((state) => {
+      lastCoalesce = null;
+      const hist = pushHistory(state, snapshot(state));
+      return { ...hist, pageOrder: order };
+    }),
 
   deletePage: (pageIndex) =>
-    set((state) => ({
-      pageOrder: state.pageOrder.filter((i) => i !== pageIndex),
-      edits: state.edits.filter((e) => e.pageIndex !== pageIndex),
-      pageOps: state.pageOps.filter((op) => op.pageIndex !== pageIndex),
-      selectedEditId: null,
-    })),
+    set((state) => {
+      lastCoalesce = null;
+      const hist = pushHistory(state, snapshot(state));
+      return {
+        ...hist,
+        pageOrder: state.pageOrder.filter((i) => i !== pageIndex),
+        edits: state.edits.filter((e) => e.pageIndex !== pageIndex),
+        pageOps: state.pageOps.filter((op) => op.pageIndex !== pageIndex),
+        selectedEditId: null,
+      };
+    }),
 
   setSearchQuery: (searchQuery) =>
     set((state) => {
@@ -372,6 +498,8 @@ export const useEditorStore = create<EditorState>((set) => ({
   setZoomPreset: (preset) =>
     set((state) => ({ zoomPreset: state.zoomPreset === preset ? null : preset })),
 
+  setOcrEngine: (ocrEngine) => set({ ocrEngine }),
+  setOcrModelLoad: (ocrModelLoad) => set({ ocrModelLoad }),
   setOcrBusy: (ocrBusy) => set({ ocrBusy }),
 
   setOcrProgress: (ocrProgress) => set({ ocrProgress }),

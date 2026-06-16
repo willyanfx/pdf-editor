@@ -2,12 +2,9 @@ import type { ReactNode } from "react";
 import {
   MousePointer2,
   Pencil,
-  ScanLine,
   Type,
   ImagePlus,
   Square,
-  ScanText,
-  ScanSearch,
   Command,
   Highlighter,
   Underline,
@@ -19,32 +16,8 @@ import {
 } from "lucide-react";
 import { useEditorStore, type EditorMode } from "../store/useEditorStore";
 import { useEditorActions } from "../hooks/useEditorActions";
-
-type RailButtonProps = {
-  icon: ReactNode;
-  tip: string;
-  active?: boolean;
-  /** When true, the button is a toggle and exposes its state via aria-pressed. */
-  toggle?: boolean;
-  disabled?: boolean;
-  onClick: () => void;
-};
-
-function RailButton({ icon, tip, active, toggle, disabled, onClick }: RailButtonProps) {
-  return (
-    <button
-      type="button"
-      className={active ? "rail-btn active" : "rail-btn"}
-      data-tip={tip}
-      aria-label={tip}
-      aria-pressed={toggle ? !!active : undefined}
-      disabled={disabled}
-      onClick={onClick}
-    >
-      {icon}
-    </button>
-  );
-}
+import { RailButton } from "./RailButton";
+import { OcrMenu } from "./OcrMenu";
 
 type Props = {
   onOpenPalette: () => void;
@@ -55,14 +28,10 @@ type Props = {
 export function ToolRail({ onOpenPalette, onTogglePages, pagesActive }: Props) {
   const file = useEditorStore((s) => s.file);
   const mode = useEditorStore((s) => s.mode);
-  const ocrBusy = useEditorStore((s) => s.ocrBusy);
   const {
     setMode,
-    addText,
     pickImage,
     addRectangle,
-    extractText,
-    extractAllPages,
     openSignature,
     convertFile,
   } = useEditorActions();
@@ -86,16 +55,13 @@ export function ToolRail({ onOpenPalette, onTogglePages, pagesActive }: Props) {
     <nav className="tool-rail" aria-label="Editing tools">
       {modeBtn("select", <MousePointer2 size={18} />, "Select (V)")}
       {modeBtn("editText", <Pencil size={18} />, "Edit Text / Image (E)")}
-      {modeBtn("ocr", <ScanLine size={18} />, "OCR Region", ocrBusy)}
+
+      {/* Single OCR entry point — engine choice + scope actions in a popover. */}
+      <OcrMenu />
 
       <span className="rail-divider" />
 
-      <RailButton
-        icon={<Type size={18} />}
-        tip="Add Text (T)"
-        disabled={noFile}
-        onClick={addText}
-      />
+      {modeBtn("addText", <Type size={18} />, "Add Text — draw a box (T)")}
       <RailButton
         icon={<ImagePlus size={18} />}
         tip="Add Image"
@@ -131,18 +97,6 @@ export function ToolRail({ onOpenPalette, onTogglePages, pagesActive }: Props) {
         toggle
         disabled={noFile}
         onClick={onTogglePages}
-      />
-      <RailButton
-        icon={<ScanText size={18} />}
-        tip="Extract Text (OCR page)"
-        disabled={noFile || ocrBusy}
-        onClick={extractText}
-      />
-      <RailButton
-        icon={<ScanSearch size={18} />}
-        tip="Extract Text (OCR all pages)"
-        disabled={noFile || ocrBusy}
-        onClick={extractAllPages}
       />
       <RailButton icon={<FileInput size={18} />} tip="Convert file to PDF" onClick={convertFile} />
 

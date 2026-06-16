@@ -1,4 +1,9 @@
 allowBuilds:
+  # Node-only transitive deps of @huggingface/transformers; the browser VLM OCR
+  # path uses onnxruntime-web + canvas, so none of these need to build.
+  onnxruntime-node: false
+  protobufjs: false
+  sharp: false
   tesseract.js: true
 
 overrides:

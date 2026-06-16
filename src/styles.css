@@ -1237,6 +1237,157 @@ button {
   background: var(--surface-2, rgba(255, 255, 255, 0.08));
 }
 
+/* In-toast download bar (AI model load). Sticky toast carries a 0..1 progress. */
+.toast.toast-progress {
+  position: relative;
+  padding-bottom: 15px; /* 11px original + 4px for bar height */
+  overflow: hidden;
+}
+
+.toast-progress-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 4px;
+  background: var(--fg);
+  border-radius: 0 0 var(--r-md) var(--r-md);
+  transition: width 0.25s ease;
+  min-width: 4px;
+}
+
+/* Model-load bar inside the OCR popover, between the engine pills and divider. */
+.ocr-model-load {
+  height: 4px;
+  margin: 0 0 10px; /* 10px matches .ocr-menu-divider bottom-margin rhythm */
+  border-radius: var(--r-sm);
+  background: var(--border);
+  overflow: hidden;
+}
+
+.ocr-model-load-bar {
+  height: 100%;
+  background: var(--fg);
+  border-radius: var(--r-sm);
+  transition: width 0.25s ease; /* smooth animation between progress ticks */
+  min-width: 4px; /* always visible even at fraction ≈ 0 */
+}
+
+/* ── OCR popover menu ──────────────────────────────────────────────────── */
+
+.ocr-menu-anchor {
+  /* Makes the popover position:absolute relative to the trigger button. */
+  position: relative;
+}
+
+.ocr-menu-popover {
+  position: absolute;
+  left: calc(100% + 8px); /* 8px gap to the right of the 48px rail */
+  top: 0;
+  z-index: 95; /* above canvas (40), format bar (60), palette-backdrop (90) */
+  width: 232px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: 0 8px 32px oklch(0% 0 0 / 0.18);
+  color-scheme: light; /* popover is always light even though the rail is dark */
+}
+
+.ocr-menu-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  margin-bottom: 6px;
+}
+
+.ocr-engine-pills {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.ocr-engine-pill {
+  /* Mirrors .sig-tabs button pattern — exclusive toggle pills. */
+  flex: 1;
+  padding: 5px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--fg);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
+}
+
+.ocr-engine-pill.active {
+  background: var(--fg);
+  color: var(--surface);
+  border-color: var(--fg);
+}
+
+.ocr-engine-pill:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.ocr-menu-divider {
+  /* Horizontal equivalent of .rail-divider (which is vertical). */
+  height: 1px;
+  background: var(--border);
+  margin: 8px 0 10px;
+}
+
+.ocr-scope-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--fg);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast);
+}
+
+.ocr-scope-btn:hover:not(:disabled) {
+  background: var(--bg-subtle);
+}
+
+.ocr-scope-btn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.ocr-menu-progress {
+  /* Inline variant of .ocr-overlay-card — sits in-flow inside the popover. */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 9px 10px;
+  background: var(--surface-glass);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  font-size: 12px;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.ocr-menu-hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--fg-faint);
+  line-height: 1.4;
+}
+
 .edit-box img {
   width: 100%;
   height: 100%;
@@ -1253,18 +1404,30 @@ button {
 
 .delete {
   position: absolute;
-  top: -13px;
-  right: -13px;
+  /* Sit just OUTSIDE the right edge, dropped down from the top corner. This
+     clears the format toolbar (which floats above the box) and the top-right
+     re-resizable handle (20x20 at top:-10/right:-10) — the old top:-13/right:-13
+     placement overlapped that handle, which painted on top and swallowed the
+     click as a resize. */
+  top: 6px;
+  left: calc(100% + 8px);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border: 0;
   border-radius: var(--r-pill);
   background: var(--error);
   color: white;
   cursor: pointer;
+  /* Paint above resize handles (z-index:1) and the editor body so the click
+     always lands on the button. */
+  z-index: 5;
+  box-shadow: 0 1px 4px oklch(0% 0 0 / 0.25);
+}
+.delete:hover {
+  filter: brightness(1.08);
 }
 
 /* Grab handle for moving an edit box. Hidden until hover/selection so it stays
@@ -1384,13 +1547,20 @@ button {
 
 /* Annotate drag overlay (highlight/underline/strikeout/comment) --------- */
 .annotate-layer,
-.ink-layer {
+.ink-layer,
+.text-draw-layer {
   position: absolute;
   inset: 0;
   z-index: 4;
   cursor: crosshair;
   /* Pointer-drag to draw/markup must not scroll/zoom the page on touch. */
   touch-action: none;
+}
+.text-draw-preview {
+  position: absolute;
+  pointer-events: none;
+  border: 1.5px dashed var(--fg);
+  background: oklch(18% 0 0 / 0.06);
 }
 .annotate-preview {
   position: absolute;

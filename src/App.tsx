@@ -9,7 +9,6 @@ import { SignatureModal } from "./components/SignatureModal";
 import { SplitDialog } from "./components/SplitDialog";
 import { FindBar } from "./components/FindBar";
 import { useEditorStore } from "./store/useEditorStore";
-import { useEditorActions } from "./hooks/useEditorActions";
 import { openFiles } from "./lib/openFiles";
 
 export default function App() {
@@ -21,7 +20,6 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [pagesOpen, setPagesOpen] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
-  const { addText } = useEditorActions();
 
   function hasFiles(e: React.DragEvent) {
     return Array.from(e.dataTransfer.types).includes("Files");
@@ -40,6 +38,26 @@ export default function App() {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPaletteOpen((open) => !open);
+        return;
+      }
+
+      // Undo / Redo — only when NOT in a text field; let the browser's native
+      // undo/redo win inside contentEditable and input elements.
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "z") {
+        if (typing) return; // native browser undo/redo handles contentEditable and inputs
+        e.preventDefault();
+        if (e.shiftKey) {
+          useEditorStore.getState().redo();
+        } else {
+          useEditorStore.getState().undo();
+        }
+        return;
+      }
+      // Ctrl+Y as alternate redo (Windows convention).
+      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "y") {
+        if (typing) return;
+        e.preventDefault();
+        useEditorStore.getState().redo();
         return;
       }
 
@@ -97,7 +115,7 @@ export default function App() {
         }
         if (k === "t") {
           e.preventDefault();
-          addText();
+          store.setMode("addText");
           return;
         }
         if (k === "h") {
@@ -157,7 +175,7 @@ export default function App() {
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [addText]);
+  }, []);
 
   // Warn before leaving if the open document has unsaved edits. Edits live only
   // in memory (no backend), so a reload/close would silently discard them.

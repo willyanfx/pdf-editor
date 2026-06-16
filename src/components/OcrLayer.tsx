@@ -19,6 +19,7 @@ type DragRect = { x: number; y: number; width: number; height: number };
  */
 export function OcrLayer({ pageIndex, getCanvas }: Props) {
   const mode = useEditorStore((s) => s.mode);
+  const ocrEngine = useEditorStore((s) => s.ocrEngine);
   const ocrBusy = useEditorStore((s) => s.ocrBusy);
   const addEdit = useEditorStore((s) => s.addEdit);
   const setMode = useEditorStore((s) => s.setMode);
@@ -82,8 +83,9 @@ export function OcrLayer({ pageIndex, getCanvas }: Props) {
     setOcrBusy(true);
     setOcrProgress(0);
     try {
-      const { recognizePageRegion } = await import("../lib/ocr");
-      const items = await recognizePageRegion(
+      const { recognizeWithEngine } = await import("../lib/vlmOcr/dispatch");
+      const items = await recognizeWithEngine(
+        ocrEngine,
         canvas,
         VIEWER_WIDTH,
         region as ScreenRegion,

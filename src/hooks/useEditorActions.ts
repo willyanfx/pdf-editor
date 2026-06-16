@@ -1,4 +1,4 @@
-import { useEditorStore, makeTextEdit } from "../store/useEditorStore";
+import { useEditorStore } from "../store/useEditorStore";
 import { useToastStore } from "../store/useToastStore";
 import { addImageFromFile, openFiles, openConvertedFile } from "../lib/openFiles";
 
@@ -78,19 +78,6 @@ export function useEditorActions() {
         useToastStore.getState().addToast("Could not convert that file.", "error");
       }
     });
-  }
-
-  function addText() {
-    const { selectedPageIndex, addEdit } = useEditorStore.getState();
-    addEdit(
-      makeTextEdit({
-        pageIndex: selectedPageIndex,
-        x: 80,
-        y: 80,
-        width: 220,
-        height: 60,
-      }),
-    );
   }
 
   function addRectangle() {
@@ -277,7 +264,6 @@ export function useEditorActions() {
     pickPdf,
     pickImage,
     convertFile,
-    addText,
     addRectangle,
     extractText,
     extractAllPages,
