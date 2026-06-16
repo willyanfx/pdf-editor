@@ -320,7 +320,11 @@ function snapshot(state: {
   pageOps: PageOp[];
   pageOrder: number[];
 }): HistoryEntry {
-  return structuredClone({ edits: state.edits, pageOps: state.pageOps, pageOrder: state.pageOrder });
+  return structuredClone({
+    edits: state.edits,
+    pageOps: state.pageOps,
+    pageOrder: state.pageOrder,
+  });
 }
 
 /** Push an entry onto _past, capping at 100 entries, and clear _future. */
@@ -395,9 +399,7 @@ export const useEditorStore = create<EditorState>((set) => ({
     // would corrupt coalesce timing.
     const now = Date.now();
     const coalesce =
-      lastCoalesce !== null &&
-      lastCoalesce.id === id &&
-      now - lastCoalesce.timestamp < COALESCE_MS;
+      lastCoalesce !== null && lastCoalesce.id === id && now - lastCoalesce.timestamp < COALESCE_MS;
     lastCoalesce = { id, timestamp: now };
     set((state) => {
       const edits = state.edits.map((edit) =>

@@ -28,13 +28,7 @@ type Props = {
 export function ToolRail({ onOpenPalette, onTogglePages, pagesActive }: Props) {
   const file = useEditorStore((s) => s.file);
   const mode = useEditorStore((s) => s.mode);
-  const {
-    setMode,
-    pickImage,
-    addRectangle,
-    openSignature,
-    convertFile,
-  } = useEditorActions();
+  const { setMode, pickImage, addRectangle, openSignature, convertFile } = useEditorActions();
 
   const noFile = !file;
 

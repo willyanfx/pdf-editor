@@ -10,7 +10,7 @@ estimating a font size for each box.
 The feature was originally scoped around SmolVLM-256M/500M. Research (grounded,
 cited — see the project memory note `smolvlm-no-bbox-use-florence2`) showed
 SmolVLM has **zero grounding capability** (box-localization AP@0.5 ≈ 0.005): it
-can transcribe free-form text but cannot tell you *where* text is on the page.
+can transcribe free-form text but cannot tell you _where_ text is on the page.
 Since this feature needs layout extraction and font-size-from-bounding-boxes,
 SmolVLM literally can't deliver it.
 
@@ -45,34 +45,35 @@ just route through `dispatch.ts`.
 
 ## Files
 
-| File | Role |
-|---|---|
-| `types.ts` | shared types + worker message protocol + model id / task constants |
-| `env.ts` | tiny `isWebGpuAvailable()` probe — **no** transformers import (keeps it out of the main bundle) |
-| `florence2.worker.ts` | the Web Worker: model load + inference on WebGPU |
-| `index.ts` | main-thread client: worker plumbing, crop, projection, font sizing |
-| `fontSize.ts` | **font-size-from-bbox estimation** (the custom geometry) |
-| `dispatch.ts` | picks tesseract vs florence2 by `store.ocrEngine` |
-| `fontSize.test.ts`, `projection.test.ts` | unit tests for the geometry/projection |
+| File                                     | Role                                                                                            |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `types.ts`                               | shared types + worker message protocol + model id / task constants                              |
+| `env.ts`                                 | tiny `isWebGpuAvailable()` probe — **no** transformers import (keeps it out of the main bundle) |
+| `florence2.worker.ts`                    | the Web Worker: model load + inference on WebGPU                                                |
+| `index.ts`                               | main-thread client: worker plumbing, crop, projection, font sizing                              |
+| `fontSize.ts`                            | **font-size-from-bbox estimation** (the custom geometry)                                        |
+| `dispatch.ts`                            | picks tesseract vs florence2 by `store.ocrEngine`                                               |
+| `fontSize.test.ts`, `projection.test.ts` | unit tests for the geometry/projection                                                          |
 
 ## Font-size estimation (`fontSize.ts`)
 
 Florence-2 boxes carry no font metrics, so size is recovered from geometry:
 
 1. **Quad → visual line height.** A quad can be rotated; the line height is the
-   *minor* axis of the quad (`quadDimensions`), not the axis-aligned bbox height.
+   _minor_ axis of the quad (`quadDimensions`), not the axis-aligned bbox height.
 2. **Line count.** A region may wrap several lines; we take the max of a
    geometric estimate (height ÷ lineHeight) and a textual one (chars ÷
    chars-per-line) so a tall block doesn't yield a giant font.
 3. **Font size** = perLineHeight / 1.2 (the editor's `height = fontSize * 1.2`
    convention), clamped to a sane on-screen range.
-4. **Bold** is inferred from *relative* size: a region ≥ 1.35× the page-median
+4. **Bold** is inferred from _relative_ size: a region ≥ 1.35× the page-median
    font reads as a heading (Florence-2 gives no weight, and unlike the tesseract
    path there's no greyscale canvas to measure ink density on).
 
 ## Dtype / WebGPU selection
 
 In the worker: detect `navigator.gpu` and the `shader-f16` adapter feature.
+
 - WebGPU + fp16 → mixed dtype: `vision_encoder`/`embed_tokens` fp16, encoder/
   decoder q4 (vision encoder is the most quantization-sensitive).
 - WebGPU without fp16 → uniform `q4`.
@@ -85,8 +86,8 @@ In the worker: detect `navigator.gpu` and the `shader-f16` adapter feature.
   worker uses ESM imports).
 - The model downloads once (~275 MB) and is cached in the browser **Cache API**
   by Transformers.js; reloads are instant.
-- **COOP/COEP headers are *not* required** here. They're only needed for the WASM
-  *multi-threaded* fallback (SharedArrayBuffer). The primary path is WebGPU; the
+- **COOP/COEP headers are _not_ required** here. They're only needed for the WASM
+  _multi-threaded_ fallback (SharedArrayBuffer). The primary path is WebGPU; the
   WASM fallback runs single-threaded without cross-origin isolation. That matters
   because this app deploys to **GitHub Pages**, which can't set custom headers.
 

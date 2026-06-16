@@ -468,7 +468,6 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
           </div>
         </div>
       </Document>
-
     </section>
   );
 }

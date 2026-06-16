@@ -120,22 +120,22 @@ flowchart LR
 
 ## Tech Stack
 
-| Layer | Technology | Purpose |
-|---|---|---|
-| UI framework | React 19 + TypeScript 6 | Component tree, hooks, strict mode |
-| Build tool | Vite via `@voidzero-dev/vite-plus-core` | Dev server, ESM workers, GitHub Pages output |
-| State | Zustand 5 | Editor store + toast store; snapshot undo/redo |
-| PDF rendering | `pdfjs-dist` 5.4.296 + `react-pdf` 10 | Canvas-based page rasterization; text/image extraction |
-| PDF mutation | `pdf-lib` + `@pdf-lib/fontkit` | Edit baking, rotation, crop, merge, split, font embedding |
-| OCR (WASM) | `tesseract.js` 5 | Offline Tesseract LSTM in a reusable singleton worker |
-| OCR (AI) | `@huggingface/transformers` 4 (Florence-2) | In-browser VLM on WebGPU; quad bounding boxes |
-| Drag/resize | `react-rnd` | All overlay drag and resize handles |
-| Virtual scroll | `@tanstack/react-virtual` | Window-mount only visible PDF pages |
-| Word import | `mammoth` | `.docx` → raw text for PDF conversion |
-| Spreadsheet import | `xlsx` | `.xlsx/.xls/.csv` → text for PDF conversion |
-| Word export | `docx` | Text edits → formatted `.docx` download |
-| Icons | `lucide-react` | Consistent icon set throughout the UI |
-| Fonts | Google Fonts (runtime fetch) | ~150 families; subset-embedded in exported PDFs |
+| Layer              | Technology                                 | Purpose                                                   |
+| ------------------ | ------------------------------------------ | --------------------------------------------------------- |
+| UI framework       | React 19 + TypeScript 6                    | Component tree, hooks, strict mode                        |
+| Build tool         | Vite via `@voidzero-dev/vite-plus-core`    | Dev server, ESM workers, GitHub Pages output              |
+| State              | Zustand 5                                  | Editor store + toast store; snapshot undo/redo            |
+| PDF rendering      | `pdfjs-dist` 5.4.296 + `react-pdf` 10      | Canvas-based page rasterization; text/image extraction    |
+| PDF mutation       | `pdf-lib` + `@pdf-lib/fontkit`             | Edit baking, rotation, crop, merge, split, font embedding |
+| OCR (WASM)         | `tesseract.js` 5                           | Offline Tesseract LSTM in a reusable singleton worker     |
+| OCR (AI)           | `@huggingface/transformers` 4 (Florence-2) | In-browser VLM on WebGPU; quad bounding boxes             |
+| Drag/resize        | `react-rnd`                                | All overlay drag and resize handles                       |
+| Virtual scroll     | `@tanstack/react-virtual`                  | Window-mount only visible PDF pages                       |
+| Word import        | `mammoth`                                  | `.docx` → raw text for PDF conversion                     |
+| Spreadsheet import | `xlsx`                                     | `.xlsx/.xls/.csv` → text for PDF conversion               |
+| Word export        | `docx`                                     | Text edits → formatted `.docx` download                   |
+| Icons              | `lucide-react`                             | Consistent icon set throughout the UI                     |
+| Fonts              | Google Fonts (runtime fetch)               | ~150 families; subset-embedded in exported PDFs           |
 
 ---
 

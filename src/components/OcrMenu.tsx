@@ -56,14 +56,10 @@ export function OcrMenu() {
     setOcrEngine("florence2");
 
     const { preloadVlmOcr } = await import("../lib/vlmOcr");
-    const { addProgressToast, updateToast, dismissToast, addToast } =
-      useToastStore.getState();
+    const { addProgressToast, updateToast, dismissToast, addToast } = useToastStore.getState();
 
     // Open a sticky progress toast at 0%; it will update live via onProgress.
-    const toastId = addProgressToast(
-      "Loading AI OCR model (first time ~275 MB)…",
-      "info",
-    );
+    const toastId = addProgressToast("Loading AI OCR model (first time ~275 MB)…", "info");
 
     // Signal the popover bar to appear at 0.
     setOcrModelLoad({ fraction: 0 });
@@ -164,7 +160,7 @@ export function OcrMenu() {
                 aria-pressed={ocrEngine === "florence2"}
                 // Disable during load so the user cannot cancel/double-toggle mid-download.
                 disabled={!webgpu || ocrBusy || ocrModelLoad !== null}
-                aria-disabled={(!webgpu || ocrModelLoad !== null) || undefined}
+                aria-disabled={!webgpu || ocrModelLoad !== null || undefined}
                 title={!webgpu ? "Requires WebGPU (unavailable in this browser)" : undefined}
                 onClick={() => void toggleVlmEngine()}
               >

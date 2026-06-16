@@ -184,9 +184,12 @@ async function recognize(bitmap: ImageBitmap): Promise<{
     do_sample: false,
   });
 
-  const decoded = tokenizer.batch_decode(generated as Parameters<typeof tokenizer.batch_decode>[0], {
-    skip_special_tokens: false,
-  });
+  const decoded = tokenizer.batch_decode(
+    generated as Parameters<typeof tokenizer.batch_decode>[0],
+    {
+      skip_special_tokens: false,
+    },
+  );
   // post_process_generation scales coord i by image_size[i % 2]; since quad
   // locations are x,y,x,y… that means [0]=width, [1]=height. (The d.ts JSDoc
   // says "height x width" but the implementation and the official demo pass
