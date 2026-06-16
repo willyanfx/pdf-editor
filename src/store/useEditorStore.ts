@@ -1,4 +1,7 @@
 import { create } from "zustand";
+import type { OcrEngine } from "../lib/vlmOcr/types";
+
+export type { OcrEngine };
 
 /** A history snapshot of the three mutable document arrays. */
 type HistoryEntry = { edits: PdfEdit[]; pageOps: PageOp[]; pageOrder: number[] };
@@ -191,7 +194,17 @@ type EditorState = {
    * it updated on resize. Any manual zoom (buttons / wheel / reset) clears it. */
   zoomPreset: ZoomPreset;
 
-  /** OCR runs in a WASM worker and takes seconds; surface a global spinner. */
+  /** Which OCR backend to run. "tesseract" is the default WASM engine; "florence2"
+   * is the Transformers.js + WebGPU vision model that returns text with layout
+   * boxes (and per-box font-size estimation). Persisted only in-session. */
+  ocrEngine: OcrEngine;
+
+  /** Non-null while the Florence-2 model is downloading/loading for the first
+   * time after toggling to the AI engine. Distinct from ocrProgress (which tracks
+   * recognition). Both the popover progress bar and the live toast read this. */
+  ocrModelLoad: { fraction: number } | null;
+
+  /** OCR runs in a WASM/GPU worker and takes seconds; surface a global spinner. */
   ocrBusy: boolean;
   ocrProgress: number; // 0..1
   /** Set by the toolbar's "Extract Text" button to ask PdfViewer (which owns the
@@ -254,6 +267,8 @@ type EditorState = {
   resetZoom: () => void;
   /** Toggle an auto-fit mode. Passing the active preset turns it off (→ null). */
   setZoomPreset: (preset: ZoomPreset) => void;
+  setOcrEngine: (engine: OcrEngine) => void;
+  setOcrModelLoad: (load: { fraction: number } | null) => void;
   setOcrBusy: (busy: boolean) => void;
   setOcrProgress: (progress: number) => void;
   requestOcrPage: (pageIndex: number | null) => void;
@@ -284,6 +299,8 @@ const initialState = {
   mode: "select" as EditorMode,
   zoom: 1,
   zoomPreset: null as ZoomPreset,
+  ocrEngine: "tesseract" as OcrEngine,
+  ocrModelLoad: null as { fraction: number } | null,
   ocrBusy: false,
   ocrProgress: 0,
   ocrRequestPageIndex: null as number | null,
@@ -481,6 +498,8 @@ export const useEditorStore = create<EditorState>((set) => ({
   setZoomPreset: (preset) =>
     set((state) => ({ zoomPreset: state.zoomPreset === preset ? null : preset })),
 
+  setOcrEngine: (ocrEngine) => set({ ocrEngine }),
+  setOcrModelLoad: (ocrModelLoad) => set({ ocrModelLoad }),
   setOcrBusy: (ocrBusy) => set({ ocrBusy }),
 
   setOcrProgress: (ocrProgress) => set({ ocrProgress }),

@@ -34,7 +34,11 @@ export function BottomBar() {
     };
   }, [open]);
 
-  if (!file) return null;
+  // The footer always renders so the layout's bottom grid row stays filled
+  // (an empty row leaves the page stage's rounded bottom corners floating over
+  // a blank strip — looks broken). The zoom controls, which need an open
+  // document, are the only part gated on `file`.
+  if (!file) return <footer className="bottombar" />;
 
   // When a preset is active, show its name; otherwise the numeric percentage.
   const label =

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Document, Page } from "react-pdf";
 import type { PDFPageProxy } from "pdfjs-dist";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { UploadCloud, Loader2 } from "lucide-react";
+import { UploadCloud } from "lucide-react";
 import { EditableLayer } from "./EditableLayer";
 import { ExistingTextLayer } from "./ExistingTextLayer";
 import { ExistingImageLayer } from "./ExistingImageLayer";
@@ -46,12 +46,9 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
   const setSelectedPageIndex = useEditorStore((s) => s.setSelectedPageIndex);
   const selectEdit = useEditorStore((s) => s.selectEdit);
   const mode = useEditorStore((s) => s.mode);
-  const ocrBusy = useEditorStore((s) => s.ocrBusy);
-  const ocrProgress = useEditorStore((s) => s.ocrProgress);
   const ocrRequestPageIndex = useEditorStore((s) => s.ocrRequestPageIndex);
   const requestOcrPage = useEditorStore((s) => s.requestOcrPage);
   const ocrAllRequest = useEditorStore((s) => s.ocrAllRequest);
-  const ocrAllProgress = useEditorStore((s) => s.ocrAllProgress);
   const setOcrBusy = useEditorStore((s) => s.setOcrBusy);
   const setOcrProgress = useEditorStore((s) => s.setOcrProgress);
   const addEdit = useEditorStore((s) => s.addEdit);
@@ -200,8 +197,15 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
       setOcrBusy(true);
       setOcrProgress(0);
       try {
-        const { recognizePageRegion } = await import("../lib/ocr");
-        const items = await recognizePageRegion(canvas, VIEWER_WIDTH, undefined, setOcrProgress);
+        const { recognizeWithEngine } = await import("../lib/vlmOcr/dispatch");
+        const engine = useEditorStore.getState().ocrEngine;
+        const items = await recognizeWithEngine(
+          engine,
+          canvas,
+          VIEWER_WIDTH,
+          undefined,
+          setOcrProgress,
+        );
         if (cancelled) return;
         for (const it of items) {
           const coverColor = sampleBackgroundColor(
@@ -248,7 +252,8 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
     let cancelled = false;
     void (async () => {
       const { pdfjs } = await import("react-pdf");
-      const { recognizePageRegion } = await import("../lib/ocr");
+      const { recognizeWithEngine } = await import("../lib/vlmOcr/dispatch");
+      const engine = useEditorStore.getState().ocrEngine;
       setOcrBusy(true);
       // Keep the loadingTask: destroying it (not the resolved doc) aborts a load
       // still in flight on cancel and fully tears down the worker doc.
@@ -278,7 +283,7 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
               continue;
             }
             await page.render({ canvas, viewport: scaled }).promise;
-            const items = await recognizePageRegion(canvas, VIEWER_WIDTH, undefined);
+            const items = await recognizeWithEngine(engine, canvas, VIEWER_WIDTH, undefined);
             if (cancelled || useEditorStore.getState().ocrAllCancelled) {
               page.cleanup();
               break;
@@ -464,29 +469,6 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
         </div>
       </Document>
 
-      {ocrBusy && (
-        <div className="ocr-overlay" role="status" aria-live="polite">
-          <div className="ocr-overlay-card">
-            <Loader2 size={20} className="ocr-spinner" />
-            {ocrAllProgress ? (
-              <>
-                <span>
-                  Reading page {ocrAllProgress.current} of {ocrAllProgress.total}…
-                </span>
-                <button
-                  type="button"
-                  className="ocr-cancel"
-                  onClick={() => useEditorStore.getState().cancelOcrAll()}
-                >
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <span>Reading text… {Math.round(ocrProgress * 100)}%</span>
-            )}
-          </div>
-        </div>
-      )}
     </section>
   );
 }

@@ -20,7 +20,10 @@ export function Toaster() {
       {toasts.map((toast) => {
         const Icon = ICONS[toast.variant];
         return (
-          <div key={toast.id} className={`toast toast-${toast.variant}`}>
+          <div
+            key={toast.id}
+            className={`toast toast-${toast.variant}${toast.progress !== undefined ? " toast-progress" : ""}`}
+          >
             <Icon size={16} className="toast-icon" aria-hidden="true" />
             <span className="toast-message">{toast.message}</span>
             <button
@@ -31,6 +34,17 @@ export function Toaster() {
             >
               <X size={14} aria-hidden="true" />
             </button>
+
+            {toast.progress !== undefined && (
+              <div
+                className="toast-progress-bar"
+                style={{ width: `${Math.round(toast.progress * 100)}%` }}
+                role="progressbar"
+                aria-valuenow={Math.round(toast.progress * 100)}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              />
+            )}
           </div>
         );
       })}
