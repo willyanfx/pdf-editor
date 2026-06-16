@@ -41,6 +41,26 @@ export default function App() {
         return;
       }
 
+      // Undo / Redo — only when NOT in a text field; let the browser's native
+      // undo/redo win inside contentEditable and input elements.
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "z") {
+        if (typing) return; // native browser undo/redo handles contentEditable and inputs
+        e.preventDefault();
+        if (e.shiftKey) {
+          useEditorStore.getState().redo();
+        } else {
+          useEditorStore.getState().undo();
+        }
+        return;
+      }
+      // Ctrl+Y as alternate redo (Windows convention).
+      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "y") {
+        if (typing) return;
+        e.preventDefault();
+        useEditorStore.getState().redo();
+        return;
+      }
+
       // The remaining shortcuts must not hijack keystrokes inside text fields
       // (the page-jump input, find box, comment textareas, rich-text editor).
       if (typing) return;

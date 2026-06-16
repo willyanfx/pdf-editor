@@ -7,6 +7,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Minimize2,
+  Undo2,
+  Redo2,
 } from "lucide-react";
 import { useEditorStore } from "../store/useEditorStore";
 import { useEditorActions } from "../hooks/useEditorActions";
@@ -22,6 +24,10 @@ export function TopBar() {
   // so a DOM scrollIntoView can't reach it.
   const scrollToPage = useEditorStore((s) => s.scrollToPage);
   const { pickPdf, downloadPdf, compressPdf } = useEditorActions();
+  const canUndo = useEditorStore((s) => s._past.length > 0);
+  const canRedo = useEditorStore((s) => s._future.length > 0);
+  const undo = useEditorStore((s) => s.undo);
+  const redo = useEditorStore((s) => s.redo);
 
   const [downloadState, setDownloadState] = useState<DownloadState>("idle");
   const [compressState, setCompressState] = useState<DownloadState>("idle");
@@ -77,6 +83,29 @@ export function TopBar() {
       )}
 
       <span className="topbar-spacer" />
+
+      <button
+        type="button"
+        className="topbar-btn"
+        title="Undo (⌘Z)"
+        aria-label="Undo"
+        disabled={!file || !canUndo}
+        onClick={undo}
+      >
+        <Undo2 size={15} />
+        <span>Undo</span>
+      </button>
+      <button
+        type="button"
+        className="topbar-btn"
+        title="Redo (⌘⇧Z)"
+        aria-label="Redo"
+        disabled={!file || !canRedo}
+        onClick={redo}
+      >
+        <Redo2 size={15} />
+        <span>Redo</span>
+      </button>
 
       {file && numPages > 0 && (
         <div className="topbar-pages">
