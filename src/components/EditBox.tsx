@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Rnd } from "react-rnd";
 import { X, ScanText, RefreshCw, GripVertical } from "lucide-react";
 import type { PdfEdit } from "../store/useEditorStore";
@@ -24,10 +24,17 @@ export function EditBox({ edit }: Props) {
   const addToast = useToastStore((s) => s.addToast);
   const ocrBusy = useEditorStore((s) => s.ocrBusy);
   const selected = useEditorStore((s) => s.selectedEditId === edit.id);
+  const zoom = useEditorStore((s) => s.zoom);
   // The editor registers a selection-range getter here so the toolbar can apply
   // formatting to just the selected characters.
   const getSelectionRange = useRef<SelectionRangeGetter | null>(null);
   const [showComment, setShowComment] = useState(false);
+
+  // Collapse the comment textarea when the box is deselected, so it doesn't
+  // reappear the next time this box is selected.
+  useEffect(() => {
+    if (!selected) setShowComment(false);
+  }, [selected]);
 
   /** Swap the picture of an image edit in place, keeping its box geometry. */
   function swapImage() {
@@ -35,8 +42,10 @@ export function EditBox({ edit }: Props) {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "image/png,image/jpeg";
+    input.style.display = "none";
     input.onchange = async () => {
       const picked = input.files?.[0];
+      input.remove();
       if (!picked) return;
       try {
         const dataUrl = await fileToDataUrl(picked);
@@ -45,6 +54,8 @@ export function EditBox({ edit }: Props) {
         addToast("Could not decode that image.", "error");
       }
     };
+    // Safari/mobile block .click() on a detached input; mount it briefly.
+    document.body.appendChild(input);
     input.click();
   }
 
@@ -88,6 +99,9 @@ export function EditBox({ edit }: Props) {
     <Rnd
       size={{ width: edit.width, height: edit.height }}
       position={{ x: edit.x, y: edit.y }}
+      // The page stage is CSS-scaled by `zoom`; tell Rnd so drag/resize deltas
+      // map back to unscaled VIEWER_WIDTH coordinates.
+      scale={zoom}
       bounds="parent"
       // Don't start a drag from inside any interactive child (editor, toolbar,
       // buttons, comment body), so text selection, typing, and clicks work. The

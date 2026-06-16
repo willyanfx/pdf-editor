@@ -18,34 +18,43 @@ const INK_WIDTH = 2.5;
 export function InkLayer({ pageIndex }: Props) {
   const mode = useEditorStore((s) => s.mode);
   const addEdit = useEditorStore((s) => s.addEdit);
+  const zoom = useEditorStore((s) => s.zoom);
 
   const layerRef = useRef<HTMLDivElement | null>(null);
   const drawingRef = useRef(false);
+  // Mirror points into a ref so commit() always sees the full stroke even if the
+  // last setPoints render hasn't flushed before pointer-up fires.
+  const pointsRef = useRef<Pt[]>([]);
   const [points, setPoints] = useState<Pt[]>([]);
 
   if (mode !== "ink") return null;
 
   function pointIn(e: React.PointerEvent): Pt {
+    // getBoundingClientRect() reports post-CSS-transform (zoomed) pixels; divide
+    // by zoom so points are stored in unscaled VIEWER_WIDTH space.
     const bounds = layerRef.current!.getBoundingClientRect();
-    return { x: e.clientX - bounds.left, y: e.clientY - bounds.top };
+    return { x: (e.clientX - bounds.left) / zoom, y: (e.clientY - bounds.top) / zoom };
   }
 
   function onPointerDown(e: React.PointerEvent) {
     e.stopPropagation();
     layerRef.current?.setPointerCapture(e.pointerId);
     drawingRef.current = true;
-    setPoints([pointIn(e)]);
+    pointsRef.current = [pointIn(e)];
+    setPoints(pointsRef.current);
   }
 
   function onPointerMove(e: React.PointerEvent) {
     if (!drawingRef.current) return;
-    setPoints((prev) => [...prev, pointIn(e)]);
+    pointsRef.current = [...pointsRef.current, pointIn(e)];
+    setPoints(pointsRef.current);
   }
 
   function commit() {
     if (!drawingRef.current) return;
     drawingRef.current = false;
-    const pts = points;
+    const pts = pointsRef.current;
+    pointsRef.current = [];
     setPoints([]);
     if (pts.length < 2) return;
 

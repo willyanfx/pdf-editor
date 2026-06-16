@@ -31,17 +31,28 @@ export default function App() {
   // nudge/delete for the selected edit.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      // ⌘K / Ctrl+K opens the command palette from anywhere.
+      const target = e.target as HTMLElement | null;
+      const typing =
+        target &&
+        (target.tagName === "TEXTAREA" || target.tagName === "INPUT" || target.isContentEditable);
+
+      // ⌘K / Ctrl+K opens the command palette from anywhere (even while typing).
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPaletteOpen((open) => !open);
         return;
       }
 
-      // ⌘F / Ctrl+F toggles find-in-page (only with a doc open).
+      // The remaining shortcuts must not hijack keystrokes inside text fields
+      // (the page-jump input, find box, comment textareas, rich-text editor).
+      if (typing) return;
+
+      // ⌘F / Ctrl+F toggles find-in-page (only with a doc open). Close the
+      // palette first so its focus trap doesn't swallow keys meant for FindBar.
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
         if (useEditorStore.getState().file) {
           e.preventDefault();
+          setPaletteOpen(false);
           setFindOpen((v) => !v);
           return;
         }
@@ -68,11 +79,6 @@ export default function App() {
           return;
         }
       }
-
-      const target = e.target as HTMLElement | null;
-      const typing =
-        target &&
-        (target.tagName === "TEXTAREA" || target.tagName === "INPUT" || target.isContentEditable);
 
       const store = useEditorStore.getState();
 

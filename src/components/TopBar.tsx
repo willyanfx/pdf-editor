@@ -109,11 +109,11 @@ export function TopBar() {
               onKeyDown={(e) => {
                 if (e.key === "ArrowUp") {
                   e.preventDefault();
-                  goToPage(selectedPageIndex + 1);
+                  goToPage(selectedPageIndex - 1);
                   setPageDraft(null);
                 } else if (e.key === "ArrowDown") {
                   e.preventDefault();
-                  goToPage(selectedPageIndex - 1);
+                  goToPage(selectedPageIndex + 1);
                   setPageDraft(null);
                 } else if (e.key === "Escape") {
                   setPageDraft(null);

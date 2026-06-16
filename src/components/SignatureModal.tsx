@@ -161,6 +161,8 @@ export function SignatureModal() {
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
+              onPointerLeave={onPointerUp}
+              onPointerCancel={onPointerUp}
             />
             <button type="button" className="sig-clear" onClick={clearCanvas}>
               Clear

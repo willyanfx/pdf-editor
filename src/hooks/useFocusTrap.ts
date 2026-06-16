@@ -10,6 +10,10 @@ import { useEffect, useRef } from "react";
  */
 export function useFocusTrap<T extends HTMLElement>(active: boolean, onClose: () => void) {
   const ref = useRef<T | null>(null);
+  // Keep onClose in a ref so an inline (non-memoized) callback from the caller
+  // doesn't re-run this effect — and tear down/re-attach the trap — every render.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!active) return;
@@ -33,7 +37,7 @@ export function useFocusTrap<T extends HTMLElement>(active: boolean, onClose: ()
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== "Tab") return;
@@ -59,7 +63,8 @@ export function useFocusTrap<T extends HTMLElement>(active: boolean, onClose: ()
       node.removeEventListener("keydown", onKeyDown);
       previouslyFocused?.focus?.();
     };
-  }, [active, onClose]);
+    // onClose is read through onCloseRef, so it's intentionally not a dep.
+  }, [active]);
 
   return ref;
 }

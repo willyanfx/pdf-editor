@@ -52,7 +52,7 @@ export function BottomBar() {
           className="bottombar-btn"
           aria-label="Zoom out"
           title="Zoom out (⌘−)"
-          disabled={!zoomPreset && zoom <= MIN_ZOOM}
+          disabled={zoom <= MIN_ZOOM}
           onClick={zoomOut}
         >
           <ZoomOut size={15} aria-hidden="true" />
@@ -126,7 +126,7 @@ export function BottomBar() {
           className="bottombar-btn"
           aria-label="Zoom in"
           title="Zoom in (⌘+)"
-          disabled={!zoomPreset && zoom >= MAX_ZOOM}
+          disabled={zoom >= MAX_ZOOM}
           onClick={zoomIn}
         >
           <ZoomIn size={15} aria-hidden="true" />

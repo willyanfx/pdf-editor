@@ -67,8 +67,10 @@ export function ExistingImageLayer({ pageIndex, page, getCanvas }: Props) {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "image/png,image/jpeg";
+    input.style.display = "none";
     input.onchange = async () => {
       const picked = input.files?.[0];
+      input.remove();
       if (!picked) return;
       try {
         const dataUrl = await fileToDataUrl(picked);
@@ -77,15 +79,17 @@ export function ExistingImageLayer({ pageIndex, page, getCanvas }: Props) {
         addToast("Could not decode that image.", "error");
       }
     };
+    // Safari/mobile block .click() on a detached input; mount it briefly.
+    document.body.appendChild(input);
     input.click();
   }
 
   return (
     <div className="existing-image-layer">
-      {items.map((item, i) =>
+      {items.map((item) =>
         covered(item) ? null : (
           <button
-            key={i}
+            key={`${item.x}_${item.y}_${item.width}_${item.height}`}
             type="button"
             className="existing-image-hit"
             title="Replace this image"

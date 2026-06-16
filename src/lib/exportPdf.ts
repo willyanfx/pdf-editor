@@ -424,9 +424,13 @@ function applyPageOp(page: PDFPage, op: PageOp) {
     if (norm) page.setRotation(degrees(norm));
   }
   if (op.crop) {
-    // Crop insets are screen px at VIEWER_WIDTH; scale to PDF units. The page
-    // may already carry a non-zero crop box origin, so offset from it.
-    const scale = page.getWidth() / VIEWER_W;
+    // Crop insets are screen px at VIEWER_WIDTH; scale to PDF units. The viewer
+    // renders the page at its *visual* width, which is the MediaBox height when
+    // the page carries a 90°/270° /Rotate — so scale against that, not getWidth.
+    // The page may already carry a non-zero crop box origin, so offset from it.
+    const existingRot = ((page.getRotation().angle % 360) + 360) % 360;
+    const visualWidth = existingRot % 180 === 0 ? page.getWidth() : page.getHeight();
+    const scale = visualWidth / VIEWER_W;
     const box = page.getCropBox();
     const left = box.x + op.crop.left * scale;
     const bottom = box.y + op.crop.bottom * scale;
@@ -574,30 +578,33 @@ async function downsampleImages(pdfBytes: Uint8Array): Promise<Uint8Array | null
   const TARGET_WIDTH = 1240; // ~150 DPI for US Letter; good for sharing.
   const JPEG_QUALITY = 0.7;
 
-  for (let i = 1; i <= doc.numPages; i++) {
-    const page = await doc.getPage(i);
-    const base = page.getViewport({ scale: 1 });
-    const scale = Math.min(1, TARGET_WIDTH / base.width);
-    const viewport = page.getViewport({ scale });
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.ceil(viewport.width);
-    canvas.height = Math.ceil(viewport.height);
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return null;
-    // White matte so transparent regions don't turn black in JPEG.
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    await page.render({ canvas, canvasContext: ctx, viewport }).promise;
+  try {
+    for (let i = 1; i <= doc.numPages; i++) {
+      const page = await doc.getPage(i);
+      const base = page.getViewport({ scale: 1 });
+      const scale = Math.min(1, TARGET_WIDTH / base.width);
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return null;
+      // White matte so transparent regions don't turn black in JPEG.
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvas, viewport }).promise;
 
-    const jpegUrl = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
-    const jpeg = await out.embedJpg(dataUrlToBytes(jpegUrl));
-    const outPage = out.addPage([base.width, base.height]);
-    outPage.drawImage(jpeg, { x: 0, y: 0, width: base.width, height: base.height });
+      const jpegUrl = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
+      const jpeg = await out.embedJpg(dataUrlToBytes(jpegUrl));
+      const outPage = out.addPage([base.width, base.height]);
+      outPage.drawImage(jpeg, { x: 0, y: 0, width: base.width, height: base.height });
+    }
+  } finally {
+    // Fully tear down the worker-side document (not just doc.cleanup(), which
+    // only frees per-page caches) on every exit path — including an early
+    // return or a render error mid-loop — so the worker never leaks.
+    await loadingTask.destroy();
   }
-
-  // Fully tear down the worker-side document (not just doc.cleanup(), which only
-  // frees per-page caches) now that every page has been rasterized.
-  await loadingTask.destroy();
   return out.save({ useObjectStreams: true });
 }
 

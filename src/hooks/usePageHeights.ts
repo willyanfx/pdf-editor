@@ -26,18 +26,16 @@ export function usePageHeights(file: File | null, numPages: number): number[] {
 
     let cancelled = false;
     void (async () => {
+      // Read fresh bytes: pdf.js neuters the ArrayBuffer it loads, and the
+      // render path consumes its own copy, so we hand this a separate buffer.
+      // Keep the loadingTask: destroying it (not the resolved doc) is the
+      // pdf.js teardown that also aborts a load still in flight if we cancel.
+      let loadingTask: ReturnType<typeof pdfjs.getDocument> | null = null;
       try {
-        // Read fresh bytes: pdf.js neuters the ArrayBuffer it loads, and the
-        // render path consumes its own copy, so we hand this a separate buffer.
         const data = await file.arrayBuffer();
-        // Keep the loadingTask: destroying it (not the resolved doc) is the
-        // pdf.js teardown that also aborts a load still in flight if we cancel.
-        const loadingTask = pdfjs.getDocument({ data, ...PDF_DOCUMENT_OPTIONS });
+        loadingTask = pdfjs.getDocument({ data, ...PDF_DOCUMENT_OPTIONS });
         const doc = await loadingTask.promise;
-        if (cancelled) {
-          void loadingTask.destroy();
-          return;
-        }
+        if (cancelled) return;
 
         const measured: number[] = new Array(doc.numPages).fill(FALLBACK_HEIGHT);
         for (let i = 1; i <= doc.numPages; i++) {
@@ -47,11 +45,13 @@ export function usePageHeights(file: File | null, numPages: number): number[] {
           measured[i - 1] = (VIEWER_WIDTH / vp.width) * vp.height;
           page.cleanup();
         }
-        void loadingTask.destroy();
         if (!cancelled) setHeights(measured);
       } catch {
         // On failure, leave heights empty so the caller uses its estimate.
         if (!cancelled) setHeights([]);
+      } finally {
+        // Tear down the worker doc on every path — success, cancel, or error.
+        void loadingTask?.destroy();
       }
     })();
 

@@ -25,16 +25,27 @@ export function OcrLayer({ pageIndex, getCanvas }: Props) {
   const setOcrBusy = useEditorStore((s) => s.setOcrBusy);
   const setOcrProgress = useEditorStore((s) => s.setOcrProgress);
   const addToast = useToastStore((s) => s.addToast);
+  const zoom = useEditorStore((s) => s.zoom);
 
   const layerRef = useRef<HTMLDivElement | null>(null);
   const startRef = useRef<{ x: number; y: number } | null>(null);
+  // Mirror the drag rect into a ref so onMouseUp reads the final value even if
+  // the pointer-up fires before the last setRect render has flushed.
+  const rectRef = useRef<DragRect | null>(null);
   const [rect, setRect] = useState<DragRect | null>(null);
 
   if (mode !== "ocr") return null;
 
   function pointIn(e: React.PointerEvent): { x: number; y: number } {
+    // getBoundingClientRect() reports post-CSS-transform (zoomed) pixels; divide
+    // by zoom so the region is in unscaled VIEWER_WIDTH space.
     const bounds = layerRef.current!.getBoundingClientRect();
-    return { x: e.clientX - bounds.left, y: e.clientY - bounds.top };
+    return { x: (e.clientX - bounds.left) / zoom, y: (e.clientY - bounds.top) / zoom };
+  }
+
+  function applyRect(next: DragRect | null) {
+    rectRef.current = next;
+    setRect(next);
   }
 
   function onPointerDown(e: React.PointerEvent) {
@@ -43,14 +54,14 @@ export function OcrLayer({ pageIndex, getCanvas }: Props) {
     layerRef.current?.setPointerCapture(e.pointerId);
     const p = pointIn(e);
     startRef.current = p;
-    setRect({ x: p.x, y: p.y, width: 0, height: 0 });
+    applyRect({ x: p.x, y: p.y, width: 0, height: 0 });
   }
 
   function onPointerMove(e: React.PointerEvent) {
     const start = startRef.current;
     if (!start) return;
     const p = pointIn(e);
-    setRect({
+    applyRect({
       x: Math.min(start.x, p.x),
       y: Math.min(start.y, p.y),
       width: Math.abs(p.x - start.x),
@@ -59,9 +70,9 @@ export function OcrLayer({ pageIndex, getCanvas }: Props) {
   }
 
   async function onMouseUp() {
-    const region = rect;
+    const region = rectRef.current;
     startRef.current = null;
-    setRect(null);
+    applyRect(null);
     // Ignore tiny/accidental drags.
     if (!region || region.width < 6 || region.height < 6) return;
 
@@ -110,7 +121,7 @@ export function OcrLayer({ pageIndex, getCanvas }: Props) {
       onPointerCancel={() => {
         // Cancel an in-progress drag.
         startRef.current = null;
-        setRect(null);
+        applyRect(null);
       }}
     >
       {rect && (

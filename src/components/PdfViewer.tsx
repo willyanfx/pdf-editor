@@ -156,12 +156,19 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
       // (both sides) plus a small gutter so the page never butts the scrollbar.
       const availW = el.clientWidth - 48 - 4;
       const availH = el.clientHeight - 48;
+      // A collapsed/zero-size container would produce a non-positive or infinite
+      // fit; skip until it has real dimensions.
+      if (availW <= 0) return;
       const fitWidth = availW / VIEWER_WIDTH;
       let next = fitWidth;
-      if (zoomPreset === "fit-page") {
+      if (zoomPreset === "fit-page" && availH > 0) {
         // Fit the currently-visible page fully in view (width OR height bound).
-        const pageH = pageHeights[topVisibleIndex] ?? ESTIMATED_PAGE_HEIGHT;
-        next = Math.min(fitWidth, availH / pageH);
+        // Read the live top-visible index so a resize after scrolling fits the
+        // page actually on screen, without re-subscribing the observer.
+        const state = useEditorStore.getState();
+        const idx = state.selectedPageIndex;
+        const pageH = pageHeights[idx] ?? ESTIMATED_PAGE_HEIGHT;
+        if (pageH > 0) next = Math.min(fitWidth, availH / pageH);
       }
       useEditorStore.setState({ zoom: clampZoom(next) });
     }
@@ -170,7 +177,10 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
     const ro = new ResizeObserver(applyFit);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [zoomPreset, pageHeights, topVisibleIndex]);
+    // topVisibleIndex is intentionally omitted: applyFit reads the live index via
+    // getState(), so the observer needn't re-subscribe on every scroll. We keep
+    // pageHeights so a late page measurement re-fits fit-page.
+  }, [zoomPreset, pageHeights]);
 
   // Whole-page OCR: the toolbar sets ocrRequestPageIndex; we own the page
   // canvases, so we run the recognition here and clear the request when done.
@@ -238,11 +248,14 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
       const { pdfjs } = await import("react-pdf");
       const { recognizePageRegion } = await import("../lib/ocr");
       setOcrBusy(true);
-      let doc: Awaited<ReturnType<typeof pdfjs.getDocument>["promise"]> | null = null;
+      // Keep the loadingTask: destroying it (not the resolved doc) aborts a load
+      // still in flight on cancel and fully tears down the worker doc.
+      let loadingTask: ReturnType<typeof pdfjs.getDocument> | null = null;
       try {
         // Fresh buffer: pdf.js neuters the one it loads (same as usePageHeights).
         const data = await docFile.arrayBuffer();
-        doc = await pdfjs.getDocument({ data, ...PDF_DOCUMENT_OPTIONS }).promise;
+        loadingTask = pdfjs.getDocument({ data, ...PDF_DOCUMENT_OPTIONS });
+        const doc = await loadingTask.promise;
         const total = doc.numPages;
         useEditorStore.getState().setOcrAllProgress({ current: 0, total });
 
@@ -262,7 +275,7 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
               page.cleanup();
               continue;
             }
-            await page.render({ canvas, canvasContext: ctx, viewport: scaled }).promise;
+            await page.render({ canvas, viewport: scaled }).promise;
             const items = await recognizePageRegion(canvas, VIEWER_WIDTH, undefined);
             if (cancelled || useEditorStore.getState().ocrAllCancelled) {
               page.cleanup();
@@ -290,13 +303,13 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
         }
         const wasCancelled = cancelled || useEditorStore.getState().ocrAllCancelled;
         addToast(
-          wasCancelled ? "Stopped OCR" : `OCR complete — ${doc.numPages} pages read`,
+          wasCancelled ? "Stopped OCR" : `OCR complete — ${total} pages read`,
           wasCancelled ? "info" : "success",
         );
       } catch {
         if (!cancelled) addToast("Could not OCR this document.", "error");
       } finally {
-        if (doc) void doc.destroy();
+        void loadingTask?.destroy();
         setOcrBusy(false);
         useEditorStore.getState().clearOcrAll();
       }

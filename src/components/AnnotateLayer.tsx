@@ -24,6 +24,7 @@ export function AnnotateLayer({ pageIndex }: Props) {
   const mode = useEditorStore((s) => s.mode);
   const addEdit = useEditorStore((s) => s.addEdit);
   const setMode = useEditorStore((s) => s.setMode);
+  const zoom = useEditorStore((s) => s.zoom);
 
   const layerRef = useRef<HTMLDivElement | null>(null);
   const startRef = useRef<{ x: number; y: number } | null>(null);
@@ -33,8 +34,10 @@ export function AnnotateLayer({ pageIndex }: Props) {
   if (!isMarkup && mode !== "comment") return null;
 
   function pointIn(e: React.PointerEvent): { x: number; y: number } {
+    // getBoundingClientRect() reports post-CSS-transform (zoomed) pixels; divide
+    // by zoom so markup is stored in unscaled VIEWER_WIDTH space.
     const bounds = layerRef.current!.getBoundingClientRect();
-    return { x: e.clientX - bounds.left, y: e.clientY - bounds.top };
+    return { x: (e.clientX - bounds.left) / zoom, y: (e.clientY - bounds.top) / zoom };
   }
 
   function onPointerDown(e: React.PointerEvent) {

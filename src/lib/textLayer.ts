@@ -168,6 +168,11 @@ function blockFromRuns(items: RawItem[], id: number): ScreenTextItem {
   // Dominant (largest) font size drives the box's default size.
   const fontSize = Math.max(...items.map((it) => it.fontSize));
   const first = items[0];
+  // A line is "bold"/"italic" only if every non-blank run is — using just the
+  // first run misclassifies a heading whose first run is a leading number/space.
+  const inkRuns = items.filter((it) => it.str.trim().length > 0);
+  const blockBold = inkRuns.length > 0 && inkRuns.every((it) => it.bold);
+  const blockItalic = inkRuns.length > 0 && inkRuns.every((it) => it.italic);
 
   // Each original run as a standalone item, for Alt+click single-run lift.
   const subItems: ScreenTextItem[] = items.map((it, idx) => ({
@@ -194,8 +199,8 @@ function blockFromRuns(items: RawItem[], id: number): ScreenTextItem {
     height: maxY - minY,
     fontSize,
     fontFamily: first.fontFamily,
-    bold: first.bold,
-    italic: first.italic,
+    bold: blockBold,
+    italic: blockItalic,
   };
 }
 

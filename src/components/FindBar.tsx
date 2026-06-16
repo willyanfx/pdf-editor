@@ -18,6 +18,9 @@ export function FindBar({ onClose }: Props) {
   const selectEdit = useEditorStore((s) => s.selectEdit);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [cursor, setCursor] = useState(0);
+  // Mirror cursor so rapid Enter presses step from the latest value, not the one
+  // captured when go() was created for the current render.
+  const cursorRef = useRef(0);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -25,12 +28,20 @@ export function FindBar({ onClose }: Props) {
   }, []);
 
   useEffect(() => {
+    cursorRef.current = 0;
     setCursor(0);
   }, [query]);
 
+  function close() {
+    // Clear the query so stale matches don't linger in the store after closing.
+    setSearchQuery("");
+    onClose();
+  }
+
   function go(delta: number) {
     if (matchIds.length === 0) return;
-    const next = (cursor + delta + matchIds.length) % matchIds.length;
+    const next = (cursorRef.current + delta + matchIds.length) % matchIds.length;
+    cursorRef.current = next;
     setCursor(next);
     const id = matchIds[next];
     const store = useEditorStore.getState();
@@ -60,7 +71,7 @@ export function FindBar({ onClose }: Props) {
             go(e.shiftKey ? -1 : 1);
           } else if (e.key === "Escape") {
             e.preventDefault();
-            onClose();
+            close();
           }
         }}
       />
@@ -89,10 +100,7 @@ export function FindBar({ onClose }: Props) {
         type="button"
         title="Close find"
         aria-label="Close find"
-        onClick={() => {
-          setSearchQuery("");
-          onClose();
-        }}
+        onClick={close}
       >
         <X size={14} aria-hidden="true" />
       </button>

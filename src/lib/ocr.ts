@@ -38,6 +38,12 @@ function getWorker(): Promise<Worker> {
     });
     return worker;
   });
+  // Don't cache a rejected init (e.g. a transient CDN failure fetching the
+  // worker/lang assets) — clear it so the next call retries instead of being
+  // permanently dead until reload.
+  workerPromise.catch(() => {
+    workerPromise = null;
+  });
   return workerPromise;
 }
 
@@ -355,6 +361,9 @@ export function linesFromData(data: unknown): OcrLine[] {
  * page width so the DPI estimate stays correct.
  */
 function preprocessForOcr(canvas: HTMLCanvasElement, pageWidthIn: number): HTMLCanvasElement {
+  // A degenerate canvas (or a zero page width) would make the DPI math NaN and
+  // produce a 0×0 output; pass it through untouched instead.
+  if (!canvas.width || !canvas.height || pageWidthIn <= 0) return canvas;
   const effectiveDpi = canvas.width / pageWidthIn;
   // Cap by scale (≤4×) and by absolute longest side (≤4800px) to avoid GPU OOM.
   let scale = Math.min(4, Math.max(1, 300 / effectiveDpi));
