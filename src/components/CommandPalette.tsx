@@ -136,7 +136,7 @@ export function CommandPalette({ onClose }: Props) {
         icon: <Type size={16} />,
         shortcut: "T",
         disabled: noFile,
-        run: () => runAndClose(actions.addText),
+        run: () => runAndClose(() => actions.setMode("addText")),
       },
       {
         id: "add-image",

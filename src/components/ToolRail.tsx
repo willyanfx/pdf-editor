@@ -58,7 +58,6 @@ export function ToolRail({ onOpenPalette, onTogglePages, pagesActive }: Props) {
   const ocrBusy = useEditorStore((s) => s.ocrBusy);
   const {
     setMode,
-    addText,
     pickImage,
     addRectangle,
     extractText,
@@ -90,12 +89,7 @@ export function ToolRail({ onOpenPalette, onTogglePages, pagesActive }: Props) {
 
       <span className="rail-divider" />
 
-      <RailButton
-        icon={<Type size={18} />}
-        tip="Add Text (T)"
-        disabled={noFile}
-        onClick={addText}
-      />
+      {modeBtn("addText", <Type size={18} />, "Add Text — draw a box (T)")}
       <RailButton
         icon={<ImagePlus size={18} />}
         tip="Add Image"

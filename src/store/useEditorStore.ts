@@ -146,11 +146,13 @@ export type PageOp = {
 
 /** Select vs. Edit-Text vs. OCR. In edit-text mode, clicking existing PDF text
  * turns it into an editable box. In ocr mode, dragging a rectangle runs OCR on
- * that region and turns recognized text into editable boxes. */
+ * that region and turns recognized text into editable boxes. In addText mode,
+ * dragging (or clicking) places a new empty text box where the user draws it. */
 export type EditorMode =
   | "select"
   | "editText"
   | "ocr"
+  | "addText"
   | "highlight"
   | "underline"
   | "comment"

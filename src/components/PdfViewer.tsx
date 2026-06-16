@@ -9,6 +9,7 @@ import { ExistingImageLayer } from "./ExistingImageLayer";
 import { OcrLayer } from "./OcrLayer";
 import { AnnotateLayer } from "./AnnotateLayer";
 import { InkLayer } from "./InkLayer";
+import { TextDrawLayer } from "./TextDrawLayer";
 import { PageActionsBar } from "./PageActionsBar";
 import { PagePanel } from "./PagePanel";
 import { useEditorStore, makeCoverTextEdit, clampZoom } from "../store/useEditorStore";
@@ -449,6 +450,7 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
                     />
                     <AnnotateLayer pageIndex={index} />
                     <InkLayer pageIndex={index} />
+                    <TextDrawLayer pageIndex={index} />
                     <EditableLayer pageIndex={index} />
                   </div>
                   <PageActionsBar

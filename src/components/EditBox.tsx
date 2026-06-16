@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Rnd } from "react-rnd";
-import { X, ScanText, RefreshCw, GripVertical } from "lucide-react";
+import { Trash2, ScanText, RefreshCw, GripVertical } from "lucide-react";
 import type { PdfEdit } from "../store/useEditorStore";
 import { useEditorStore, makeTextEdit, textToRuns } from "../store/useEditorStore";
 import { useToastStore } from "../store/useToastStore";
@@ -248,13 +248,16 @@ export function EditBox({ edit }: Props) {
           className="delete"
           title="Delete"
           aria-label="Delete this edit"
+          // Stop pointer/mouse down from reaching react-rnd (drag) or the
+          // re-resizable corner handle (resize) underneath, so the click lands.
+          onPointerDown={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(event) => {
             event.stopPropagation();
             deleteEdit(edit.id);
           }}
         >
-          <X size={14} aria-hidden="true" />
+          <Trash2 size={14} aria-hidden="true" />
         </button>
       )}
 

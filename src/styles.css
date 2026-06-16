@@ -1253,18 +1253,30 @@ button {
 
 .delete {
   position: absolute;
-  top: -13px;
-  right: -13px;
+  /* Sit just OUTSIDE the right edge, dropped down from the top corner. This
+     clears the format toolbar (which floats above the box) and the top-right
+     re-resizable handle (20x20 at top:-10/right:-10) — the old top:-13/right:-13
+     placement overlapped that handle, which painted on top and swallowed the
+     click as a resize. */
+  top: 6px;
+  left: calc(100% + 8px);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border: 0;
   border-radius: var(--r-pill);
   background: var(--error);
   color: white;
   cursor: pointer;
+  /* Paint above resize handles (z-index:1) and the editor body so the click
+     always lands on the button. */
+  z-index: 5;
+  box-shadow: 0 1px 4px oklch(0% 0 0 / 0.25);
+}
+.delete:hover {
+  filter: brightness(1.08);
 }
 
 /* Grab handle for moving an edit box. Hidden until hover/selection so it stays
@@ -1384,13 +1396,20 @@ button {
 
 /* Annotate drag overlay (highlight/underline/strikeout/comment) --------- */
 .annotate-layer,
-.ink-layer {
+.ink-layer,
+.text-draw-layer {
   position: absolute;
   inset: 0;
   z-index: 4;
   cursor: crosshair;
   /* Pointer-drag to draw/markup must not scroll/zoom the page on touch. */
   touch-action: none;
+}
+.text-draw-preview {
+  position: absolute;
+  pointer-events: none;
+  border: 1.5px dashed var(--fg);
+  background: oklch(18% 0 0 / 0.06);
 }
 .annotate-preview {
   position: absolute;
