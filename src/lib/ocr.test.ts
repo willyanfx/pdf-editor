@@ -2,9 +2,7 @@ import { expect, test } from "vite-plus/test";
 import { linesFromData, ocrLineToScreenItem, paragraphsFromData } from "./ocr";
 
 /** Build a minimal blocks tree from lines of { text, y0, y1, x0, words? }. */
-function tree(
-  lines: { text: string; x0: number; y0: number; y1?: number; x1?: number }[],
-) {
+function tree(lines: { text: string; x0: number; y0: number; y1?: number; x1?: number }[]) {
   return {
     blocks: [
       {
@@ -17,7 +15,9 @@ function tree(
                 text: l.text + "\n",
                 bbox: { x0: l.x0, y0: l.y0, x1, y1 },
                 rowAttributes: { row_height: y1 - l.y0 },
-                words: [{ text: l.text.split(" ")[0], bbox: { x0: l.x0, y0: l.y0, x1: l.x0 + 30, y1 } }],
+                words: [
+                  { text: l.text.split(" ")[0], bbox: { x0: l.x0, y0: l.y0, x1: l.x0 + 30, y1 } },
+                ],
               };
             }),
           },

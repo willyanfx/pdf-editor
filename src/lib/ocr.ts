@@ -201,7 +201,10 @@ export function paragraphsFromData(data: unknown, gapRatio = 1.3): OcrParagraph[
   const lines = collectLines(data);
   if (lines.length === 0) return [];
 
-  const rowHeights = lines.map((l) => l.rowHeight).filter((h) => h > 0).sort((a, b) => a - b);
+  const rowHeights = lines
+    .map((l) => l.rowHeight)
+    .filter((h) => h > 0)
+    .sort((a, b) => a - b);
   const medianRow = rowHeights.length
     ? rowHeights[Math.floor(rowHeights.length / 2)]
     : lines[0].bbox.y1 - lines[0].bbox.y0;
@@ -580,9 +583,7 @@ export async function recognizeImageDataUrl(
 
   // A single inserted image/signature is one block, not a multi-column page.
   const paras = await recognizeParagraphs(processed, PSM.SINGLE_BLOCK, onProgress);
-  return paras.map((p, i) =>
-    ocrBoxToScreenItem(p, i, scaleX, scaleY, displayBox.x, displayBox.y),
-  );
+  return paras.map((p, i) => ocrBoxToScreenItem(p, i, scaleX, scaleY, displayBox.x, displayBox.y));
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {

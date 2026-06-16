@@ -116,7 +116,8 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
       let delta = e.deltaY;
-      if (e.deltaMode === 1) delta *= 16; // DOM_DELTA_LINE → ~px per line
+      if (e.deltaMode === 1)
+        delta *= 16; // DOM_DELTA_LINE → ~px per line
       else if (e.deltaMode === 2) delta *= 100; // DOM_DELTA_PAGE → ~px per page
       // Scroll up (negative delta) zooms in. Scale the step to wheel magnitude.
       const next = useEditorStore.getState().zoom - (delta / 100) * 0.1;

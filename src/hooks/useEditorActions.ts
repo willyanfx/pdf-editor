@@ -201,9 +201,7 @@ export function useEditorActions() {
         useToastStore.getState().addToast("DOCX exported", "success");
         hooks.onSuccess?.();
       } else {
-        useToastStore
-          .getState()
-          .addToast("No text to export — run OCR or add text first.", "info");
+        useToastStore.getState().addToast("No text to export — run OCR or add text first.", "info");
         hooks.onError?.();
       }
     } catch {

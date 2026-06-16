@@ -96,12 +96,7 @@ export function FindBar({ onClose }: Props) {
       >
         <ChevronDown size={14} aria-hidden="true" />
       </button>
-      <button
-        type="button"
-        title="Close find"
-        aria-label="Close find"
-        onClick={close}
-      >
+      <button type="button" title="Close find" aria-label="Close find" onClick={close}>
         <X size={14} aria-hidden="true" />
       </button>
     </div>

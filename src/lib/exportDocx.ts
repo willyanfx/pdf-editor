@@ -54,15 +54,24 @@ export async function exportDocx(
   filename: string,
   pageOrder: number[],
 ): Promise<boolean> {
-  const { Document, Packer, Paragraph, TextRun: DocxRun, LevelFormat, AlignmentType } = await import(
-    "docx"
-  );
+  const {
+    Document,
+    Packer,
+    Paragraph,
+    TextRun: DocxRun,
+    LevelFormat,
+    AlignmentType,
+  } = await import("docx");
 
   const ordered = orderEdits(edits, pageOrder);
   if (ordered.length === 0) return false;
 
   const align = (a: TextEdit["align"]) =>
-    a === "center" ? AlignmentType.CENTER : a === "right" ? AlignmentType.RIGHT : AlignmentType.LEFT;
+    a === "center"
+      ? AlignmentType.CENTER
+      : a === "right"
+        ? AlignmentType.RIGHT
+        : AlignmentType.LEFT;
 
   /** Map our styled runs to docx runs, inheriting the box's bold/italic defaults. */
   const toDocxRuns = (edit: TextEdit, runs: TextRun[], forceBold = false) =>
