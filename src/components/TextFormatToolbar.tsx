@@ -1,17 +1,53 @@
 import { Bold, Italic, AlignLeft, AlignCenter, AlignRight } from "lucide-react";
-import type { FontFamily, TextEdit } from "../store/useEditorStore";
+import type { TextEdit, TextRun } from "../store/useEditorStore";
 import { useEditorStore } from "../store/useEditorStore";
+import { applyFormatToRange } from "../lib/richText";
+import { FontPicker } from "./FontPicker";
+export { cssFontStack } from "../lib/fonts";
 
-const FAMILIES: FontFamily[] = ["Helvetica", "Times", "Courier"];
 const SIZES = [8, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 40, 48, 64];
 
 type Props = {
   edit: TextEdit;
+  /** Reads the current character selection inside the editor, or null. */
+  getSelectionRange?: () => { start: number; end: number } | null;
 };
 
 /** Floating formatting bar shown above a selected text box. */
-export function TextFormatToolbar({ edit }: Props) {
+export function TextFormatToolbar({ edit, getSelectionRange }: Props) {
   const updateEdit = useEditorStore((s) => s.updateEdit);
+
+  /** Apply a run-style patch: to the selected character range if there is one,
+   * otherwise to the whole box (both the box default and every run, so existing
+   * per-run overrides don't shadow the new value). */
+  function applyRunStyle(patch: Partial<TextRun>, boxPatch: Partial<TextEdit>) {
+    const range = getSelectionRange?.();
+    if (range && range.end > range.start) {
+      updateEdit(edit.id, { runs: applyFormatToRange(edit.runs, range.start, range.end, patch) });
+    } else {
+      const runs = edit.runs.map((r) => ({ ...r, ...patch }));
+      updateEdit(edit.id, { ...boxPatch, runs });
+    }
+  }
+
+  /** True if every run in the selection (or box) has the given style on. */
+  function isActive(key: keyof TextRun, boxValue: boolean): boolean {
+    const range = getSelectionRange?.();
+    if (!range || range.end <= range.start) return boxValue;
+    // Walk runs over the range; active only if all covered runs have it true.
+    let pos = 0;
+    let all = true;
+    let any = false;
+    for (const r of edit.runs) {
+      const start = pos;
+      const end = pos + r.text.length;
+      pos = end;
+      if (end <= range.start || start >= range.end) continue;
+      any = true;
+      if (!(r[key] ?? boxValue)) all = false;
+    }
+    return any ? all : boxValue;
+  }
 
   return (
     <div
@@ -20,22 +56,19 @@ export function TextFormatToolbar({ edit }: Props) {
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
-      <select
+      <FontPicker
         value={edit.fontFamily}
-        title="Font"
-        onChange={(e) => updateEdit(edit.id, { fontFamily: e.target.value as FontFamily })}
-      >
-        {FAMILIES.map((f) => (
-          <option key={f} value={f}>
-            {f}
-          </option>
-        ))}
-      </select>
+        onChange={(f) => updateEdit(edit.id, { fontFamily: f })}
+      />
 
       <select
         value={edit.fontSize}
-        title="Size"
-        onChange={(e) => updateEdit(edit.id, { fontSize: Number(e.target.value) })}
+        title="Font size"
+        aria-label="Font size"
+        onChange={(e) => {
+          const size = Number(e.target.value);
+          applyRunStyle({ fontSize: size }, { fontSize: size });
+        }}
       >
         {SIZES.map((s) => (
           <option key={s} value={s}>
@@ -46,19 +79,29 @@ export function TextFormatToolbar({ edit }: Props) {
 
       <button
         type="button"
-        className={edit.bold ? "active" : ""}
+        className={isActive("bold", edit.bold) ? "active" : ""}
         title="Bold"
-        onClick={() => updateEdit(edit.id, { bold: !edit.bold })}
+        aria-label="Bold"
+        aria-pressed={isActive("bold", edit.bold)}
+        // Don't steal focus from the editor, so its selection stays live and the
+        // formatted range can be re-highlighted after the runs update.
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => applyRunStyle({ bold: !isActive("bold", edit.bold) }, { bold: !edit.bold })}
       >
-        <Bold size={15} />
+        <Bold size={15} aria-hidden="true" />
       </button>
       <button
         type="button"
-        className={edit.italic ? "active" : ""}
+        className={isActive("italic", edit.italic) ? "active" : ""}
         title="Italic"
-        onClick={() => updateEdit(edit.id, { italic: !edit.italic })}
+        aria-label="Italic"
+        aria-pressed={isActive("italic", edit.italic)}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() =>
+          applyRunStyle({ italic: !isActive("italic", edit.italic) }, { italic: !edit.italic })
+        }
       >
-        <Italic size={15} />
+        <Italic size={15} aria-hidden="true" />
       </button>
 
       <span className="tft-divider" />
@@ -67,25 +110,31 @@ export function TextFormatToolbar({ edit }: Props) {
         type="button"
         className={edit.align === "left" ? "active" : ""}
         title="Align left"
+        aria-label="Align left"
+        aria-pressed={edit.align === "left"}
         onClick={() => updateEdit(edit.id, { align: "left" })}
       >
-        <AlignLeft size={15} />
+        <AlignLeft size={15} aria-hidden="true" />
       </button>
       <button
         type="button"
         className={edit.align === "center" ? "active" : ""}
         title="Align center"
+        aria-label="Align center"
+        aria-pressed={edit.align === "center"}
         onClick={() => updateEdit(edit.id, { align: "center" })}
       >
-        <AlignCenter size={15} />
+        <AlignCenter size={15} aria-hidden="true" />
       </button>
       <button
         type="button"
         className={edit.align === "right" ? "active" : ""}
         title="Align right"
+        aria-label="Align right"
+        aria-pressed={edit.align === "right"}
         onClick={() => updateEdit(edit.id, { align: "right" })}
       >
-        <AlignRight size={15} />
+        <AlignRight size={15} aria-hidden="true" />
       </button>
 
       <span className="tft-divider" />
@@ -93,22 +142,11 @@ export function TextFormatToolbar({ edit }: Props) {
       <label className="tft-color" title="Text color">
         <input
           type="color"
+          aria-label="Text color"
           value={edit.color}
-          onChange={(e) => updateEdit(edit.id, { color: e.target.value })}
+          onChange={(e) => applyRunStyle({ color: e.target.value }, { color: e.target.value })}
         />
       </label>
     </div>
   );
-}
-
-/** Map our family + weight/style choice to a CSS font stack for on-screen rendering. */
-export function cssFontStack(family: FontFamily): string {
-  switch (family) {
-    case "Times":
-      return '"Times New Roman", Times, serif';
-    case "Courier":
-      return '"Courier New", Courier, monospace';
-    default:
-      return "Helvetica, Arial, sans-serif";
-  }
 }

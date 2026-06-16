@@ -1,20 +1,140 @@
-import { useEffect } from "react";
-import { Toolbar } from "./components/Toolbar";
+import { useEffect, useRef, useState } from "react";
+import { TopBar } from "./components/TopBar";
+import { ToolRail } from "./components/ToolRail";
 import { PdfViewer } from "./components/PdfViewer";
+import { BottomBar } from "./components/BottomBar";
+import { Toaster } from "./components/Toaster";
+import { CommandPalette } from "./components/CommandPalette";
+import { SignatureModal } from "./components/SignatureModal";
+import { SplitDialog } from "./components/SplitDialog";
+import { FindBar } from "./components/FindBar";
 import { useEditorStore } from "./store/useEditorStore";
+import { useEditorActions } from "./hooks/useEditorActions";
+import { openFiles } from "./lib/openFiles";
 
 export default function App() {
-  // Keyboard nudge & delete for the selected edit (Adobe-style).
+  // Whole-window drag-and-drop: drop a PDF anytime to open/replace it, or drop
+  // an image onto an open PDF to add it. A depth counter keeps the overlay from
+  // flickering as the cursor crosses nested child elements.
+  const [isDragging, setIsDragging] = useState(false);
+  const dragDepth = useRef(0);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [pagesOpen, setPagesOpen] = useState(false);
+  const [findOpen, setFindOpen] = useState(false);
+  const { addText } = useEditorActions();
+
+  function hasFiles(e: React.DragEvent) {
+    return Array.from(e.dataTransfer.types).includes("Files");
+  }
+
+  // Global keyboard handling: ⌘K palette, tool shortcuts, and the Adobe-style
+  // nudge/delete for the selected edit.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      const { selectedEditId, edits, updateEdit, deleteEdit } = useEditorStore.getState();
-      if (!selectedEditId) return;
-
       const target = e.target as HTMLElement | null;
       const typing =
         target &&
         (target.tagName === "TEXTAREA" || target.tagName === "INPUT" || target.isContentEditable);
 
+      // ⌘K / Ctrl+K opens the command palette from anywhere (even while typing).
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((open) => !open);
+        return;
+      }
+
+      // The remaining shortcuts must not hijack keystrokes inside text fields
+      // (the page-jump input, find box, comment textareas, rich-text editor).
+      if (typing) return;
+
+      // ⌘F / Ctrl+F toggles find-in-page (only with a doc open). Close the
+      // palette first so its focus trap doesn't swallow keys meant for FindBar.
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+        if (useEditorStore.getState().file) {
+          e.preventDefault();
+          setPaletteOpen(false);
+          setFindOpen((v) => !v);
+          return;
+        }
+      }
+
+      // ⌘/Ctrl + +/-/0 zoom (the browser-PDF-viewer convention). These clear any
+      // active fit preset via the store's manual zoom actions.
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && useEditorStore.getState().file) {
+        const store = useEditorStore.getState();
+        // "=" is the unshifted "+" key; accept both, plus the numpad variants.
+        if (e.key === "=" || e.key === "+") {
+          e.preventDefault();
+          store.zoomIn();
+          return;
+        }
+        if (e.key === "-" || e.key === "_") {
+          e.preventDefault();
+          store.zoomOut();
+          return;
+        }
+        if (e.key === "0") {
+          e.preventDefault();
+          store.resetZoom();
+          return;
+        }
+      }
+
+      const store = useEditorStore.getState();
+
+      // Single-key tool shortcuts (only when a file is open and not typing).
+      if (!typing && !e.metaKey && !e.ctrlKey && !e.altKey && store.file) {
+        const k = e.key.toLowerCase();
+        if (k === "v") {
+          e.preventDefault();
+          store.setMode("select");
+          return;
+        }
+        if (k === "e") {
+          e.preventDefault();
+          store.setMode("editText");
+          return;
+        }
+        if (k === "t") {
+          e.preventDefault();
+          addText();
+          return;
+        }
+        if (k === "h") {
+          e.preventDefault();
+          store.setMode("highlight");
+          return;
+        }
+        if (k === "u") {
+          e.preventDefault();
+          store.setMode("underline");
+          return;
+        }
+        if (k === "c") {
+          e.preventDefault();
+          store.setMode("comment");
+          return;
+        }
+        if (k === "d") {
+          e.preventDefault();
+          store.setMode("ink");
+          return;
+        }
+        if (k === "w") {
+          e.preventDefault();
+          store.setZoomPreset("fit-width");
+          return;
+        }
+        if (k === "p") {
+          e.preventDefault();
+          store.setZoomPreset("fit-page");
+          return;
+        }
+      }
+
+      // Nudge / delete the selected edit.
+      const { selectedEditId, edits, updateEdit, deleteEdit } = store;
+      if (!selectedEditId) return;
       const edit = edits.find((ed) => ed.id === selectedEditId);
       if (!edit) return;
 
@@ -37,12 +157,75 @@ export default function App() {
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+  }, [addText]);
+
+  // Warn before leaving if the open document has unsaved edits. Edits live only
+  // in memory (no backend), so a reload/close would silently discard them.
+  useEffect(() => {
+    function onBeforeUnload(e: BeforeUnloadEvent) {
+      const { file, edits, pageOps } = useEditorStore.getState();
+      const dirty = !!file && (edits.length > 0 || pageOps.length > 0);
+      if (dirty) {
+        e.preventDefault();
+        // Legacy requirement for some browsers to show the prompt.
+        e.returnValue = "";
+      }
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, []);
 
   return (
-    <main className="app">
-      <Toolbar />
-      <PdfViewer />
+    <main
+      className="app"
+      onDragEnter={(e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        dragDepth.current += 1;
+        setIsDragging(true);
+      }}
+      onDragOver={(e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+      }}
+      onDragLeave={(e) => {
+        if (!hasFiles(e)) return;
+        dragDepth.current -= 1;
+        if (dragDepth.current <= 0) {
+          dragDepth.current = 0;
+          setIsDragging(false);
+        }
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        dragDepth.current = 0;
+        setIsDragging(false);
+        openFiles(e.dataTransfer.files);
+      }}
+    >
+      <TopBar />
+      <ToolRail
+        onOpenPalette={() => setPaletteOpen(true)}
+        onTogglePages={() => setPagesOpen((v) => !v)}
+        pagesActive={pagesOpen}
+      />
+      <PdfViewer pagePanelOpen={pagesOpen} />
+      <BottomBar />
+
+      <Toaster />
+      <SignatureModal />
+      <SplitDialog />
+
+      {findOpen && <FindBar onClose={() => setFindOpen(false)} />}
+      {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
+
+      {isDragging && (
+        <div className="drop-overlay">
+          <div className="drop-overlay-card">
+            Drop PDF, Word, Excel, or image to open · drop image to add
+          </div>
+        </div>
+      )}
     </main>
   );
 }

@@ -21,7 +21,9 @@ export function EditableLayer({ pageIndex }: Props) {
       {/* Covers for existing-text edits stay pinned to the original glyph box,
           independent of where the editable box is dragged. */}
       {edits.map((edit) =>
-        edit.type === "text" && edit.origin === "existing" && edit.coverRect ? (
+        (edit.type === "text" || edit.type === "image") &&
+        edit.origin === "existing" &&
+        edit.coverRect ? (
           <div
             key={`cover-${edit.id}`}
             className="text-cover"
