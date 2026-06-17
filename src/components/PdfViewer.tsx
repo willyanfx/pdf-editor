@@ -199,12 +199,16 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
       try {
         const { recognizeWithEngine } = await import("../lib/vlmOcr/dispatch");
         const engine = useEditorStore.getState().ocrEngine;
+        let truncated = false;
         const items = await recognizeWithEngine(
           engine,
           canvas,
           VIEWER_WIDTH,
           undefined,
           setOcrProgress,
+          () => {
+            truncated = true;
+          },
         );
         if (cancelled) return;
         for (const it of items) {
@@ -218,7 +222,11 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
           );
           addEdit(makeCoverTextEdit(it, pageIndex, coverColor));
         }
-        addToast(items.length ? "Text recognized" : "No text found on this page", "info");
+        if (truncated) {
+          addToast("This page is dense — only the top portion was recognized.", "error");
+        } else {
+          addToast(items.length ? "Text recognized" : "No text found on this page", "info");
+        }
       } catch {
         if (!cancelled) {
           addToast("Could not recognize text on this page.", "error");
@@ -266,6 +274,7 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
         const total = doc.numPages;
         useEditorStore.getState().setOcrAllProgress({ current: 0, total });
 
+        const truncatedPages: number[] = [];
         for (let i = 1; i <= total; i++) {
           if (cancelled || useEditorStore.getState().ocrAllCancelled) break;
           useEditorStore.getState().setOcrAllProgress({ current: i, total });
@@ -283,7 +292,16 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
               continue;
             }
             await page.render({ canvas, viewport: scaled }).promise;
-            const items = await recognizeWithEngine(engine, canvas, VIEWER_WIDTH, undefined);
+            const items = await recognizeWithEngine(
+              engine,
+              canvas,
+              VIEWER_WIDTH,
+              undefined,
+              undefined,
+              () => {
+                truncatedPages.push(i);
+              },
+            );
             if (cancelled || useEditorStore.getState().ocrAllCancelled) {
               page.cleanup();
               break;
@@ -313,6 +331,18 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
           wasCancelled ? "Stopped OCR" : `OCR complete — ${total} pages read`,
           wasCancelled ? "info" : "success",
         );
+        if (!wasCancelled && truncatedPages.length > 0) {
+          const list =
+            truncatedPages.length > 5
+              ? `${truncatedPages.slice(0, 5).join(", ")}…`
+              : truncatedPages.join(", ");
+          addToast(
+            `${truncatedPages.length} dense ${
+              truncatedPages.length === 1 ? "page was" : "pages were"
+            } only partially recognized (page ${list}).`,
+            "error",
+          );
+        }
       } catch {
         if (!cancelled) addToast("Could not OCR this document.", "error");
       } finally {

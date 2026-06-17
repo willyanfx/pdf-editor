@@ -295,9 +295,13 @@ export function detectBoldParagraphs(
 
   paras.forEach((p, i) => {
     const wordCount = p.text.trim().split(/\s+/).length;
-    // A heading is short, denser than typical body text, and not a list item.
+    // Bold text lays down more ink than body text regardless of length, so the
+    // density margin is the real discriminator — not word count. We keep a floor
+    // (BOLD_MIN_WORDS) to reject dense one-word OCR fragments, but no ceiling:
+    // multi-word bold callouts and sub-headings were previously dropped, which
+    // silently mis-classified them as body text in the DOCX export.
     const denser = densities[i] > median * BOLD_DENSITY_RATIO;
-    if (!p.isListItem && wordCount >= BOLD_MIN_WORDS && wordCount <= BOLD_MAX_WORDS && denser) {
+    if (!p.isListItem && wordCount >= BOLD_MIN_WORDS && denser) {
       p.isBold = true;
     }
   });
@@ -308,10 +312,10 @@ export function detectBoldParagraphs(
  * where true headings measured 1.49–1.8× the page median while body/bullets sat
  * at ≤1.03×, giving clean separation at 1.45×. Tunable per document. */
 const BOLD_DENSITY_RATIO = 1.45;
-/** Headings are at least two words (excludes dense one-word OCR fragments) and
- * short (longer dense lines are body text, not headings). */
+/** Bold runs are at least two words — excludes dense one-word OCR fragments
+ * (e.g. a misread glyph reading as a single dark blob). There is deliberately no
+ * upper bound: bold body paragraphs and multi-sentence callouts are still bold. */
 const BOLD_MIN_WORDS = 2;
-const BOLD_MAX_WORDS = 6;
 
 /** Most frequent value in a small numeric array (ties → first seen). */
 function modeOf(nums: number[]): number {

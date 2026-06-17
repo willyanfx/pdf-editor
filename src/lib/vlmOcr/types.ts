@@ -7,8 +7,9 @@
 import type { QuadBox } from "./fontSize";
 
 /** Which OCR backend to run. "tesseract" is the existing WASM path; "florence2"
- * is the VLM path that returns layout + boxes. */
-export type OcrEngine = "tesseract" | "florence2";
+ * is the VLM path that returns layout + boxes; "paddle" is the PaddleOCR.js
+ * detection+recognition pipeline (beta) — small models, per-line polygons. */
+export type OcrEngine = "tesseract" | "florence2" | "paddle";
 
 /** One text region the VLM recognized, in *image* pixel space (the pixels of the
  * ImageBitmap that was sent to the worker). The main-thread client maps these to
@@ -25,6 +26,10 @@ export type VlmResult = {
   /** The pixel dimensions of the image the boxes are expressed in. */
   imageWidth: number;
   imageHeight: number;
+  /** True when generation hit the token budget without emitting EOS, i.e. the
+   * region list is incomplete (a dense page was cut off). The caller should warn
+   * the user rather than silently dropping the tail of the page. */
+  truncated: boolean;
 };
 
 // --- main thread → worker ---------------------------------------------------

@@ -21,8 +21,17 @@ export default defineConfig({
   // @huggingface/transformers (Transformers.js) loads its ONNX runtime via
   // dynamic WASM imports that esbuild's pre-bundler mangles — exclude it so the
   // Florence-2 VLM OCR worker can import it correctly.
+  //
+  // @paddleocr/paddleocr-js statically default-imports three CommonJS packages
+  // (`import x from "clipper-lib" | "js-yaml" | "@techstark/opencv-js"`). Native
+  // ESM can't synthesize a `default` from CJS, so these MUST be pre-bundled by
+  // esbuild (which adds the interop) — force-include the package and those deps,
+  // or the browser throws "does not provide an export named 'default'".
+  // onnxruntime-web is the exception: paddle loads it via dynamic `import()` with
+  // the same WASM shape as transformers, so it stays excluded.
   optimizeDeps: {
-    exclude: ["@huggingface/transformers"],
+    include: ["@paddleocr/paddleocr-js", "clipper-lib", "js-yaml", "@techstark/opencv-js"],
+    exclude: ["@huggingface/transformers", "onnxruntime-web"],
   },
   // The VLM OCR worker uses ES `import`s, so workers must be emitted as ESM for
   // the `{ type: "module" }` Worker to load after a production build.
