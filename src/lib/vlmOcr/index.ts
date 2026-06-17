@@ -232,12 +232,17 @@ export function regionsToScreenItems(
  * `onProgress` here reports *load* progress (0..1) on the first call while the
  * model downloads; inference itself is not incrementally reported (Florence-2
  * generates in one shot), so progress jumps to 1 once decoding starts.
+ *
+ * `onWarning` fires with "truncated" when the page exceeded Florence-2's token
+ * budget — the returned items are still valid but cover only the start of the
+ * page, so the caller should tell the user the result is partial.
  */
 export async function recognizePageRegionVlm(
   canvas: HTMLCanvasElement,
   renderWidth: number,
   region?: ScreenRegion,
   onProgress?: OcrProgress,
+  onWarning?: (warning: "truncated") => void,
 ): Promise<ScreenTextItem[]> {
   // Ensure the model is loaded, surfacing download progress through onProgress.
   if (!ready) {
@@ -251,5 +256,6 @@ export async function recognizePageRegionVlm(
     region,
   );
   const result = await runRecognize(bitmap);
+  if (result.truncated) onWarning?.("truncated");
   return regionsToScreenItems(result.regions, screenPerImagePx, offsetX, offsetY);
 }

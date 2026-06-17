@@ -160,10 +160,16 @@ function toRegions(parsed: unknown): VlmRegion[] {
   return regions;
 }
 
+/** Token budget for one page. Dense scans can exceed this; when they do the
+ * decode is cut off mid-output and the region list is incomplete — see the
+ * truncation check in `recognize`. */
+const MAX_NEW_TOKENS = 1024;
+
 async function recognize(bitmap: ImageBitmap): Promise<{
   regions: VlmRegion[];
   imageWidth: number;
   imageHeight: number;
+  truncated: boolean;
 }> {
   const { model, processor, tokenizer } = await load();
   const image = bitmapToRawImage(bitmap);
@@ -179,7 +185,7 @@ async function recognize(bitmap: ImageBitmap): Promise<{
   const generated = await model.generate({
     ...text_inputs,
     ...vision_inputs,
-    max_new_tokens: 1024,
+    max_new_tokens: MAX_NEW_TOKENS,
     num_beams: 1,
     do_sample: false,
   });
@@ -190,6 +196,13 @@ async function recognize(bitmap: ImageBitmap): Promise<{
       skip_special_tokens: false,
     },
   );
+
+  // Florence-2 ends a complete generation with the EOS token ("</s>"). If the
+  // decode hit the token budget first it stops without one, meaning the tail of
+  // a dense page was dropped. Checking the decoded string is device-agnostic
+  // (works on WebGPU and the WASM fallback) and avoids depending on the prompt
+  // length to subtract it from the sequence dims.
+  const truncated = !decoded[0].trimEnd().endsWith("</s>");
   // post_process_generation scales coord i by image_size[i % 2]; since quad
   // locations are x,y,x,y… that means [0]=width, [1]=height. (The d.ts JSDoc
   // says "height x width" but the implementation and the official demo pass
@@ -199,7 +212,7 @@ async function recognize(bitmap: ImageBitmap): Promise<{
     imageHeight,
   ]);
 
-  return { regions: toRegions(parsed), imageWidth, imageHeight };
+  return { regions: toRegions(parsed), imageWidth, imageHeight, truncated };
 }
 
 ctx.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {

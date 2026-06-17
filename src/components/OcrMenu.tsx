@@ -94,6 +94,45 @@ export function OcrMenu() {
     }
   }
 
+  async function togglePaddleEngine() {
+    if (ocrEngine === "paddle") {
+      setOcrEngine("tesseract");
+      return;
+    }
+    // A load already in flight (e.g. switching engines mid-download) — ignore.
+    if (ocrModelLoad !== null) return;
+
+    setOcrEngine("paddle");
+
+    const { preloadPaddleOcr } = await import("../lib/vlmOcr/paddleOcr");
+    const { addProgressToast, updateToast, dismissToast, addToast } = useToastStore.getState();
+
+    // PaddleOCR models are small but loading is not granularly reported, so this
+    // is an indeterminate-style toast that fills once on ready.
+    const toastId = addProgressToast("Loading PaddleOCR models…", "info");
+    setOcrModelLoad({ fraction: 0 });
+
+    try {
+      await preloadPaddleOcr((fraction) => {
+        setOcrModelLoad({ fraction });
+        updateToast(toastId, {
+          progress: fraction,
+          message: fraction < 1 ? "Loading PaddleOCR models…" : "PaddleOCR ready",
+        });
+      });
+      updateToast(toastId, { progress: 1, message: "PaddleOCR ready" });
+      setTimeout(() => dismissToast(toastId), 1800);
+      setOcrModelLoad(null);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("[paddleocr] model load failed:", err);
+      dismissToast(toastId);
+      setOcrModelLoad(null);
+      addToast("Could not load PaddleOCR models; reverting to standard OCR.", "error");
+      setOcrEngine("tesseract");
+    }
+  }
+
   return (
     <div className="ocr-menu-anchor">
       {/* Rail trigger — active while popover is open OR while OCR is running. */}
@@ -164,13 +203,32 @@ export function OcrMenu() {
                 title={!webgpu ? "Requires WebGPU (unavailable in this browser)" : undefined}
                 onClick={() => void toggleVlmEngine()}
               >
-                {ocrModelLoad !== null ? (
+                {ocrModelLoad !== null && ocrEngine === "florence2" ? (
                   <>
                     <Loader2 size={11} className="ocr-spinner" aria-hidden="true" />
                     {Math.round(ocrModelLoad.fraction * 100)}%
                   </>
                 ) : (
                   "AI (Florence-2)"
+                )}
+              </button>
+              <button
+                type="button"
+                className={ocrEngine === "paddle" ? "ocr-engine-pill active" : "ocr-engine-pill"}
+                aria-pressed={ocrEngine === "paddle"}
+                // PaddleOCR has a WASM fallback, so it works without WebGPU.
+                disabled={ocrBusy || ocrModelLoad !== null}
+                aria-disabled={ocrModelLoad !== null || undefined}
+                title="PaddleOCR.js — small detection+recognition models (beta)"
+                onClick={() => void togglePaddleEngine()}
+              >
+                {ocrModelLoad !== null && ocrEngine === "paddle" ? (
+                  <>
+                    <Loader2 size={11} className="ocr-spinner" aria-hidden="true" />
+                    Loading…
+                  </>
+                ) : (
+                  "PaddleOCR (beta)"
                 )}
               </button>
             </div>

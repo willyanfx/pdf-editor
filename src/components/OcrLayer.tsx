@@ -84,12 +84,16 @@ export function OcrLayer({ pageIndex, getCanvas }: Props) {
     setOcrProgress(0);
     try {
       const { recognizeWithEngine } = await import("../lib/vlmOcr/dispatch");
+      let truncated = false;
       const items = await recognizeWithEngine(
         ocrEngine,
         canvas,
         VIEWER_WIDTH,
         region as ScreenRegion,
         setOcrProgress,
+        () => {
+          truncated = true;
+        },
       );
       for (const it of items) {
         const coverColor = sampleBackgroundColor(
@@ -102,7 +106,11 @@ export function OcrLayer({ pageIndex, getCanvas }: Props) {
         );
         addEdit(makeCoverTextEdit(it, pageIndex, coverColor));
       }
-      addToast(items.length ? "Text recognized" : "No text found in that region", "info");
+      if (truncated) {
+        addToast("That region has too much text — only the top portion was recognized.", "error");
+      } else {
+        addToast(items.length ? "Text recognized" : "No text found in that region", "info");
+      }
     } catch {
       addToast("Could not recognize text in that region.", "error");
     } finally {
