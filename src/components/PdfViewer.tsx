@@ -7,6 +7,7 @@ import { EditableLayer } from "./EditableLayer";
 import { ExistingTextLayer } from "./ExistingTextLayer";
 import { ExistingImageLayer } from "./ExistingImageLayer";
 import { OcrLayer } from "./OcrLayer";
+import { SignatureZoneLayer } from "./SignatureZoneLayer";
 import { AnnotateLayer } from "./AnnotateLayer";
 import { InkLayer } from "./InkLayer";
 import { TextDrawLayer } from "./TextDrawLayer";
@@ -18,7 +19,9 @@ import { openFiles } from "../lib/openFiles";
 import { sampleBackgroundColor } from "../lib/textLayer";
 import { VIEWER_WIDTH } from "../lib/pdfGeometry";
 import { PDF_DOCUMENT_OPTIONS } from "../lib/pdfOptions";
+import { makeOnPassword } from "../lib/pdfPassword";
 import { usePageHeights } from "../hooks/usePageHeights";
+import { useScannedPdfPrompt } from "../hooks/useScannedPdfPrompt";
 
 /** Vertical gap between page shells, reserved inside each virtual slot. */
 const PAGE_GAP = 24;
@@ -43,6 +46,7 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
   // `file` is a stable reference (changes only when a new PDF is opened), so
   // react-pdf won't re-load on every render.
   const file = useEditorStore((s) => s.file);
+  const passwordAttempt = useEditorStore((s) => s.passwordAttempt);
   const setSelectedPageIndex = useEditorStore((s) => s.setSelectedPageIndex);
   const selectEdit = useEditorStore((s) => s.selectEdit);
   const mode = useEditorStore((s) => s.mode);
@@ -74,6 +78,9 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
   // Measure page heights cheaply (no rasterization) so the virtualizer can size
   // every page accurately before its canvas renders — keeps the scrollbar stable.
   const pageHeights = usePageHeights(file, numPages);
+
+  // Nudge the user to run OCR when an opened PDF looks scanned (image-only).
+  useScannedPdfPrompt(file);
 
   const estimateSize = useCallback(
     (index: number) => (pageHeights[index] ?? ESTIMATED_PAGE_HEIGHT) + PAGE_GAP,
@@ -385,10 +392,29 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
   return (
     <section ref={scrollRef} className={`pdf-wrapper mode-${mode}`}>
       <Document
+        // Re-key on each password attempt so react-pdf re-runs the load with the
+        // newly stored password (it won't re-invoke onPassword otherwise).
+        key={`doc-${passwordAttempt}`}
         file={file}
         options={PDF_DOCUMENT_OPTIONS}
-        onLoadSuccess={(pdf) => setNumPages(pdf.numPages)}
+        onPassword={makeOnPassword({
+          getPassword: () => useEditorStore.getState().documentPassword,
+          onNeedPassword: () => useEditorStore.getState().setPasswordPrompt({ wrong: false }),
+          onIncorrect: () => {
+            useEditorStore.getState().setDocumentPassword(null);
+            useEditorStore.getState().setPasswordPrompt({ wrong: true });
+          },
+        })}
+        onLoadSuccess={(pdf) => {
+          // Reaching success means any password supplied was accepted — close
+          // the unlock modal if it was open.
+          useEditorStore.getState().setPasswordPrompt(null);
+          setNumPages(pdf.numPages);
+        }}
         onLoadError={(err) => {
+          // A PasswordException here means the modal is (or will be) up; don't
+          // also toast a generic failure for it.
+          if ((err as { name?: string })?.name === "PasswordException") return;
           console.error("PDF load failed:", err);
           addToast("Could not open this PDF.", "error");
         }}
@@ -482,6 +508,10 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
                     <OcrLayer
                       pageIndex={index}
                       getCanvas={() => canvasRefs.current.get(index) ?? null}
+                    />
+                    <SignatureZoneLayer
+                      pageIndex={index}
+                      page={pagesRef.current.get(index) ?? null}
                     />
                     <AnnotateLayer pageIndex={index} />
                     <InkLayer pageIndex={index} />

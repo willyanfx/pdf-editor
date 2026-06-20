@@ -22,6 +22,9 @@ export function PagePanel(_props: Props) {
   const selectedPageIndex = useEditorStore((s) => s.selectedPageIndex);
 
   const [dragPos, setDragPos] = useState<number | null>(null);
+  // The gap the drag is currently hovering: an insertion index in [0, length]
+  // (0 = before the first page, length = after the last). null when not dragging.
+  const [dropGap, setDropGap] = useState<number | null>(null);
 
   /** Move the page at `from` to `to`, clamped to the list bounds. */
   function move(from: number, to: number) {
@@ -32,13 +35,29 @@ export function PagePanel(_props: Props) {
     setPageOrder(next);
   }
 
-  function onDrop(targetPos: number) {
-    if (dragPos === null || dragPos === targetPos) {
-      setDragPos(null);
-      return;
-    }
-    move(dragPos, targetPos);
+  /** Reorder by moving the dragged page into the hovered gap, accounting for the
+   * index shift when the source sits before the target gap. */
+  function moveToGap(from: number, gap: number) {
+    const to = gap > from ? gap - 1 : gap;
+    move(from, to);
+  }
+
+  /** Decide the insertion gap from the pointer's position within a row: above its
+   * midpoint inserts before the row, below inserts after. */
+  function gapForPointer(e: React.DragEvent, pos: number): number {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const after = e.clientY - rect.top > rect.height / 2;
+    return after ? pos + 1 : pos;
+  }
+
+  function endDrag() {
     setDragPos(null);
+    setDropGap(null);
+  }
+
+  function onDrop() {
+    if (dragPos !== null && dropGap !== null) moveToGap(dragPos, dropGap);
+    endDrag();
   }
 
   function onRowKeyDown(e: React.KeyboardEvent, origIndex: number, pos: number) {
@@ -69,12 +88,18 @@ export function PagePanel(_props: Props) {
             className={
               "page-thumb" +
               (origIndex === selectedPageIndex ? " current" : "") +
-              (dragPos === pos ? " dragging" : "")
+              (dragPos === pos ? " dragging" : "") +
+              (dropGap === pos ? " drop-before" : "") +
+              (dropGap === pageOrder.length && pos === pageOrder.length - 1 ? " drop-after" : "")
             }
             draggable
             onDragStart={() => setDragPos(pos)}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={() => onDrop(pos)}
+            onDragEnd={endDrag}
+            onDragOver={(e) => {
+              e.preventDefault();
+              if (dragPos !== null) setDropGap(gapForPointer(e, pos));
+            }}
+            onDrop={onDrop}
             onClick={() => scrollToPage?.(origIndex)}
             onKeyDown={(e) => onRowKeyDown(e, origIndex, pos)}
           >

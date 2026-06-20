@@ -1146,6 +1146,47 @@ button {
   cursor: default;
 }
 
+/* Signature-zone overlay: clickable targets over auto-detected sign/initials/date
+   spots, only mounted in "signZones" mode. */
+.sigzone-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.sigzone-target {
+  position: absolute;
+  pointer-events: auto;
+  margin: 0;
+  padding: 2px 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1.5px dashed oklch(55% 0.16 145 / 0.7);
+  border-radius: var(--r-sm);
+  background: oklch(70% 0.14 145 / 0.12);
+  color: oklch(40% 0.14 145);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+  transition:
+    background var(--t-fast),
+    border-color var(--t-fast);
+}
+
+.sigzone-target:hover {
+  background: oklch(70% 0.16 145 / 0.22);
+  border-color: oklch(45% 0.18 145 / 0.85);
+}
+
+.sigzone-target:focus-visible {
+  outline: 2px solid oklch(50% 0.18 145 / 0.8);
+  outline-offset: 1px;
+}
+
 /* OCR region-select overlay: a full-page capture surface, only mounted in
    "ocr" mode. Sits above the edit boxes so the drag isn't intercepted. */
 .ocr-layer {
@@ -1725,6 +1766,24 @@ button {
 .page-thumb.dragging {
   opacity: 0.5;
 }
+/* Insertion indicator: a colored line in the gap the drag is hovering. */
+.page-thumb.drop-before::before,
+.page-thumb.drop-after::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  height: 2px;
+  border-radius: 2px;
+  background: oklch(55% 0.16 250 / 0.95);
+  pointer-events: none;
+}
+.page-thumb.drop-before::before {
+  top: -4px;
+}
+.page-thumb.drop-after::after {
+  bottom: -4px;
+}
 .page-thumb-grip {
   position: absolute;
   top: 4px;
@@ -1949,6 +2008,54 @@ button {
   font-size: 44px;
   color: var(--fg);
 }
+.sig-saved-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 2px;
+}
+.sig-saved-item {
+  position: relative;
+}
+.sig-saved-pick {
+  display: block;
+  width: 100%;
+  height: 80px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: repeating-conic-gradient(oklch(60% 0.02 250 / 0.08) 0% 25%, transparent 0% 50%) 0 /
+    16px 16px;
+  cursor: pointer;
+}
+.sig-saved-pick:hover {
+  border-color: var(--fg);
+}
+.sig-saved-pick img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.sig-saved-del {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: inline-flex;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.sig-saved-item:hover .sig-saved-del,
+.sig-saved-del:focus-visible {
+  opacity: 1;
+}
 .sig-actions {
   display: flex;
   justify-content: flex-end;
@@ -1983,6 +2090,47 @@ button {
   border-radius: 4px;
   background: oklch(60% 0.02 250 / 0.12);
   font-size: 12px;
+}
+.meta-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.meta-row {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 12px;
+  padding: 6px 2px;
+  border-bottom: 1px solid oklch(60% 0.02 250 / 0.1);
+  font-size: 13px;
+}
+.meta-row dt {
+  color: var(--muted, var(--fg));
+  font-weight: 500;
+}
+.meta-row dd {
+  margin: 0;
+  color: var(--fg);
+  word-break: break-word;
+}
+.split-chunk-input {
+  width: 56px;
+  padding: 4px 6px;
+  margin: 0 2px;
+  border: 1px solid var(--border, oklch(60% 0.02 250 / 0.3));
+  border-radius: 6px;
+  background: var(--bg, #fff);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  text-align: center;
+}
+.split-chunk-input:focus-visible {
+  outline: 2px solid var(--accent, #2563eb);
+  outline-offset: 1px;
 }
 
 /* Keyframes ------------------------------------------------------------ */
