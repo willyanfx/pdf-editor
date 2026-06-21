@@ -23,7 +23,15 @@ const CANVAS_H = 180;
  */
 export function SignatureModal() {
   const open = useEditorStore((s) => s.signatureModalOpen);
-  const close = () => useEditorStore.getState().setSignatureModalOpen(false);
+  // Closing without placing must also drop any auto-detected signature zone the
+  // user clicked to open this modal. Otherwise a stale signaturePlacement would
+  // force the *next* image (picker/drop/modal) onto that old page+coords. The
+  // place() path already consumes the placement before close(), so clearing here
+  // is a no-op on success and a cleanup on cancel.
+  const close = () => {
+    useEditorStore.getState().setSignatureModalOpen(false);
+    useEditorStore.getState().setSignaturePlacement(null);
+  };
   const trapRef = useFocusTrap<HTMLDivElement>(open, close);
 
   const [tab, setTab] = useState<Tab>("draw");

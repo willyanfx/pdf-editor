@@ -61,10 +61,7 @@ test("an initials zone is narrower than a signature zone", () => {
 });
 
 test("zones carry a stable unique id", () => {
-  const zones = findSignatureZones([
-    item("Signature:", 0, 0),
-    item("Signature:", 0, 50),
-  ]);
+  const zones = findSignatureZones([item("Signature:", 0, 0), item("Signature:", 0, 50)]);
   expect(zones[0].id).not.toBe(zones[1].id);
   expect(zones[0].id).toBeTruthy();
 });

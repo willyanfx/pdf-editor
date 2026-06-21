@@ -92,3 +92,18 @@ test("makeOnPassword reports a missing password as needing input on first ask", 
   expect(fed).toBeNull();
   expect(askedFor).toBe(true);
 });
+
+test("makeOnPassword feeds an empty password to force rejection when no prompt surface exists", () => {
+  let fed: string | null = null;
+  const onPassword = makeOnPassword({
+    getPassword: () => null,
+    // No onNeedPassword: silent background load with nowhere to prompt.
+    onIncorrect: () => {},
+  });
+  onPassword((pw) => {
+    fed = pw;
+  }, NEED_PASSWORD);
+  // Empty password makes pdf.js reject the loading task (PasswordException)
+  // instead of hanging forever waiting for updatePassword.
+  expect(fed).toBe("");
+});

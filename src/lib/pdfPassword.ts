@@ -49,7 +49,12 @@ export type OnPassword = (updatePassword: (password: string) => void, reason: nu
 type OnPasswordDeps = {
   /** Current known password (e.g. from the store), or null if none yet. */
   getPassword: () => string | null;
-  /** Called on the first ask when no password is known, so the UI can prompt. */
+  /**
+   * Called on the first ask when no password is known, so the UI can prompt.
+   * When omitted (e.g. silent background loads), the handler instead feeds an
+   * empty password so pdf.js rejects the loading task with a PasswordException
+   * rather than hanging forever waiting for an `updatePassword` that never comes.
+   */
   onNeedPassword?: () => void;
   /** Called when pdf.js reports the supplied password was wrong. */
   onIncorrect: () => void;
@@ -61,6 +66,12 @@ type OnPasswordDeps = {
  * user already unlocked in the viewer loads silently elsewhere) or signals that
  * input is needed. On INCORRECT_PASSWORD it does NOT re-feed — that would loop —
  * it reports the rejection so the UI can re-prompt.
+ *
+ * Without an `onNeedPassword` prompt surface, a first ask with no known password
+ * would otherwise leave the loading task pending forever (pdf.js waits on
+ * `updatePassword`). To make the load reject instead of hang, we feed an empty
+ * password: pdf.js rejects it as INCORRECT_PASSWORD, our handler declines to
+ * re-feed, and the task settles with a PasswordException the caller can catch.
  */
 export function makeOnPassword(deps: OnPasswordDeps): OnPassword {
   return (updatePassword, reason) => {
@@ -73,6 +84,11 @@ export function makeOnPassword(deps: OnPasswordDeps): OnPassword {
       updatePassword(known);
       return;
     }
-    deps.onNeedPassword?.();
+    if (deps.onNeedPassword) {
+      deps.onNeedPassword();
+      return;
+    }
+    // No prompt surface and no known password: force a terminal rejection.
+    updatePassword("");
   };
 }
