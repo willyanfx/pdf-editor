@@ -1,6 +1,7 @@
 import { useEditorStore } from "../store/useEditorStore";
 import { useToastStore } from "../store/useToastStore";
 import { fileToDataUrl } from "./file";
+import { resolveImagePlacement } from "./signatureZones";
 
 const IMAGE_TYPES = ["image/png", "image/jpeg"];
 
@@ -14,24 +15,70 @@ export async function openConvertedFile(file: File): Promise<void> {
   useToastStore.getState().addToast("Converted to PDF", "success");
 }
 
+/**
+ * Fetch a PDF from a URL and open it as the document. Throws on network/CORS
+ * failure, a non-OK response, or a non-PDF payload so callers can show a toast.
+ * The derived filename is the URL's last path segment (fallback "document.pdf").
+ */
+export async function openPdfFromUrl(url: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(url);
+  } catch {
+    // fetch rejects on network errors and (opaquely) on CORS blocks.
+    throw new Error("network-or-cors");
+  }
+  if (!res.ok) throw new Error(`http-${res.status}`);
+
+  const blob = await res.blob();
+  const looksPdf =
+    blob.type === "application/pdf" || /\.pdf(\?|#|$)/i.test(url) || blob.type === "";
+  if (!looksPdf) throw new Error("not-a-pdf");
+
+  const name = url.split(/[?#]/)[0].split("/").pop() || "document.pdf";
+  const fileName = /\.pdf$/i.test(name) ? name : `${name || "document"}.pdf`;
+  const bytes = await blob.arrayBuffer();
+  const file = new File([bytes], fileName, { type: "application/pdf" });
+  useEditorStore.getState().setFile(file);
+}
+
 /** Add an image edit (from a data URL) on the current page. Shared by the image
- * picker, drop handler, and signature modal so the edit shape stays in one place. */
+ * picker, drop handler, and signature modal so the edit shape stays in one place.
+ *
+ * When an auto-detected signature zone is targeted (`signaturePlacement` set),
+ * the image drops into that zone (correct page + fitted size) instead of the
+ * default corner; the placement is consumed and cleared afterward. */
 export function addImageDataUrl(
   dataUrl: string,
   size: { width: number; height: number } = { width: 220, height: 120 },
 ): void {
-  const { addEdit, selectedPageIndex } = useEditorStore.getState();
+  const { addEdit, selectedPageIndex, signaturePlacement, setSignaturePlacement } =
+    useEditorStore.getState();
+  const placed = resolveImagePlacement(
+    signaturePlacement
+      ? {
+          id: "placement",
+          kind: "signature",
+          x: signaturePlacement.x,
+          y: signaturePlacement.y,
+          width: signaturePlacement.width,
+          height: signaturePlacement.height,
+        }
+      : null,
+    size,
+  );
   addEdit({
     id: crypto.randomUUID(),
     type: "image",
-    pageIndex: selectedPageIndex,
-    x: 100,
-    y: 100,
-    width: size.width,
-    height: size.height,
+    pageIndex: signaturePlacement?.pageIndex ?? selectedPageIndex,
+    x: placed.x,
+    y: placed.y,
+    width: placed.width,
+    height: placed.height,
     dataUrl,
     origin: "added",
   });
+  if (signaturePlacement) setSignaturePlacement(null);
 }
 
 /** Add an image/signature edit on the current page from a File. */

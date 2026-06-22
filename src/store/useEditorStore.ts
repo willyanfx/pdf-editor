@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import type { OcrEngine } from "../lib/vlmOcr/types";
 
 export type { OcrEngine };
@@ -166,7 +167,18 @@ export type EditorMode =
   | "highlight"
   | "underline"
   | "comment"
-  | "ink";
+  | "ink"
+  | "signZones";
+
+/** Where a signature image should be dropped, set by clicking an auto-detected
+ * signature zone before opening the SignatureModal. Null = default placement. */
+export type SignaturePlacement = {
+  pageIndex: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
 
 type EditorState = {
   /** The source PDF. We keep the File (not a detachable ArrayBuffer) so we can
@@ -232,10 +244,29 @@ type EditorState = {
   searchQuery: string;
   searchMatchIds: string[];
 
+  /** The password used to decrypt the open PDF, once supplied. Held so direct
+   * pdfjs.getDocument() paths (OCR, CSV, page-height, scanned-detection) can
+   * unlock the same document the viewer already opened. Cleared on setFile. */
+  documentPassword: string | null;
+  /** Non-null while the unlock modal should be shown; `wrong` flags a retry after
+   * an incorrect password. Set when an encrypted PDF needs/rejects a password. */
+  passwordPrompt: { wrong: boolean } | null;
+  /** Bumped each time the user submits a password, to re-key the viewer's
+   * <Document> so react-pdf re-runs the load with the new stored password. */
+  passwordAttempt: number;
+
   /** Whether the freehand/typed signature modal is open. */
   signatureModalOpen: boolean;
+  /** Target zone for the next placed signature, or null for default placement.
+   * Set by clicking an auto-detected signature zone; consumed + cleared by the
+   * SignatureModal when it drops the image. */
+  signaturePlacement: SignaturePlacement | null;
   /** Whether the split-by-range dialog is open. */
   splitDialogOpen: boolean;
+  /** Whether the read-only document-properties (metadata) modal is open. */
+  metadataModalOpen: boolean;
+  /** Whether the open-from-URL dialog is open. */
+  urlDialogOpen: boolean;
 
   /** History stacks — NOT in initialState so setFile does not reset them. */
   _past: HistoryEntry[];
@@ -259,7 +290,15 @@ type EditorState = {
   deletePage: (pageIndex: number) => void;
   setSearchQuery: (query: string) => void;
   setSignatureModalOpen: (open: boolean) => void;
+  setSignaturePlacement: (placement: SignaturePlacement | null) => void;
+  setDocumentPassword: (password: string | null) => void;
+  setPasswordPrompt: (prompt: { wrong: boolean } | null) => void;
+  /** Store the user's password, close the prompt, and re-key the viewer so the
+   * encrypted document reloads with it. */
+  submitPassword: (password: string) => void;
   setSplitDialogOpen: (open: boolean) => void;
+  setMetadataModalOpen: (open: boolean) => void;
+  setUrlDialogOpen: (open: boolean) => void;
   setMode: (mode: EditorMode) => void;
   setZoom: (zoom: number) => void;
   zoomIn: () => void;
@@ -310,8 +349,14 @@ const initialState = {
   pendingFocus: null as { editId: string; caretOffset: number } | null,
   searchQuery: "",
   searchMatchIds: [] as string[],
+  documentPassword: null as string | null,
+  passwordPrompt: null as { wrong: boolean } | null,
+  passwordAttempt: 0,
   signatureModalOpen: false,
+  signaturePlacement: null as SignaturePlacement | null,
   splitDialogOpen: false,
+  metadataModalOpen: false,
+  urlDialogOpen: false,
 };
 
 /** Capture a snapshot of the three document arrays from state. */
@@ -336,186 +381,228 @@ function pushHistory(
   return { _past: [...past, entry], _future: [] };
 }
 
-export const useEditorStore = create<EditorState>((set) => ({
-  ...initialState,
-  scrollToPage: null,
-  // History stacks live outside initialState so setFile does not reset them.
-  _past: [],
-  _future: [],
+export const useEditorStore = create<EditorState>()(
+  persist(
+    (set) => ({
+      ...initialState,
+      scrollToPage: null,
+      // History stacks live outside initialState so setFile does not reset them.
+      _past: [],
+      _future: [],
 
-  // Clear history stacks explicitly on file open so undo doesn't bleed across docs.
-  setFile: (file) => {
-    lastCoalesce = null;
-    set({ ...initialState, file, _past: [], _future: [] });
-  },
+      // Clear history stacks explicitly on file open so undo doesn't bleed across docs.
+      // Persisted settings (ocrEngine, zoom, zoomPreset) survive a file open — they're
+      // user preferences, not per-document state — so they're re-applied after the reset.
+      setFile: (file) =>
+        set((state) => {
+          lastCoalesce = null;
+          return {
+            ...initialState,
+            file,
+            _past: [],
+            _future: [],
+            ocrEngine: state.ocrEngine,
+            zoom: state.zoom,
+            zoomPreset: state.zoomPreset,
+          };
+        }),
 
-  undo: () =>
-    set((state) => {
-      lastCoalesce = null;
-      if (state._past.length === 0) return {};
-      const entry = state._past[state._past.length - 1];
-      const current = snapshot(state);
-      return {
-        edits: entry.edits,
-        pageOps: entry.pageOps,
-        pageOrder: entry.pageOrder,
-        selectedEditId: null,
-        _past: state._past.slice(0, -1),
-        _future: [current, ...state._future],
-      };
+      undo: () =>
+        set((state) => {
+          lastCoalesce = null;
+          if (state._past.length === 0) return {};
+          const entry = state._past[state._past.length - 1];
+          const current = snapshot(state);
+          return {
+            edits: entry.edits,
+            pageOps: entry.pageOps,
+            pageOrder: entry.pageOrder,
+            selectedEditId: null,
+            _past: state._past.slice(0, -1),
+            _future: [current, ...state._future],
+          };
+        }),
+
+      redo: () =>
+        set((state) => {
+          lastCoalesce = null;
+          if (state._future.length === 0) return {};
+          const entry = state._future[0];
+          const current = snapshot(state);
+          return {
+            edits: entry.edits,
+            pageOps: entry.pageOps,
+            pageOrder: entry.pageOrder,
+            selectedEditId: null,
+            _past: [...state._past, current],
+            _future: state._future.slice(1),
+          };
+        }),
+
+      addEdit: (edit) =>
+        set((state) => {
+          lastCoalesce = null;
+          const hist = pushHistory(state, snapshot(state));
+          return {
+            ...hist,
+            edits: [...state.edits, edit],
+            selectedEditId: edit.id,
+          };
+        }),
+
+      updateEdit: (id, patch) => {
+        // Decide whether this update coalesces into the current burst. The decision
+        // and the lastCoalesce mutation live OUTSIDE the set() updater: Zustand/React
+        // may invoke updaters twice (StrictMode), so mutating module state in there
+        // would corrupt coalesce timing.
+        const now = Date.now();
+        const coalesce =
+          lastCoalesce !== null &&
+          lastCoalesce.id === id &&
+          now - lastCoalesce.timestamp < COALESCE_MS;
+        lastCoalesce = { id, timestamp: now };
+        set((state) => {
+          const edits = state.edits.map((edit) =>
+            edit.id === id ? ({ ...edit, ...patch } as PdfEdit) : edit,
+          );
+          // Coalescing keeps the existing burst's snapshot; otherwise capture one.
+          return coalesce ? { edits } : { ...pushHistory(state, snapshot(state)), edits };
+        });
+      },
+
+      deleteEdit: (id) =>
+        set((state) => {
+          lastCoalesce = null;
+          const hist = pushHistory(state, snapshot(state));
+          return {
+            ...hist,
+            edits: state.edits.filter((edit) => edit.id !== id),
+            selectedEditId: state.selectedEditId === id ? null : state.selectedEditId,
+          };
+        }),
+
+      selectEdit: (id) => set({ selectedEditId: id }),
+
+      setSelectedPageIndex: (pageIndex) => set({ selectedPageIndex: pageIndex }),
+
+      setNumPages: (numPages) =>
+        set((state) => ({
+          numPages,
+          // Seed the page order once the count is known (and only if not already set
+          // for this document, so reorder/delete survive incidental re-reports).
+          pageOrder:
+            state.pageOrder.length === numPages
+              ? state.pageOrder
+              : Array.from({ length: numPages }, (_, i) => i),
+        })),
+
+      setPageOp: (pageIndex, patch) =>
+        set((state) => {
+          lastCoalesce = null;
+          const hist = pushHistory(state, snapshot(state));
+          const existing = state.pageOps.find((op) => op.pageIndex === pageIndex);
+          const next: PageOp = existing
+            ? { ...existing, ...patch }
+            : { pageIndex, rotation: 0, ...patch };
+          return {
+            ...hist,
+            pageOps: [...state.pageOps.filter((op) => op.pageIndex !== pageIndex), next],
+          };
+        }),
+
+      setPageOrder: (order) =>
+        set((state) => {
+          lastCoalesce = null;
+          const hist = pushHistory(state, snapshot(state));
+          return { ...hist, pageOrder: order };
+        }),
+
+      deletePage: (pageIndex) =>
+        set((state) => {
+          lastCoalesce = null;
+          const hist = pushHistory(state, snapshot(state));
+          return {
+            ...hist,
+            pageOrder: state.pageOrder.filter((i) => i !== pageIndex),
+            edits: state.edits.filter((e) => e.pageIndex !== pageIndex),
+            pageOps: state.pageOps.filter((op) => op.pageIndex !== pageIndex),
+            selectedEditId: null,
+          };
+        }),
+
+      setSearchQuery: (searchQuery) =>
+        set((state) => {
+          const q = searchQuery.trim().toLowerCase();
+          const matchIds = q
+            ? state.edits
+                .filter(
+                  (e): e is TextEdit =>
+                    e.type === "text" && runsToText(e.runs).toLowerCase().includes(q),
+                )
+                .map((e) => e.id)
+            : [];
+          return { searchQuery, searchMatchIds: matchIds };
+        }),
+
+      setSignatureModalOpen: (signatureModalOpen) => set({ signatureModalOpen }),
+      setSignaturePlacement: (signaturePlacement) => set({ signaturePlacement }),
+      setDocumentPassword: (documentPassword) => set({ documentPassword }),
+      setPasswordPrompt: (passwordPrompt) => set({ passwordPrompt }),
+      submitPassword: (password) =>
+        set((state) => ({
+          documentPassword: password,
+          passwordPrompt: null,
+          passwordAttempt: state.passwordAttempt + 1,
+        })),
+
+      setSplitDialogOpen: (splitDialogOpen) => set({ splitDialogOpen }),
+
+      setMetadataModalOpen: (metadataModalOpen) => set({ metadataModalOpen }),
+
+      setUrlDialogOpen: (urlDialogOpen) => set({ urlDialogOpen }),
+
+      setMode: (mode) => set({ mode }),
+
+      // Manual zoom controls take over from any auto-fit mode, so they clear the
+      // preset. The auto-fit path (PdfViewer's ResizeObserver) writes `zoom` via
+      // setState directly so it can keep the derived value live without self-cancel.
+      setZoom: (zoom) => set({ zoom: clampZoom(zoom), zoomPreset: null }),
+      zoomIn: () => set((state) => ({ zoom: clampZoom(state.zoom + ZOOM_STEP), zoomPreset: null })),
+      zoomOut: () =>
+        set((state) => ({ zoom: clampZoom(state.zoom - ZOOM_STEP), zoomPreset: null })),
+      resetZoom: () => set({ zoom: 1, zoomPreset: null }),
+      setZoomPreset: (preset) =>
+        set((state) => ({ zoomPreset: state.zoomPreset === preset ? null : preset })),
+
+      setOcrEngine: (ocrEngine) => set({ ocrEngine }),
+      setOcrModelLoad: (ocrModelLoad) => set({ ocrModelLoad }),
+      setOcrBusy: (ocrBusy) => set({ ocrBusy }),
+
+      setOcrProgress: (ocrProgress) => set({ ocrProgress }),
+
+      requestOcrPage: (ocrRequestPageIndex) => set({ ocrRequestPageIndex }),
+      requestOcrAll: () =>
+        set({ ocrAllRequest: true, ocrAllCancelled: false, ocrAllProgress: null }),
+      clearOcrAll: () =>
+        set({ ocrAllRequest: false, ocrAllProgress: null, ocrAllCancelled: false }),
+      cancelOcrAll: () => set({ ocrAllCancelled: true }),
+      setOcrAllProgress: (ocrAllProgress) => set({ ocrAllProgress }),
+
+      setScrollToPage: (scrollToPage) => set({ scrollToPage }),
+
+      setPendingFocus: (pendingFocus) => set({ pendingFocus }),
     }),
-
-  redo: () =>
-    set((state) => {
-      lastCoalesce = null;
-      if (state._future.length === 0) return {};
-      const entry = state._future[0];
-      const current = snapshot(state);
-      return {
-        edits: entry.edits,
-        pageOps: entry.pageOps,
-        pageOrder: entry.pageOrder,
-        selectedEditId: null,
-        _past: [...state._past, current],
-        _future: state._future.slice(1),
-      };
-    }),
-
-  addEdit: (edit) =>
-    set((state) => {
-      lastCoalesce = null;
-      const hist = pushHistory(state, snapshot(state));
-      return {
-        ...hist,
-        edits: [...state.edits, edit],
-        selectedEditId: edit.id,
-      };
-    }),
-
-  updateEdit: (id, patch) => {
-    // Decide whether this update coalesces into the current burst. The decision
-    // and the lastCoalesce mutation live OUTSIDE the set() updater: Zustand/React
-    // may invoke updaters twice (StrictMode), so mutating module state in there
-    // would corrupt coalesce timing.
-    const now = Date.now();
-    const coalesce =
-      lastCoalesce !== null && lastCoalesce.id === id && now - lastCoalesce.timestamp < COALESCE_MS;
-    lastCoalesce = { id, timestamp: now };
-    set((state) => {
-      const edits = state.edits.map((edit) =>
-        edit.id === id ? ({ ...edit, ...patch } as PdfEdit) : edit,
-      );
-      // Coalescing keeps the existing burst's snapshot; otherwise capture one.
-      return coalesce ? { edits } : { ...pushHistory(state, snapshot(state)), edits };
-    });
-  },
-
-  deleteEdit: (id) =>
-    set((state) => {
-      lastCoalesce = null;
-      const hist = pushHistory(state, snapshot(state));
-      return {
-        ...hist,
-        edits: state.edits.filter((edit) => edit.id !== id),
-        selectedEditId: state.selectedEditId === id ? null : state.selectedEditId,
-      };
-    }),
-
-  selectEdit: (id) => set({ selectedEditId: id }),
-
-  setSelectedPageIndex: (pageIndex) => set({ selectedPageIndex: pageIndex }),
-
-  setNumPages: (numPages) =>
-    set((state) => ({
-      numPages,
-      // Seed the page order once the count is known (and only if not already set
-      // for this document, so reorder/delete survive incidental re-reports).
-      pageOrder:
-        state.pageOrder.length === numPages
-          ? state.pageOrder
-          : Array.from({ length: numPages }, (_, i) => i),
-    })),
-
-  setPageOp: (pageIndex, patch) =>
-    set((state) => {
-      lastCoalesce = null;
-      const hist = pushHistory(state, snapshot(state));
-      const existing = state.pageOps.find((op) => op.pageIndex === pageIndex);
-      const next: PageOp = existing
-        ? { ...existing, ...patch }
-        : { pageIndex, rotation: 0, ...patch };
-      return {
-        ...hist,
-        pageOps: [...state.pageOps.filter((op) => op.pageIndex !== pageIndex), next],
-      };
-    }),
-
-  setPageOrder: (order) =>
-    set((state) => {
-      lastCoalesce = null;
-      const hist = pushHistory(state, snapshot(state));
-      return { ...hist, pageOrder: order };
-    }),
-
-  deletePage: (pageIndex) =>
-    set((state) => {
-      lastCoalesce = null;
-      const hist = pushHistory(state, snapshot(state));
-      return {
-        ...hist,
-        pageOrder: state.pageOrder.filter((i) => i !== pageIndex),
-        edits: state.edits.filter((e) => e.pageIndex !== pageIndex),
-        pageOps: state.pageOps.filter((op) => op.pageIndex !== pageIndex),
-        selectedEditId: null,
-      };
-    }),
-
-  setSearchQuery: (searchQuery) =>
-    set((state) => {
-      const q = searchQuery.trim().toLowerCase();
-      const matchIds = q
-        ? state.edits
-            .filter(
-              (e): e is TextEdit =>
-                e.type === "text" && runsToText(e.runs).toLowerCase().includes(q),
-            )
-            .map((e) => e.id)
-        : [];
-      return { searchQuery, searchMatchIds: matchIds };
-    }),
-
-  setSignatureModalOpen: (signatureModalOpen) => set({ signatureModalOpen }),
-
-  setSplitDialogOpen: (splitDialogOpen) => set({ splitDialogOpen }),
-
-  setMode: (mode) => set({ mode }),
-
-  // Manual zoom controls take over from any auto-fit mode, so they clear the
-  // preset. The auto-fit path (PdfViewer's ResizeObserver) writes `zoom` via
-  // setState directly so it can keep the derived value live without self-cancel.
-  setZoom: (zoom) => set({ zoom: clampZoom(zoom), zoomPreset: null }),
-  zoomIn: () => set((state) => ({ zoom: clampZoom(state.zoom + ZOOM_STEP), zoomPreset: null })),
-  zoomOut: () => set((state) => ({ zoom: clampZoom(state.zoom - ZOOM_STEP), zoomPreset: null })),
-  resetZoom: () => set({ zoom: 1, zoomPreset: null }),
-  setZoomPreset: (preset) =>
-    set((state) => ({ zoomPreset: state.zoomPreset === preset ? null : preset })),
-
-  setOcrEngine: (ocrEngine) => set({ ocrEngine }),
-  setOcrModelLoad: (ocrModelLoad) => set({ ocrModelLoad }),
-  setOcrBusy: (ocrBusy) => set({ ocrBusy }),
-
-  setOcrProgress: (ocrProgress) => set({ ocrProgress }),
-
-  requestOcrPage: (ocrRequestPageIndex) => set({ ocrRequestPageIndex }),
-  requestOcrAll: () => set({ ocrAllRequest: true, ocrAllCancelled: false, ocrAllProgress: null }),
-  clearOcrAll: () => set({ ocrAllRequest: false, ocrAllProgress: null, ocrAllCancelled: false }),
-  cancelOcrAll: () => set({ ocrAllCancelled: true }),
-  setOcrAllProgress: (ocrAllProgress) => set({ ocrAllProgress }),
-
-  setScrollToPage: (scrollToPage) => set({ scrollToPage }),
-
-  setPendingFocus: (pendingFocus) => set({ pendingFocus }),
-}));
+    {
+      name: "pdf-editor:settings",
+      // Persist only user preferences, never per-document or transient state.
+      partialize: (state) => ({
+        ocrEngine: state.ocrEngine,
+        zoom: state.zoom,
+        zoomPreset: state.zoomPreset,
+      }),
+    },
+  ),
+);
 
 /** Flatten a runs array to a plain string. */
 export function runsToText(runs: TextRun[]): string {

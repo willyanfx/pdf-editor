@@ -24,3 +24,36 @@ const WASM_URL = `${import.meta.env.BASE_URL}wasm/`;
 export const PDF_DOCUMENT_OPTIONS = {
   wasmUrl: WASM_URL,
 } as const;
+
+/**
+ * Load a PDF via pdf.js with the shared options AND password support, so direct
+ * (non-viewer) paths — OCR, CSV export, page-height measurement, scanned
+ * detection — can open the same encrypted document the viewer already unlocked.
+ *
+ * The password is read from the editor store. These background paths do NOT
+ * prompt the user: the viewer's <Document> is the single prompt surface (see
+ * makeViewerOnPassword). If the stored password is missing or rejected, the load
+ * rejects with a PasswordException and the caller's existing error handling
+ * applies — no duplicate modal, no race with the viewer's prompt.
+ *
+ * Returns the pdf.js loading task (call `.promise` for the document; remember to
+ * `.destroy()` in a finally). `onPassword` is harmless on unencrypted PDFs (it's
+ * never invoked).
+ */
+export async function loadPdfDocument(data: ArrayBuffer | Uint8Array) {
+  const { pdfjs } = await import("react-pdf");
+  const { makeOnPassword } = await import("./pdfPassword");
+  const { useEditorStore } = await import("../store/useEditorStore");
+  const onPassword = makeOnPassword({
+    getPassword: () => useEditorStore.getState().documentPassword,
+    // No onNeedPassword: stay silent and let the load reject if we have no
+    // password — the viewer owns prompting.
+    onIncorrect: () => {
+      /* swallow: the viewer will surface the re-prompt */
+    },
+  });
+  const loadingTask = pdfjs.getDocument({ data, ...PDF_DOCUMENT_OPTIONS });
+  // pdf.js exposes onPassword on the loading task (not in the init params).
+  loadingTask.onPassword = onPassword;
+  return loadingTask;
+}

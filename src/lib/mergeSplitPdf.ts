@@ -49,22 +49,37 @@ export function parsePageRanges(spec: string, pageCount: number): number[][] {
 }
 
 /**
- * Split a PDF into one output document per page-range group. With no spec, emits
- * one file per page. Returns the parts ready to download.
+ * Build evenly-sized page-index groups of `size` consecutive pages each (the last
+ * group holds the remainder). Used by the "every N pages" split mode. A size < 1
+ * is treated as 1; the result mirrors parsePageRanges' shape (0-based indices).
  */
-export async function splitPdf(file: File, spec: string): Promise<SplitPart[]> {
+export function chunkRanges(pageCount: number, size: number): number[][] {
+  const n = Math.max(1, Math.floor(size));
+  const groups: number[][] = [];
+  for (let start = 0; start < pageCount; start += n) {
+    const group: number[] = [];
+    for (let p = start; p < Math.min(start + n, pageCount); p++) group.push(p);
+    if (group.length) groups.push(group);
+  }
+  return groups;
+}
+
+/**
+ * Split a PDF into one output document per page-index group. Callers pass the
+ * already-computed groups (from parsePageRanges or chunkRanges). With no groups,
+ * emits one file per page. Returns the parts ready to download.
+ */
+export async function splitPdf(file: File, groups?: number[][]): Promise<SplitPart[]> {
   const bytes = await file.arrayBuffer();
   const doc = await PDFDocument.load(bytes);
   const pageCount = doc.getPageCount();
 
-  const groups =
-    spec.trim().length > 0
-      ? parsePageRanges(spec, pageCount)
-      : Array.from({ length: pageCount }, (_, i) => [i]);
+  const finalGroups =
+    groups && groups.length > 0 ? groups : Array.from({ length: pageCount }, (_, i) => [i]);
 
   const parts: SplitPart[] = [];
-  for (let g = 0; g < groups.length; g++) {
-    const indices = groups[g];
+  for (let g = 0; g < finalGroups.length; g++) {
+    const indices = finalGroups[g];
     if (!indices.length) continue;
     const out = await PDFDocument.create();
     const copied = await out.copyPages(doc, indices);

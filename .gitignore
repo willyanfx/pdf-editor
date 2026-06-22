@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# Playwright (e2e smoke-test spike): generated fixtures + run artifacts
+e2e/.fixtures/
+test-results/
+playwright-report/
+.playwright/
+
 # Claude Code local workflows / assets
 .claude/
 

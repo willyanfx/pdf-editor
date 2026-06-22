@@ -7,6 +7,9 @@ import { Toaster } from "./components/Toaster";
 import { CommandPalette } from "./components/CommandPalette";
 import { SignatureModal } from "./components/SignatureModal";
 import { SplitDialog } from "./components/SplitDialog";
+import { MetadataModal } from "./components/MetadataModal";
+import { UrlDialog } from "./components/UrlDialog";
+import { PasswordModal } from "./components/PasswordModal";
 import { FindBar } from "./components/FindBar";
 import { useEditorStore } from "./store/useEditorStore";
 import { openFiles } from "./lib/openFiles";
@@ -233,6 +236,9 @@ export default function App() {
       <Toaster />
       <SignatureModal />
       <SplitDialog />
+      <MetadataModal />
+      <UrlDialog />
+      <PasswordModal />
 
       {findOpen && <FindBar onClose={() => setFindOpen(false)} />}
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}

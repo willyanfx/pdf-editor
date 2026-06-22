@@ -1,6 +1,6 @@
 import { useEditorStore } from "../store/useEditorStore";
 import { useToastStore } from "../store/useToastStore";
-import { addImageFromFile, openFiles, openConvertedFile } from "../lib/openFiles";
+import { addImageFromFile, openFiles, openConvertedFile, openPdfFromUrl } from "../lib/openFiles";
 
 /** Callbacks the morphing Download button uses to drive its idle→spinner→check
  * animation; the export logic itself lives here so the rail, top bar, and
@@ -14,6 +14,17 @@ type DownloadHooks = {
 /** Trigger a browser download of arbitrary PDF bytes under the given filename. */
 function downloadBytes(bytes: Uint8Array, filename: string) {
   const blob = new Blob([bytes.slice()], { type: "application/pdf" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+/** Trigger a browser download of a text blob (e.g. CSV) under the given filename. */
+function downloadText(text: string, filename: string, mime: string) {
+  const blob = new Blob([text], { type: `${mime};charset=utf-8` });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -51,6 +62,33 @@ export function useEditorActions() {
     void pickFiles("application/pdf").then((files) => {
       if (files[0]) openPdf(files[0]);
     });
+  }
+
+  /** Open the "open from URL" dialog. */
+  function openUrlDialog() {
+    useEditorStore.getState().setUrlDialogOpen(true);
+  }
+
+  /** Fetch a PDF from a URL and open it, mapping failures to a clear toast. */
+  async function openFromUrl(url: string) {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    try {
+      await openPdfFromUrl(trimmed);
+      useToastStore.getState().addToast("Opened PDF from URL", "success");
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "";
+      const msg =
+        reason === "network-or-cors"
+          ? "Couldn't fetch that URL (blocked by CORS?). Try downloading it and opening the file."
+          : reason === "not-a-pdf"
+            ? "That URL doesn't point to a PDF."
+            : reason.startsWith("http-")
+              ? `Server returned ${reason.replace("http-", "HTTP ")}.`
+              : "Could not open that URL.";
+      useToastStore.getState().addToast(msg, "error");
+      throw err; // let the dialog keep itself open on failure
+    }
   }
 
   /** Same, for an image/signature added onto an open PDF. */
@@ -197,6 +235,31 @@ export function useEditorActions() {
     }
   }
 
+  /** Export the PDF's native (selectable) text as a CSV (Page, Line, Text). */
+  async function downloadCsv(hooks: DownloadHooks = {}) {
+    const { file } = useEditorStore.getState();
+    if (!file) return;
+
+    hooks.onStart?.();
+    try {
+      const { buildCsv } = await import("../lib/exportCsv");
+      const csv = await buildCsv(file);
+      if (!csv) {
+        useToastStore
+          .getState()
+          .addToast("No selectable text found — run OCR for scanned PDFs.", "info");
+        hooks.onError?.();
+        return;
+      }
+      downloadText(csv, file.name.replace(/\.pdf$/i, "") + ".csv", "text/csv");
+      useToastStore.getState().addToast("CSV exported", "success");
+      hooks.onSuccess?.();
+    } catch {
+      useToastStore.getState().addToast("Could not export CSV.", "error");
+      hooks.onError?.();
+    }
+  }
+
   async function compressPdf(hooks: DownloadHooks = {}) {
     const { file, edits } = useEditorStore.getState();
     if (!file) return;
@@ -240,13 +303,34 @@ export function useEditorActions() {
     useEditorStore.getState().setSplitDialogOpen(true);
   }
 
-  /** Split the open PDF by a range spec ("" → one file per page). */
-  async function splitPdf(spec: string) {
-    const { file } = useEditorStore.getState();
+  /** Open the read-only document-properties (metadata) modal. */
+  function openMetadata() {
+    if (!useEditorStore.getState().file) return;
+    useEditorStore.getState().setMetadataModalOpen(true);
+  }
+
+  /**
+   * Split the open PDF. `mode` "ranges" parses the spec ("" → one file per page);
+   * "interval" emits one file per `chunkSize` consecutive pages.
+   */
+  async function splitPdf(
+    options: { mode: "ranges"; spec: string } | { mode: "interval"; chunkSize: number },
+  ) {
+    const { file, numPages } = useEditorStore.getState();
     if (!file) return;
     try {
-      const { splitPdf: split } = await import("../lib/mergeSplitPdf");
-      const parts = await split(file, spec);
+      const {
+        splitPdf: split,
+        parsePageRanges,
+        chunkRanges,
+      } = await import("../lib/mergeSplitPdf");
+      const groups =
+        options.mode === "interval"
+          ? chunkRanges(numPages, options.chunkSize)
+          : options.spec.trim().length > 0
+            ? parsePageRanges(options.spec, numPages)
+            : undefined; // empty ranges spec → one file per page (split's default)
+      const parts = await split(file, groups);
       if (!parts.length) {
         useToastStore.getState().addToast("No pages matched that range.", "error");
         return;
@@ -262,6 +346,8 @@ export function useEditorActions() {
   return {
     openPdf,
     pickPdf,
+    openUrlDialog,
+    openFromUrl,
     pickImage,
     convertFile,
     addRectangle,
@@ -273,8 +359,10 @@ export function useEditorActions() {
     openSignature,
     setSearch,
     openSplit,
+    openMetadata,
     downloadPdf,
     downloadDocx,
+    downloadCsv,
     compressPdf,
     mergePdfs,
     splitPdf,

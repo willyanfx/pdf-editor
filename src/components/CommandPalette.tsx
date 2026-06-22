@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   FilePlus2,
+  Link2,
   MousePointer2,
   Pencil,
   ScanLine,
@@ -20,6 +21,8 @@ import {
   Combine,
   Scissors,
   Minimize2,
+  Table2,
+  Info,
   RotateCw,
   Trash2,
   MoveHorizontal,
@@ -82,6 +85,13 @@ export function CommandPalette({ onClose }: Props) {
         run: () => runAndClose(actions.pickPdf),
       },
       {
+        id: "open-url",
+        group: "File",
+        label: "Open PDF from URL…",
+        icon: <Link2 size={16} />,
+        run: () => runAndClose(actions.openUrlDialog),
+      },
+      {
         id: "convert",
         group: "File",
         label: "Convert file to PDF…",
@@ -102,6 +112,14 @@ export function CommandPalette({ onClose }: Props) {
         icon: <Scissors size={16} />,
         disabled: noFile,
         run: () => runAndClose(actions.openSplit),
+      },
+      {
+        id: "metadata",
+        group: "File",
+        label: "Document properties…",
+        icon: <Info size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(actions.openMetadata),
       },
       {
         id: "mode-select",
@@ -161,6 +179,14 @@ export function CommandPalette({ onClose }: Props) {
         icon: <Signature size={16} />,
         disabled: noFile,
         run: () => runAndClose(actions.openSignature),
+      },
+      {
+        id: "find-signature-zones",
+        group: "Add",
+        label: "Find signature spots",
+        icon: <Signature size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(() => actions.setMode("signZones")),
       },
       {
         id: "ann-highlight",
@@ -272,6 +298,14 @@ export function CommandPalette({ onClose }: Props) {
         icon: <FileText size={16} />,
         disabled: noFile,
         run: () => runAndClose(() => void actions.downloadDocx()),
+      },
+      {
+        id: "export-csv",
+        group: "Export",
+        label: "Export text as CSV",
+        icon: <Table2 size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(() => void actions.downloadCsv()),
       },
       {
         id: "compress",

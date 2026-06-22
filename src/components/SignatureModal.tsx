@@ -1,10 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { X, Trash2 } from "lucide-react";
 import { useEditorStore } from "../store/useEditorStore";
 import { addImageDataUrl } from "../lib/openFiles";
+import {
+  addSignature,
+  loadSignatures,
+  removeSignature,
+  type SavedSignature,
+} from "../lib/savedSignatures";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 
-type Tab = "draw" | "type";
+type Tab = "draw" | "type" | "saved";
 
 const CANVAS_W = 500;
 const CANVAS_H = 180;
@@ -17,7 +23,15 @@ const CANVAS_H = 180;
  */
 export function SignatureModal() {
   const open = useEditorStore((s) => s.signatureModalOpen);
-  const close = () => useEditorStore.getState().setSignatureModalOpen(false);
+  // Closing without placing must also drop any auto-detected signature zone the
+  // user clicked to open this modal. Otherwise a stale signaturePlacement would
+  // force the *next* image (picker/drop/modal) onto that old page+coords. The
+  // place() path already consumes the placement before close(), so clearing here
+  // is a no-op on success and a cleanup on cancel.
+  const close = () => {
+    useEditorStore.getState().setSignatureModalOpen(false);
+    useEditorStore.getState().setSignaturePlacement(null);
+  };
   const trapRef = useFocusTrap<HTMLDivElement>(open, close);
 
   const [tab, setTab] = useState<Tab>("draw");
@@ -26,11 +40,15 @@ export function SignatureModal() {
   const drawingRef = useRef(false);
   const lastRef = useRef<{ x: number; y: number } | null>(null);
   const [hasInk, setHasInk] = useState(false);
+  const [saved, setSaved] = useState<SavedSignature[]>([]);
 
-  // Reset transient state whenever the modal opens.
+  // Reset transient state whenever the modal opens, and refresh the saved list.
   useEffect(() => {
     if (!open) return;
-    setTab("draw");
+    const list = loadSignatures();
+    setSaved(list);
+    // Default to the Saved tab when there's something to pick from.
+    setTab(list.length ? "saved" : "draw");
     setTyped("");
     setHasInk(false);
     const c = canvasRef.current;
@@ -101,6 +119,12 @@ export function SignatureModal() {
     return c.toDataURL("image/png");
   }
 
+  /** Drop a signature data URL onto the page and close. */
+  function place(dataUrl: string) {
+    addImageDataUrl(dataUrl, { width: 220, height: 80 });
+    close();
+  }
+
   function insert() {
     let dataUrl: string | null = null;
     if (tab === "draw") {
@@ -109,8 +133,14 @@ export function SignatureModal() {
     } else {
       dataUrl = typedToDataUrl();
     }
-    if (dataUrl) addImageDataUrl(dataUrl, { width: 220, height: 80 });
-    close();
+    if (!dataUrl) return close();
+    // Remember newly created signatures so they're reusable next time.
+    addSignature(dataUrl);
+    place(dataUrl);
+  }
+
+  function deleteSaved(id: string) {
+    setSaved(removeSignature(id));
   }
 
   return (
@@ -149,9 +179,20 @@ export function SignatureModal() {
           >
             Type
           </button>
+          {saved.length > 0 && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "saved"}
+              className={tab === "saved" ? "active" : ""}
+              onClick={() => setTab("saved")}
+            >
+              Saved
+            </button>
+          )}
         </div>
 
-        {tab === "draw" ? (
+        {tab === "draw" && (
           <div className="sig-canvas-wrap" role="tabpanel" aria-label="Draw signature">
             <canvas
               ref={canvasRef}
@@ -168,7 +209,9 @@ export function SignatureModal() {
               Clear
             </button>
           </div>
-        ) : (
+        )}
+
+        {tab === "type" && (
           <div className="sig-type-wrap" role="tabpanel" aria-label="Type signature">
             <input
               className="sig-type-input"
@@ -183,13 +226,40 @@ export function SignatureModal() {
           </div>
         )}
 
+        {tab === "saved" && (
+          <div className="sig-saved-grid" role="tabpanel" aria-label="Saved signatures">
+            {saved.map((s) => (
+              <div key={s.id} className="sig-saved-item">
+                <button
+                  type="button"
+                  className="sig-saved-pick"
+                  aria-label="Use this signature"
+                  onClick={() => place(s.dataUrl)}
+                >
+                  <img src={s.dataUrl} alt="Saved signature" />
+                </button>
+                <button
+                  type="button"
+                  className="sig-saved-del"
+                  aria-label="Delete this signature"
+                  onClick={() => deleteSaved(s.id)}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="sig-actions">
           <button type="button" className="sig-cancel" onClick={close}>
-            Cancel
+            {tab === "saved" ? "Close" : "Cancel"}
           </button>
-          <button type="button" className="sig-insert" onClick={insert}>
-            Insert
-          </button>
+          {tab !== "saved" && (
+            <button type="button" className="sig-insert" onClick={insert}>
+              Insert
+            </button>
+          )}
         </div>
       </div>
     </>
