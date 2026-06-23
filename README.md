@@ -241,6 +241,14 @@ All edits are stored as plain TypeScript objects in the Zustand store — adding
 
 ---
 
+## Support
+
+If pdf-editor is useful to you, consider supporting its development:
+
+<a href="https://www.buymeacoffee.com/willyanfx" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+
+---
+
 ## License
 
 See [LICENSE](./LICENSE) for details.
