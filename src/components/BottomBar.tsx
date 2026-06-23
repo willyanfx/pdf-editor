@@ -5,27 +5,6 @@ import { useEditorStore, MIN_ZOOM, MAX_ZOOM } from "../store/useEditorStore";
 /** Discrete zoom levels offered in the dropdown, alongside the fit presets. */
 const ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
 
-/**
- * Buy Me a Coffee button. The official widget self-injects via a <script> that
- * locates itself through `document.currentScript`, which is null when added
- * dynamically — so it never renders inside a SPA. Render the link directly
- * instead, styled to match the widget.
- */
-function BuyMeACoffee() {
-  return (
-    <a
-      className="bottombar-bmc"
-      href="https://www.buymeacoffee.com/willyanfx"
-      target="_blank"
-      rel="noopener noreferrer"
-      title="Buy me a coffee"
-    >
-      <span aria-hidden="true">☕</span>
-      <span>Buy me a coffee</span>
-    </a>
-  );
-}
-
 export function BottomBar() {
   const file = useEditorStore((s) => s.file);
   const zoom = useEditorStore((s) => s.zoom);
@@ -59,12 +38,7 @@ export function BottomBar() {
   // (an empty row leaves the page stage's rounded bottom corners floating over
   // a blank strip — looks broken). The zoom controls, which need an open
   // document, are the only part gated on `file`.
-  if (!file)
-    return (
-      <footer className="bottombar">
-        <BuyMeACoffee />
-      </footer>
-    );
+  if (!file) return <footer className="bottombar" />;
 
   // When a preset is active, show its name; otherwise the numeric percentage.
   const label =
@@ -76,8 +50,6 @@ export function BottomBar() {
 
   return (
     <footer className="bottombar">
-      <BuyMeACoffee />
-
       <div className="bottombar-zoom" ref={menuRef}>
         <button
           type="button"
