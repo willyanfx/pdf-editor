@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { X, Trash2 } from "lucide-react";
+import { X, Trash2, Upload } from "lucide-react";
 import { useEditorStore } from "../store/useEditorStore";
 import { addImageDataUrl } from "../lib/openFiles";
 import {
@@ -8,19 +8,34 @@ import {
   removeSignature,
   type SavedSignature,
 } from "../lib/savedSignatures";
+import { fileToDataUrl } from "../lib/file";
+import {
+  decodeToImageData,
+  keyOutBackground,
+  imageDataToPngDataUrl,
+  detectInkBounds,
+  cropImageData,
+} from "../lib/removeSignatureBackground";
+import { SignatureCropper, type CropRect } from "./SignatureCropper";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 
-type Tab = "draw" | "type" | "saved";
+type Tab = "draw" | "type" | "saved" | "upload";
 
 const CANVAS_W = 500;
 const CANVAS_H = 180;
 
 /**
- * Signature dialog with two creation modes: freehand Draw (pointer drawing on a
- * canvas) and Type (renders a name in a cursive font). Either way the result is
- * a transparent PNG dropped onto the current page as an image edit. Upload reuses
- * the existing "Add Image" path, so it's not duplicated here.
+ * Signature dialog with creation modes: freehand Draw (pointer drawing on a
+ * canvas), Type (renders a name in a cursive font), and Upload (import a photo
+ * or scan of a real signature: key out the paper background, auto-crop to the
+ * detected ink with adjustable manual handles, and boost stroke contrast).
+ * Either way the result is a transparent PNG dropped onto the current page as an
+ * image edit.
  */
+const DEFAULT_THRESHOLD = 0.6;
+const DEFAULT_CONTRAST = 0.35;
+/** Pad the auto-detected ink box by this fraction so strokes aren't clipped. */
+const AUTO_CROP_PAD = 0.04;
 export function SignatureModal() {
   const open = useEditorStore((s) => s.signatureModalOpen);
   // Closing without placing must also drop any auto-detected signature zone the
@@ -42,6 +57,24 @@ export function SignatureModal() {
   const [hasInk, setHasInk] = useState(false);
   const [saved, setSaved] = useState<SavedSignature[]>([]);
 
+  // Upload tab: the decoded source image is held so the live preview can
+  // re-key the background on every slider change without re-reading the file.
+  const sourceRef = useRef<ImageData | null>(null);
+  // The current keyed (background-removed) full-size result, kept so Insert can
+  // crop it to the chosen rect without re-deriving from the slider values.
+  const keyedRef = useRef<ImageData | null>(null);
+  // Bumped each time a new source image is decoded, to re-fire the preview effect.
+  const [sourceVersion, setSourceVersion] = useState(0);
+  const [uploadPreview, setUploadPreview] = useState<string | null>(null);
+  const [previewSize, setPreviewSize] = useState<{ width: number; height: number } | null>(null);
+  const [threshold, setThreshold] = useState(DEFAULT_THRESHOLD);
+  const [contrast, setContrast] = useState(DEFAULT_CONTRAST);
+  const [autoCrop, setAutoCrop] = useState(true);
+  // Crop rectangle in the keyed image's natural pixel coordinates.
+  const [cropRect, setCropRect] = useState<CropRect | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [processing, setProcessing] = useState(false);
+
   // Reset transient state whenever the modal opens, and refresh the saved list.
   useEffect(() => {
     if (!open) return;
@@ -51,12 +84,56 @@ export function SignatureModal() {
     setTab(list.length ? "saved" : "draw");
     setTyped("");
     setHasInk(false);
+    sourceRef.current = null;
+    keyedRef.current = null;
+    setSourceVersion(0);
+    setUploadPreview(null);
+    setPreviewSize(null);
+    setThreshold(DEFAULT_THRESHOLD);
+    setContrast(DEFAULT_CONTRAST);
+    setAutoCrop(true);
+    setCropRect(null);
+    setUploadError(null);
+    setProcessing(false);
     const c = canvasRef.current;
     if (c) {
       const ctx = c.getContext("2d");
       ctx?.clearRect(0, 0, c.width, c.height);
     }
   }, [open]);
+
+  // Re-key the upload preview whenever the source, threshold, or contrast change.
+  // Produces the full background-removed image; cropping is applied separately at
+  // insert time so the user can keep adjusting the crop box over a stable preview.
+  useEffect(() => {
+    const source = sourceRef.current;
+    if (tab !== "upload" || !source) return;
+    const copy = new ImageData(new Uint8ClampedArray(source.data), source.width, source.height);
+    const keyed = keyOutBackground(copy, { threshold, contrast });
+    keyedRef.current = keyed;
+    setPreviewSize({ width: keyed.width, height: keyed.height });
+    setUploadPreview(imageDataToPngDataUrl(keyed));
+  }, [tab, threshold, contrast, sourceVersion]);
+
+  // When auto-crop is on (and on each new image), snap the crop box to the
+  // detected ink bounds, padded slightly so stroke ends aren't clipped.
+  useEffect(() => {
+    const keyed = keyedRef.current;
+    if (tab !== "upload" || !keyed || !autoCrop) return;
+    const bounds = detectInkBounds(keyed);
+    if (!bounds) {
+      setCropRect({ x: 0, y: 0, width: keyed.width, height: keyed.height });
+      return;
+    }
+    const padX = bounds.width * AUTO_CROP_PAD;
+    const padY = bounds.height * AUTO_CROP_PAD;
+    setCropRect({
+      x: Math.max(0, bounds.x - padX),
+      y: Math.max(0, bounds.y - padY),
+      width: Math.min(keyed.width - Math.max(0, bounds.x - padX), bounds.width + padX * 2),
+      height: Math.min(keyed.height - Math.max(0, bounds.y - padY), bounds.height + padY * 2),
+    });
+  }, [tab, autoCrop, sourceVersion, threshold]);
 
   if (!open) return null;
 
@@ -119,6 +196,32 @@ export function SignatureModal() {
     return c.toDataURL("image/png");
   }
 
+  /** Decode a picked image file into the source buffer used by the live preview. */
+  async function handleUploadFile(file: File | undefined | null) {
+    if (!file) return;
+    if (!/^image\/(png|jpeg)$/.test(file.type)) {
+      setUploadError("Please choose a PNG or JPEG image.");
+      return;
+    }
+    setUploadError(null);
+    setProcessing(true);
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      const { imageData } = await decodeToImageData(dataUrl);
+      sourceRef.current = imageData;
+      // A fresh image should re-run auto-crop from scratch.
+      setAutoCrop(true);
+      setCropRect(null);
+      setSourceVersion((v) => v + 1);
+    } catch {
+      sourceRef.current = null;
+      setUploadPreview(null);
+      setUploadError("Could not read that image.");
+    } finally {
+      setProcessing(false);
+    }
+  }
+
   /** Drop a signature data URL onto the page and close. */
   function place(dataUrl: string) {
     addImageDataUrl(dataUrl, { width: 220, height: 80 });
@@ -130,6 +233,13 @@ export function SignatureModal() {
     if (tab === "draw") {
       if (!hasInk) return close();
       dataUrl = canvasRef.current!.toDataURL("image/png");
+    } else if (tab === "upload") {
+      // Crop the keyed (background-removed, contrast-boosted) image to the chosen
+      // rectangle, then export that as the signature PNG.
+      const keyed = keyedRef.current;
+      if (!keyed) return;
+      const region = cropRect ?? { x: 0, y: 0, width: keyed.width, height: keyed.height };
+      dataUrl = imageDataToPngDataUrl(cropImageData(keyed, region));
     } else {
       dataUrl = typedToDataUrl();
     }
@@ -179,6 +289,15 @@ export function SignatureModal() {
           >
             Type
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "upload"}
+            className={tab === "upload" ? "active" : ""}
+            onClick={() => setTab("upload")}
+          >
+            Upload
+          </button>
           {saved.length > 0 && (
             <button
               type="button"
@@ -226,6 +345,96 @@ export function SignatureModal() {
           </div>
         )}
 
+        {tab === "upload" && (
+          <div className="sig-upload-wrap" role="tabpanel" aria-label="Upload signature image">
+            {!uploadPreview && !processing && (
+              <label className="sig-upload-drop">
+                <Upload size={22} />
+                <span>Choose a photo or scan of your signature</span>
+                <small>PNG or JPEG · the paper background is removed automatically</small>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg"
+                  className="sig-upload-input"
+                  onChange={(e) => void handleUploadFile(e.target.files?.[0])}
+                />
+              </label>
+            )}
+
+            {processing && <div className="sig-upload-status">Processing…</div>}
+
+            {uploadPreview && previewSize && (
+              <>
+                <SignatureCropper
+                  src={uploadPreview}
+                  imageWidth={previewSize.width}
+                  imageHeight={previewSize.height}
+                  rect={cropRect}
+                  onChange={(r) => {
+                    // Manual drag turns off auto-crop so it won't snap back.
+                    setAutoCrop(false);
+                    setCropRect(r);
+                  }}
+                />
+
+                <label className="sig-upload-toggle">
+                  <input
+                    type="checkbox"
+                    checked={autoCrop}
+                    onChange={(e) => setAutoCrop(e.target.checked)}
+                  />
+                  Auto-crop to signature
+                </label>
+
+                <label className="sig-upload-threshold">
+                  Background removal
+                  <input
+                    type="range"
+                    min={0.2}
+                    max={0.95}
+                    step={0.01}
+                    value={threshold}
+                    onChange={(e) => setThreshold(Number(e.target.value))}
+                    aria-label="Background removal strength"
+                  />
+                </label>
+
+                <label className="sig-upload-threshold">
+                  Line contrast
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={contrast}
+                    onChange={(e) => setContrast(Number(e.target.value))}
+                    aria-label="Signature line contrast"
+                  />
+                  <span className="sig-upload-hint">
+                    Removal: drag right if paper shows. Contrast: drag right to darken faint ink.
+                  </span>
+                </label>
+
+                <label className="sig-upload-replace">
+                  Choose a different image
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    className="sig-upload-input"
+                    onChange={(e) => void handleUploadFile(e.target.files?.[0])}
+                  />
+                </label>
+              </>
+            )}
+
+            {uploadError && (
+              <div className="sig-upload-status sig-upload-error" role="alert">
+                {uploadError}
+              </div>
+            )}
+          </div>
+        )}
+
         {tab === "saved" && (
           <div className="sig-saved-grid" role="tabpanel" aria-label="Saved signatures">
             {saved.map((s) => (
@@ -256,7 +465,12 @@ export function SignatureModal() {
             {tab === "saved" ? "Close" : "Cancel"}
           </button>
           {tab !== "saved" && (
-            <button type="button" className="sig-insert" onClick={insert}>
+            <button
+              type="button"
+              className="sig-insert"
+              onClick={insert}
+              disabled={tab === "upload" && !uploadPreview}
+            >
               Insert
             </button>
           )}
