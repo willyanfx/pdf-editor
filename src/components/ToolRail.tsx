@@ -13,6 +13,7 @@ import {
   Signature,
   Files,
   FileInput,
+  FilePlus,
 } from "lucide-react";
 import { useEditorStore, type EditorMode } from "../store/useEditorStore";
 import { useEditorActions } from "../hooks/useEditorActions";
@@ -28,7 +29,8 @@ type Props = {
 export function ToolRail({ onOpenPalette, onTogglePages, pagesActive }: Props) {
   const file = useEditorStore((s) => s.file);
   const mode = useEditorStore((s) => s.mode);
-  const { setMode, pickImage, addRectangle, openSignature, convertFile } = useEditorActions();
+  const { setMode, pickImage, addRectangle, openSignature, convertFile, addPages } =
+    useEditorActions();
 
   const noFile = !file;
 
@@ -91,6 +93,12 @@ export function ToolRail({ onOpenPalette, onTogglePages, pagesActive }: Props) {
         toggle
         disabled={noFile}
         onClick={onTogglePages}
+      />
+      <RailButton
+        icon={<FilePlus size={18} />}
+        tip="Add / combine pages…"
+        disabled={noFile}
+        onClick={addPages}
       />
       <RailButton icon={<FileInput size={18} />} tip="Convert file to PDF" onClick={convertFile} />
 
