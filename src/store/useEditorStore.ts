@@ -1,11 +1,24 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { OcrEngine } from "../lib/vlmOcr/types";
+import type { InsertSource } from "../lib/pageInsert";
+import { useToastStore } from "./useToastStore";
+
+export type { InsertSource };
 
 export type { OcrEngine };
 
 /** A history snapshot of the three mutable document arrays. */
-type HistoryEntry = { edits: PdfEdit[]; pageOps: PageOp[]; pageOrder: number[] };
+/** A history snapshot. `file`/`numPages` are captured so insert/merge (which
+ * swap the underlying File and grow the page count) fully revert on undo; for
+ * ordinary edits they're unchanged, so restoring them is a no-op. */
+type HistoryEntry = {
+  edits: PdfEdit[];
+  pageOps: PageOp[];
+  pageOrder: number[];
+  file: File | null;
+  numPages: number;
+};
 
 /** Module-level coalesce tracker for updateEdit bursts (typing, arrow nudge). */
 let lastCoalesce: { id: string; timestamp: number } | null = null;
@@ -318,6 +331,15 @@ type EditorState = {
   setOcrAllProgress: (progress: { current: number; total: number } | null) => void;
   setScrollToPage: (fn: ((pageIndex: number) => void) | null) => void;
   setPendingFocus: (pf: { editId: string; caretOffset: number } | null) => void;
+  /**
+   * Splice pages from `sources` into the open document at visible slot `position`
+   * (0 = before the first page in the current pageOrder, pageOrder.length = after
+   * the last). Remaps all existing edits/pageOps/pageOrder so every reference still
+   * points at the same visual page. The new File replaces the old one in state,
+   * which causes PdfViewer's <Document> to reload with the updated bytes. Undo-able
+   * via the normal history stack. No-ops if no file is open.
+   */
+  insertPages: (sources: InsertSource[], position: number) => Promise<void>;
 };
 
 /**
@@ -359,17 +381,25 @@ const initialState = {
   urlDialogOpen: false,
 };
 
-/** Capture a snapshot of the three document arrays from state. */
+/** Capture a snapshot of the mutable document arrays plus the file identity and
+ * page count. Only the arrays are deep-cloned; the File is immutable so its
+ * reference is kept as-is (cloning its bytes on every edit would be wasteful). */
 function snapshot(state: {
   edits: PdfEdit[];
   pageOps: PageOp[];
   pageOrder: number[];
+  file: File | null;
+  numPages: number;
 }): HistoryEntry {
-  return structuredClone({
-    edits: state.edits,
-    pageOps: state.pageOps,
-    pageOrder: state.pageOrder,
-  });
+  return {
+    ...structuredClone({
+      edits: state.edits,
+      pageOps: state.pageOps,
+      pageOrder: state.pageOrder,
+    }),
+    file: state.file,
+    numPages: state.numPages,
+  };
 }
 
 /** Push an entry onto _past, capping at 100 entries, and clear _future. */
@@ -417,6 +447,10 @@ export const useEditorStore = create<EditorState>()(
             edits: entry.edits,
             pageOps: entry.pageOps,
             pageOrder: entry.pageOrder,
+            // file/numPages revert too, so undoing an insert/merge removes the
+            // added pages and restores the page count (a no-op for plain edits).
+            file: entry.file,
+            numPages: entry.numPages,
             selectedEditId: null,
             _past: state._past.slice(0, -1),
             _future: [current, ...state._future],
@@ -433,6 +467,8 @@ export const useEditorStore = create<EditorState>()(
             edits: entry.edits,
             pageOps: entry.pageOps,
             pageOrder: entry.pageOrder,
+            file: entry.file,
+            numPages: entry.numPages,
             selectedEditId: null,
             _past: [...state._past, current],
             _future: state._future.slice(1),
@@ -591,6 +627,80 @@ export const useEditorStore = create<EditorState>()(
       setScrollToPage: (scrollToPage) => set({ scrollToPage }),
 
       setPendingFocus: (pendingFocus) => set({ pendingFocus }),
+
+      insertPages: async (sources, position) => {
+        const { file, edits, pageOps, pageOrder } = useEditorStore.getState();
+        if (!file) return;
+
+        // Translate the VISIBLE position (index into pageOrder) into the base-document
+        // insertion point `at` for buildInsertedPdf.
+        //
+        // buildInsertedPdf splices by output/base index: pages [0, at) stay before the
+        // new pages; pages [at, baseCount) shift right by insertedCount. So `at` must be
+        // the original index of the page that currently sits at pageOrder[position] —
+        // that is the first base page that should appear AFTER the newly inserted pages.
+        // If position equals pageOrder.length (insertion after the last visible page), we
+        // use baseCount (which buildInsertedPdf clamps to the actual end anyway).
+        //
+        // We read baseCount from pageOrder.length here as a proxy: pageOrder always
+        // contains every valid original index (deleted pages are filtered out of pageOrder
+        // but we can't recover the old baseCount cheaply). For a fresh file pageOrder ===
+        // [0..n-1], so pageOrder.length === baseCount. For files with deleted pages the
+        // pageOrder is shorter; we use the max entry + 1 as the real baseCount below.
+        const baseCount = pageOrder.length > 0 ? Math.max(...pageOrder) + 1 : 0;
+        const at = position < pageOrder.length ? pageOrder[position] : baseCount;
+
+        try {
+          const { buildInsertedPdf, remapIndexAfterInsert, insertedIndices } =
+            await import("../lib/pageInsert");
+
+          const { bytes, insertedCount } = await buildInsertedPdf(file, sources, at);
+
+          // Build a new File from the merged bytes, keeping the original name.
+          // .slice() strips the generic ArrayBufferLike parameter that TypeScript
+          // otherwise rejects when constructing a File (same pattern as openFiles.ts).
+          const newFile = new File([bytes.slice()], file.name, { type: "application/pdf" });
+
+          // Remap existing indices: any original index >= at shifts right by insertedCount.
+          const newEdits = edits.map((edit) => ({
+            ...edit,
+            pageIndex: remapIndexAfterInsert(edit.pageIndex, at, insertedCount),
+          }));
+          const newPageOps = pageOps.map((op) => ({
+            ...op,
+            pageIndex: remapIndexAfterInsert(op.pageIndex, at, insertedCount),
+          }));
+          // Remap each existing entry, then splice the new indices at position.
+          const remappedOrder = pageOrder.map((idx) =>
+            remapIndexAfterInsert(idx, at, insertedCount),
+          );
+          const newIndices = insertedIndices(at, insertedCount);
+          const newPageOrder = [
+            ...remappedOrder.slice(0, position),
+            ...newIndices,
+            ...remappedOrder.slice(position),
+          ];
+
+          set((state) => {
+            lastCoalesce = null;
+            const hist = pushHistory(state, snapshot(state));
+            return {
+              ...hist,
+              file: newFile,
+              edits: newEdits,
+              pageOps: newPageOps,
+              pageOrder: newPageOrder,
+              numPages: state.numPages + insertedCount,
+              selectedEditId: null,
+              selectedPageIndex: at,
+            };
+          });
+        } catch (err) {
+          const msg =
+            err instanceof Error ? err.message : "Could not insert pages into the document.";
+          useToastStore.getState().addToast(msg, "error");
+        }
+      },
     }),
     {
       name: "pdf-editor:settings",
