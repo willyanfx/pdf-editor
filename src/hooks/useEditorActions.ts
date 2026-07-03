@@ -3,6 +3,7 @@ import { useToastStore } from "../store/useToastStore";
 import { addImageFromFile, openFiles, openConvertedFile, openPdfFromUrl } from "../lib/openFiles";
 import { CONVERTIBLE_ACCEPT } from "../lib/convertToPdf";
 import type { InsertSource } from "../lib/pageInsert";
+import type { CompressOptions } from "../lib/compressPresets";
 
 /** Callbacks the morphing Download button uses to drive its idle→spinner→check
  * animation; the export logic itself lives here so the rail, top bar, and
@@ -262,14 +263,14 @@ export function useEditorActions() {
     }
   }
 
-  async function compressPdf(hooks: DownloadHooks = {}) {
+  async function compressPdf(hooks: DownloadHooks = {}, compressOptions?: CompressOptions) {
     const { file, edits } = useEditorStore.getState();
     if (!file) return;
 
     hooks.onStart?.();
     try {
       const { compressEditedPdf } = await import("../lib/exportPdf");
-      const bytes = await compressEditedPdf(file, edits, exportOptions());
+      const bytes = await compressEditedPdf(file, edits, exportOptions(), compressOptions);
       downloadBytes(bytes, file.name.replace(/\.pdf$/i, "") + ".compressed.pdf");
       useToastStore.getState().addToast("Compressed PDF exported", "success");
       hooks.onSuccess?.();
@@ -335,6 +336,12 @@ export function useEditorActions() {
     useEditorStore.getState().setMetadataModalOpen(true);
   }
 
+  /** Open the compress-PDF dialog. */
+  function openCompressDialog() {
+    if (!useEditorStore.getState().file) return;
+    useEditorStore.getState().setCompressDialogOpen(true);
+  }
+
   /**
    * Split the open PDF. `mode` "ranges" parses the spec ("" → one file per page);
    * "interval" emits one file per `chunkSize` consecutive pages.
@@ -386,6 +393,7 @@ export function useEditorActions() {
     setSearch,
     openSplit,
     openMetadata,
+    openCompressDialog,
     downloadPdf,
     downloadDocx,
     downloadCsv,

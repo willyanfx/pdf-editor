@@ -319,10 +319,10 @@ export function CommandPalette({ onClose }: Props) {
       {
         id: "compress",
         group: "Export",
-        label: "Compress PDF",
+        label: "Compress PDF…",
         icon: <Minimize2 size={16} />,
         disabled: noFile,
-        run: () => runAndClose(() => void actions.compressPdf()),
+        run: () => runAndClose(actions.openCompressDialog),
       },
     ],
     // actions is recreated each render but its handlers read the store at call

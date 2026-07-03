@@ -1,6 +1,13 @@
 import fontkit from "@pdf-lib/fontkit";
 import {
   PDFDocument,
+  PDFRawStream,
+  PDFName,
+  PDFNumber,
+  PDFRef,
+  PDFBool,
+  PDFArray,
+  decodePDFRawStream,
   degrees,
   rgb,
   StandardFonts,
@@ -170,6 +177,13 @@ export type ExportOptions = {
   /** Compress the output (object streams; images are downsampled separately). */
   compress?: boolean;
 };
+
+import { COMPRESS_PRESETS } from "./compressPresets";
+import type { CompressOptions } from "./compressPresets";
+// Re-exported so existing callers can keep importing from exportPdf; UI code
+// should import from compressPresets directly to stay off the heavy chunk.
+export type { CompressPreset, CompressOptions } from "./compressPresets";
+export { COMPRESS_PRESETS } from "./compressPresets";
 
 /**
  * Render the overlay edits onto a fresh copy of the original PDF and return the
@@ -550,13 +564,23 @@ export async function compressEditedPdf(
   sourceFile: File,
   edits: PdfEdit[],
   options: ExportOptions = {},
+  compressOptions: CompressOptions = COMPRESS_PRESETS.ebook,
 ): Promise<Uint8Array> {
   const edited = await exportEditedPdf(sourceFile, edits, { ...options, compress: true });
   try {
-    const downsampled = await downsampleImages(edited);
-    return downsampled ?? edited;
+    if (compressOptions.mode === "rasterize") {
+      const downsampled = await downsampleImages(
+        edited,
+        compressOptions.targetPx,
+        compressOptions.quality,
+        compressOptions.grayscale,
+      );
+      return downsampled ?? edited;
+    } else {
+      return await selectiveReencodeImages(edited, compressOptions);
+    }
   } catch (err) {
-    console.warn("[exportPdf] image downsampling skipped:", err);
+    console.warn("[exportPdf] image compression skipped:", err);
     return edited;
   }
 }
@@ -568,21 +592,29 @@ export async function compressEditedPdf(
  * trades vector fidelity for size, mirroring Acrobat's "reduced size" option.
  * Returns null (caller keeps the original) if pdf.js can't render here.
  */
-async function downsampleImages(pdfBytes: Uint8Array): Promise<Uint8Array | null> {
+async function downsampleImages(
+  pdfBytes: Uint8Array,
+  targetPx = 1240,
+  quality = 0.7,
+  grayscale = false,
+): Promise<Uint8Array | null> {
   if (typeof document === "undefined") return null; // no canvas (e.g. tests)
-  const pdfjs = await import("pdfjs-dist");
-  const loadingTask = pdfjs.getDocument({ data: pdfBytes.slice() });
+  // Use the shared loader (react-pdf's pdfjs instance) so the worker, wasmUrl,
+  // and document-password config can't drift from the viewer's — a bare
+  // import("pdfjs-dist") here can resolve a second pdfjs instance whose
+  // GlobalWorkerOptions were never set, and getDocument then never resolves.
+  const { loadPdfDocument } = await import("./pdfOptions");
+  const loadingTask = await loadPdfDocument(pdfBytes.slice());
   const doc = await loadingTask.promise;
 
   const out = await PDFDocument.create();
-  const TARGET_WIDTH = 1240; // ~150 DPI for US Letter; good for sharing.
-  const JPEG_QUALITY = 0.7;
 
   try {
     for (let i = 1; i <= doc.numPages; i++) {
       const page = await doc.getPage(i);
       const base = page.getViewport({ scale: 1 });
-      const scale = Math.min(1, TARGET_WIDTH / base.width);
+      // targetPx is the longest-edge limit — honour it for both landscape and portrait.
+      const scale = Math.min(1, targetPx / Math.max(base.width, base.height));
       const viewport = page.getViewport({ scale });
       const canvas = document.createElement("canvas");
       canvas.width = Math.ceil(viewport.width);
@@ -592,9 +624,19 @@ async function downsampleImages(pdfBytes: Uint8Array): Promise<Uint8Array | null
       // White matte so transparent regions don't turn black in JPEG.
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      await page.render({ canvas, viewport }).promise;
+      if (grayscale) {
+        ctx.filter = "grayscale(1)";
+      }
+      // intent "print" renders without requestAnimationFrame scheduling —
+      // display intent stalls indefinitely while the tab is hidden (rAF is
+      // throttled to zero), hanging the whole compression if the user
+      // switches tabs mid-export.
+      await page.render({ canvas, viewport, intent: "print" }).promise;
+      if (grayscale) {
+        ctx.filter = "none";
+      }
 
-      const jpegUrl = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
+      const jpegUrl = canvas.toDataURL("image/jpeg", quality);
       const jpeg = await out.embedJpg(dataUrlToBytes(jpegUrl));
       const outPage = out.addPage([base.width, base.height]);
       outPage.drawImage(jpeg, { x: 0, y: 0, width: base.width, height: base.height });
@@ -606,6 +648,309 @@ async function downsampleImages(pdfBytes: Uint8Array): Promise<Uint8Array | null
     await loadingTask.destroy();
   }
   return out.save({ useObjectStreams: true });
+}
+
+/**
+ * Convert raw scanline data (1/3/4-channel) to RGBA Uint8ClampedArray.
+ * For CMYK (4-channel), PDF stores complemented CMYK — invert each channel
+ * before converting to RGB.
+ */
+function rgbToRgba(
+  src: Uint8Array,
+  w: number,
+  h: number,
+  channels: number,
+  bpc: number,
+): Uint8ClampedArray<ArrayBuffer> {
+  const out = new Uint8ClampedArray(w * h * 4) as Uint8ClampedArray<ArrayBuffer>;
+  // For bpc=16 each channel sample occupies 2 bytes (big-endian) in src.
+  // bytesPerSample drives the byte stride and normalisation.
+  const bytesPerSample = bpc <= 8 ? 1 : 2;
+  const maxVal = bpc <= 8 ? (1 << bpc) - 1 : 65535;
+
+  for (let i = 0; i < w * h; i++) {
+    let r = 0,
+      g = 0,
+      b = 0;
+
+    /** Read one sample for pixel i, channel c and normalise to 0–255. */
+    const sample = (c: number): number => {
+      const byteOffset = (i * channels + c) * bytesPerSample;
+      const raw =
+        bytesPerSample === 1
+          ? src[byteOffset]
+          : (src[byteOffset] << 8) | src[byteOffset + 1];
+      return Math.round((raw / maxVal) * 255);
+    };
+
+    if (channels === 1) {
+      // Grayscale
+      const v = sample(0);
+      r = g = b = v;
+    } else if (channels === 3) {
+      // RGB
+      r = sample(0);
+      g = sample(1);
+      b = sample(2);
+    } else if (channels === 4) {
+      // CMYK: PDF stores complemented values (0=full ink, maxVal=no ink).
+      const c = sample(0) / 255;
+      const m = sample(1) / 255;
+      const y = sample(2) / 255;
+      const k = sample(3) / 255;
+      r = Math.round(255 * (1 - c) * (1 - k));
+      g = Math.round(255 * (1 - m) * (1 - k));
+      b = Math.round(255 * (1 - y) * (1 - k));
+    } else {
+      // Fallback: treat as grayscale using first channel
+      const v = sample(0);
+      r = g = b = v;
+    }
+
+    out[i * 4] = r;
+    out[i * 4 + 1] = g;
+    out[i * 4 + 2] = b;
+    out[i * 4 + 3] = 255;
+  }
+  return out;
+}
+
+/**
+ * Re-encode only raster image XObjects in the PDF, preserving text and vectors.
+ * Uses OffscreenCanvas (main thread or worker) to scale and re-compress each image.
+ */
+async function selectiveReencodeImages(
+  pdfBytes: Uint8Array,
+  opts: CompressOptions,
+): Promise<Uint8Array> {
+  const pdfDoc = await PDFDocument.load(pdfBytes, { updateMetadata: false });
+  const ctx = pdfDoc.context;
+
+  // Strip metadata if requested.
+  if (opts.stripMetadata) {
+    ctx.trailerInfo.Info = undefined;
+    const catalog = ctx.lookup(ctx.trailerInfo.Root);
+    if (catalog && "get" in catalog && "delete" in catalog) {
+      const metaRef = (catalog as { get: (k: unknown) => unknown }).get(PDFName.of("Metadata"));
+      if (metaRef instanceof PDFRef) {
+        (catalog as { delete: (k: unknown) => void }).delete(PDFName.of("Metadata"));
+        ctx.delete(metaRef);
+      }
+    }
+    // Strip thumbnail images from pages.
+    const pages = pdfDoc.getPages();
+    for (const page of pages) {
+      const thumbRef = page.node.get(PDFName.of("Thumb"));
+      if (thumbRef instanceof PDFRef) {
+        page.node.delete(PDFName.of("Thumb"));
+        ctx.delete(thumbRef);
+      }
+    }
+  }
+
+  // Guard: skip image pass if no canvas available (e.g., Node test environment).
+  const hasCanvas =
+    typeof OffscreenCanvas !== "undefined" || typeof document !== "undefined";
+  if (!hasCanvas) {
+    return pdfDoc.save({ useObjectStreams: true });
+  }
+
+  const { targetPx, quality, grayscale } = opts;
+  // PDFName.asString() returns the encoded name INCLUDING the leading solidus.
+  const SKIP_FILTERS = new Set(["/CCITTFaxDecode", "/JBIG2Decode", "/JPXDecode"]);
+  const SKIP_COLOR_SPACES = new Set(["/Indexed", "/Separation"]);
+
+  const objects = ctx.enumerateIndirectObjects();
+  for (const [ref, obj] of objects) {
+    if (!(obj instanceof PDFRawStream)) continue;
+    const dict = obj.dict;
+
+    // Only process Image XObjects.
+    const subtype = dict.get(PDFName.of("Subtype"));
+    if (!subtype || subtype.toString() !== "/Image") continue;
+
+    // Skip image masks.
+    const imageMask = dict.get(PDFName.of("ImageMask"));
+    if (imageMask instanceof PDFBool && imageMask.asBoolean()) continue;
+
+    // Skip unsupported filters.
+    const filterEntry = dict.get(PDFName.of("Filter"));
+    let filterName: string | null = null;
+    if (filterEntry instanceof PDFName) {
+      filterName = filterEntry.asString();
+    } else if (filterEntry instanceof PDFArray) {
+      // Multi-filter chains (e.g. [/FlateDecode /DCTDecode]) can't take the
+      // JPEG fast path (contents are still wrapped in the outer filter) and
+      // decodePDFRawStream can't unwrap DCT — leave chained images untouched.
+      if (filterEntry.size() > 1) continue;
+      const only = filterEntry.get(0);
+      if (only instanceof PDFName) filterName = only.asString();
+    }
+    if (filterName && SKIP_FILTERS.has(filterName)) continue;
+
+    // Skip indexed/separation color spaces.
+    const csEntry = dict.get(PDFName.of("ColorSpace"));
+    let csName: string | null = null;
+    if (csEntry instanceof PDFName) {
+      csName = csEntry.asString();
+    } else if (csEntry instanceof PDFArray) {
+      const first = csEntry.get(0);
+      if (first instanceof PDFName) csName = first.asString();
+    }
+    if (csName && SKIP_COLOR_SPACES.has(csName)) continue;
+
+    // Get dimensions.
+    const widthEntry = dict.get(PDFName.of("Width"));
+    const heightEntry = dict.get(PDFName.of("Height"));
+    const pixW = widthEntry instanceof PDFNumber ? widthEntry.asNumber() : 0;
+    const pixH = heightEntry instanceof PDFNumber ? heightEntry.asNumber() : 0;
+    if (pixW <= 0 || pixH <= 0) continue;
+
+    // Skip tiny images (icons, decorative).
+    if (pixW * pixH < 10_000) continue;
+
+    // Skip images that are already smaller than target and at max quality.
+    const longestEdge = Math.max(pixW, pixH);
+    if (longestEdge <= targetPx && quality >= 0.99) continue;
+
+    // Skip images with SMask (alpha channel) to avoid dimension mismatch.
+    const smask = dict.get(PDFName.of("SMask"));
+    if (smask instanceof PDFRef) continue;
+
+    // Compute output dimensions.
+    const scale = Math.min(1, targetPx / longestEdge);
+    const dstW = Math.max(1, Math.round(pixW * scale));
+    const dstH = Math.max(1, Math.round(pixH * scale));
+
+    let imageBitmap: ImageBitmap | null = null;
+
+    try {
+      if (filterName === "/DCTDecode") {
+        // JPEG — read contents directly without decodePDFRawStream (which throws on DCT).
+        // slice() produces a Uint8Array<ArrayBuffer> which Blob accepts.
+        const jpegBytes = obj.contents.slice();
+        const blob = new Blob([jpegBytes], { type: "image/jpeg" });
+        imageBitmap = await createImageBitmap(blob);
+      } else {
+        // Other filter or no filter — decode raw scanlines.
+        let bpc = 8;
+        const bpcEntry = dict.get(PDFName.of("BitsPerComponent"));
+        if (bpcEntry instanceof PDFNumber) bpc = bpcEntry.asNumber();
+        // rgbToRgba reads whole-byte samples; sub-byte packed data (1/2/4-bit)
+        // would be misread — leave those images untouched.
+        if (bpc < 8) continue;
+
+        // Determine channel count from the color space; ICCBased carries it in
+        // the profile stream's /N entry. Unknown spaces are left untouched
+        // rather than guessed — a wrong channel count corrupts the image.
+        let channels: number | null = null;
+        if (csName === "/DeviceGray" || csName === "/CalGray") channels = 1;
+        else if (csName === "/DeviceRGB" || csName === "/CalRGB") channels = 3;
+        else if (csName === "/DeviceCMYK") channels = 4;
+        else if (csName === "/ICCBased" && csEntry instanceof PDFArray) {
+          const profile = ctx.lookup(csEntry.get(1));
+          if (profile instanceof PDFRawStream) {
+            const n = profile.dict.get(PDFName.of("N"));
+            if (n instanceof PDFNumber) channels = n.asNumber();
+          }
+        }
+        if (channels === null) continue;
+
+        // decode() returns Uint8Array; use directly (no need to go through .buffer).
+        const decoded = decodePDFRawStream(obj).decode();
+        const rgba = rgbToRgba(decoded, pixW, pixH, channels, bpc);
+        const imageData = new ImageData(rgba, pixW, pixH);
+        imageBitmap = await createImageBitmap(imageData);
+      }
+
+      // Re-encode using OffscreenCanvas.
+      const canvas = new OffscreenCanvas(dstW, dstH);
+      const canvasCtx = canvas.getContext("2d");
+      if (!canvasCtx) continue;
+
+      if (grayscale) {
+        (canvasCtx as OffscreenCanvasRenderingContext2D).filter = "grayscale(1)";
+      }
+      canvasCtx.drawImage(imageBitmap, 0, 0, dstW, dstH);
+      imageBitmap.close();
+      imageBitmap = null;
+
+      const blob = await canvas.convertToBlob({ type: "image/jpeg", quality });
+      const newJpegBytes = new Uint8Array(await blob.arrayBuffer());
+
+      // Always use DeviceRGB: convertToBlob always produces a 3-channel YCbCr JPEG
+      // regardless of the grayscale filter applied to the canvas. Declaring
+      // DeviceGray (1-component) for a 3-component JPEG stream causes rendering
+      // failures in Acrobat, Ghostscript, iOS PDFKit, and strict PDF.js builds.
+      const colorSpaceName = "DeviceRGB";
+      const newStream = ctx.stream(newJpegBytes, {
+        Type: "XObject",
+        Subtype: "Image",
+        Width: dstW,
+        Height: dstH,
+        ColorSpace: colorSpaceName,
+        BitsPerComponent: 8,
+        Filter: "DCTDecode",
+      });
+      ctx.assign(ref, newStream);
+    } catch (imgErr) {
+      // If one image fails, skip it and continue with the others.
+      console.warn("[exportPdf] selective re-encode skipped for image:", imgErr);
+      if (imageBitmap) {
+        imageBitmap.close();
+      }
+    }
+  }
+
+  return pdfDoc.save({ useObjectStreams: true });
+}
+
+/**
+ * Estimate the compressed size of a PDF after applying the given options.
+ * Returns 0 for rasterize mode (unpredictable). Useful for the dialog's live
+ * preview before the user clicks Compress.
+ */
+export async function estimateCompressedSize(
+  pdfBytes: Uint8Array,
+  opts: CompressOptions,
+): Promise<number> {
+  if (opts.mode === "rasterize") return 0;
+
+  const pdfDoc = await PDFDocument.load(pdfBytes, { updateMetadata: false });
+  const ctx = pdfDoc.context;
+  const { targetPx, quality } = opts;
+
+  let totalImageBytes = 0;
+  let estimatedImageBytes = 0;
+
+  for (const [, obj] of ctx.enumerateIndirectObjects()) {
+    if (!(obj instanceof PDFRawStream)) continue;
+    const dict = obj.dict;
+    const subtype = dict.get(PDFName.of("Subtype"));
+    if (!subtype || subtype.toString() !== "/Image") continue;
+
+    const imgSize = obj.contents.length;
+    totalImageBytes += imgSize;
+
+    const widthEntry = dict.get(PDFName.of("Width"));
+    const heightEntry = dict.get(PDFName.of("Height"));
+    const pixW = widthEntry instanceof PDFNumber ? widthEntry.asNumber() : 0;
+    const pixH = heightEntry instanceof PDFNumber ? heightEntry.asNumber() : 0;
+    const longestEdge = Math.max(pixW, pixH);
+
+    if (longestEdge > 0 && (longestEdge > targetPx || quality < 0.99)) {
+      const retainRatio = Math.min(1, Math.pow(targetPx / 2480, 2) * quality * 0.55);
+      estimatedImageBytes += imgSize * retainRatio;
+    } else {
+      estimatedImageBytes += imgSize;
+    }
+  }
+
+  const savedImageBytes = totalImageBytes - estimatedImageBytes;
+  // Metadata savings estimate (rough: ~4 KB if stripping).
+  const metadataSavings = opts.stripMetadata ? 4096 : 0;
+
+  return Math.max(0, pdfBytes.length - savedImageBytes - metadataSavings);
 }
 
 function dataUrlToBytes(dataUrl: string): Uint8Array {
