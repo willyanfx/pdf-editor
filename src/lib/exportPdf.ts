@@ -677,9 +677,7 @@ function rgbToRgba(
     const sample = (c: number): number => {
       const byteOffset = (i * channels + c) * bytesPerSample;
       const raw =
-        bytesPerSample === 1
-          ? src[byteOffset]
-          : (src[byteOffset] << 8) | src[byteOffset + 1];
+        bytesPerSample === 1 ? src[byteOffset] : (src[byteOffset] << 8) | src[byteOffset + 1];
       return Math.round((raw / maxVal) * 255);
     };
 
@@ -749,8 +747,7 @@ async function selectiveReencodeImages(
   }
 
   // Guard: skip image pass if no canvas available (e.g., Node test environment).
-  const hasCanvas =
-    typeof OffscreenCanvas !== "undefined" || typeof document !== "undefined";
+  const hasCanvas = typeof OffscreenCanvas !== "undefined" || typeof document !== "undefined";
   if (!hasCanvas) {
     return pdfDoc.save({ useObjectStreams: true });
   }

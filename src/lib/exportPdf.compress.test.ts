@@ -40,14 +40,19 @@ test("compressEditedPdf rasterize mode falls back gracefully in Node", async () 
   // In Vitest (Node), typeof document === "undefined", so downsampleImages returns null
   // and compressEditedPdf returns the edited bytes unchanged.
   const file = await makeMinimalPdf();
-  const result = await compressEditedPdf(file, [], {}, {
-    preset: "custom",
-    mode: "rasterize",
-    targetPx: 1240,
-    quality: 0.7,
-    grayscale: false,
-    stripMetadata: false,
-  });
+  const result = await compressEditedPdf(
+    file,
+    [],
+    {},
+    {
+      preset: "custom",
+      mode: "rasterize",
+      targetPx: 1240,
+      quality: 0.7,
+      grayscale: false,
+      stripMetadata: false,
+    },
+  );
   expect(result).toBeInstanceOf(Uint8Array);
   expect(result.byteLength).toBeGreaterThan(0);
   const header = new TextDecoder().decode(result.slice(0, 5));

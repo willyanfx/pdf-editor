@@ -5,13 +5,7 @@
  * exportPdf.ts stays behind a dynamic import.
  */
 
-export type CompressPreset =
-  | "lossless"
-  | "screen"
-  | "ebook"
-  | "printer"
-  | "prepress"
-  | "custom";
+export type CompressPreset = "lossless" | "screen" | "ebook" | "printer" | "prepress" | "custom";
 
 export type CompressOptions = {
   preset: CompressPreset;

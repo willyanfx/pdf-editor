@@ -160,27 +160,25 @@ export function CompressDialog() {
         </p>
 
         <div className="sig-tabs" role="tablist" aria-label="Compression preset">
-          {(["lossless", "screen", "ebook", "printer", "prepress", "custom"] as CompressPreset[]).map(
-            (preset) => (
-              <button
-                key={preset}
-                type="button"
-                role="tab"
-                aria-selected={tab === preset}
-                className={tab === preset ? "active" : ""}
-                onClick={() => handleTabClick(preset)}
-                disabled={isExporting}
-              >
-                {preset.charAt(0).toUpperCase() + preset.slice(1)}
-              </button>
-            ),
-          )}
+          {(
+            ["lossless", "screen", "ebook", "printer", "prepress", "custom"] as CompressPreset[]
+          ).map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              role="tab"
+              aria-selected={tab === preset}
+              className={tab === preset ? "active" : ""}
+              onClick={() => handleTabClick(preset)}
+              disabled={isExporting}
+            >
+              {preset.charAt(0).toUpperCase() + preset.slice(1)}
+            </button>
+          ))}
         </div>
 
         <div role="tabpanel" aria-label={`${tab} settings`}>
-          {tab !== "custom" && (
-            <p className="split-hint">{PRESET_DESCRIPTIONS[tab]}</p>
-          )}
+          {tab !== "custom" && <p className="split-hint">{PRESET_DESCRIPTIONS[tab]}</p>}
 
           {tab === "custom" && (
             <div className="split-hint">
@@ -291,13 +289,12 @@ export function CompressDialog() {
           <button type="button" className="sig-cancel" onClick={onClose}>
             Cancel
           </button>
-          <button
-            type="button"
-            className="sig-insert"
-            onClick={submit}
-            disabled={isExporting}
-          >
-            {isExporting ? "Compressing…" : compressState === "done" ? "Done!" : "Compress & Download"}
+          <button type="button" className="sig-insert" onClick={submit} disabled={isExporting}>
+            {isExporting
+              ? "Compressing…"
+              : compressState === "done"
+                ? "Done!"
+                : "Compress & Download"}
           </button>
         </div>
       </div>
