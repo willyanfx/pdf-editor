@@ -248,7 +248,7 @@ export default function App() {
       {isDragging && (
         <div className="drop-overlay">
           <div className="drop-overlay-card">
-            Drop PDF, Word, Excel, or image to open · drop image to add
+            Drop PDF, Word, Excel, image, or HEIC to open · drop image to add
           </div>
         </div>
       )}

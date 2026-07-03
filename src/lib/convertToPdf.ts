@@ -9,10 +9,10 @@ const LINE_HEIGHT = FONT_SIZE * 1.4;
 
 /** Office MIME types and extensions we can convert client-side. */
 export const CONVERTIBLE_ACCEPT =
-  ".docx,.xlsx,.xls,.csv,.png,.jpg,.jpeg," +
+  ".docx,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.heic,.heif," +
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document," +
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet," +
-  "application/vnd.ms-excel,text/csv,image/png,image/jpeg";
+  "application/vnd.ms-excel,text/csv,image/png,image/jpeg,image/heic,image/heif";
 
 function extOf(name: string): string {
   const dot = name.lastIndexOf(".");
@@ -22,16 +22,17 @@ function extOf(name: string): string {
 /** True for files convertToPdf() can handle (used to route drops/picks). */
 export function isConvertible(file: File): boolean {
   const ext = extOf(file.name);
-  return ["docx", "xlsx", "xls", "csv", "png", "jpg", "jpeg"].includes(ext);
+  return ["docx", "xlsx", "xls", "csv", "png", "jpg", "jpeg", "heic", "heif"].includes(ext);
 }
 
 /**
- * Convert a non-PDF file (image, Word .docx, Excel .xlsx/.csv) into PDF bytes.
+ * Convert a non-PDF file (image, Word .docx, Excel .xlsx/.csv, HEIC) into PDF bytes.
  * Throws for unsupported types. Pure client-side; no upload.
  */
 export async function convertToPdf(file: File): Promise<Uint8Array> {
   const ext = extOf(file.name);
   if (ext === "png" || ext === "jpg" || ext === "jpeg") return imageToPdf(file);
+  if (ext === "heic" || ext === "heif") return heicToPdf(file);
   if (ext === "docx") return docxToPdf(file);
   if (ext === "xlsx" || ext === "xls" || ext === "csv") return spreadsheetToPdf(file);
   throw new Error(`Unsupported file type: .${ext}`);
@@ -43,6 +44,36 @@ async function imageToPdf(file: File): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   const isPng = file.type === "image/png" || extOf(file.name) === "png";
   const image = isPng ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
+
+  const maxW = PAGE_W - MARGIN;
+  const maxH = PAGE_H - MARGIN;
+  const ratio = Math.min(maxW / image.width, maxH / image.height, 1);
+  const w = image.width * ratio;
+  const h = image.height * ratio;
+
+  const page = doc.addPage([PAGE_W, PAGE_H]);
+  page.drawImage(image, {
+    x: (PAGE_W - w) / 2,
+    y: (PAGE_H - h) / 2,
+    width: w,
+    height: h,
+  });
+  return doc.save();
+}
+
+/**
+ * HEIC/HEIF image → one-page PDF.
+ * Browsers except Safari cannot decode HEIC natively, so we run the heic-to
+ * WASM decoder to produce JPEG bytes first, then embed those via pdf-lib.
+ * The library is lazy-imported so its WASM bundle is only loaded on first use.
+ */
+async function heicToPdf(file: File): Promise<Uint8Array> {
+  const { heicTo } = await import("heic-to");
+  const jpegBlob = await heicTo({ blob: file, type: "image/jpeg", quality: 0.92 });
+  const jpegBytes = new Uint8Array(await jpegBlob.arrayBuffer());
+
+  const doc = await PDFDocument.create();
+  const image = await doc.embedJpg(jpegBytes);
 
   const maxW = PAGE_W - MARGIN;
   const maxH = PAGE_H - MARGIN;

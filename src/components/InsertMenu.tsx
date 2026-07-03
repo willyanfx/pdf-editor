@@ -77,7 +77,7 @@ export function InsertMenu({ position, onClose }: Props) {
   }
 
   function pickImages() {
-    void pickFiles("image/png,image/jpeg", true).then((files) => {
+    void pickFiles("image/png,image/jpeg,image/heic,image/heif,.heic,.heif", true).then((files) => {
       if (!files.length) return;
       void insert(files.map((file) => ({ kind: "convert" as const, file })));
     });

@@ -21,6 +21,7 @@
     "@pdf-lib/fontkit": "^1.1.1",
     "@tanstack/react-virtual": "^3.14.2",
     "docx": "^9.7.1",
+    "heic-to": "1.5.2",
     "lucide-react": "^1.17.0",
     "mammoth": "^1.12.0",
     "pdf-lib": "^1.17.1",
