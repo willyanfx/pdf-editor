@@ -27,6 +27,7 @@ import {
   Trash2,
   MoveHorizontal,
   Maximize,
+  FilePlus,
 } from "lucide-react";
 import { useEditorStore } from "../store/useEditorStore";
 import { useEditorActions } from "../hooks/useEditorActions";
@@ -223,6 +224,14 @@ export function CommandPalette({ onClose }: Props) {
         shortcut: "D",
         disabled: noFile,
         run: () => runAndClose(() => actions.setMode("ink")),
+      },
+      {
+        id: "page-add",
+        group: "Pages",
+        label: "Add / combine pages…",
+        icon: <FilePlus size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(actions.addPages),
       },
       {
         id: "page-rotate",

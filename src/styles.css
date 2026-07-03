@@ -2331,3 +2331,115 @@ button {
     transform: translateX(-50%) translateY(0) scale(1);
   }
 }
+
+/* Page insertion gap controls ------------------------------------------ */
+
+/* The thin clickable zone between (and at the ends of) page thumbnails.
+   Hidden by default; revealed when the parent list is hovered or when a
+   file drag enters the panel, so normal scrolling isn't interrupted. */
+.insert-gap {
+  position: relative;
+  height: 6px;
+  margin: 0 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Grow the click/drop target without consuming visual space. */
+  overflow: visible;
+}
+
+.insert-gap-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--fg-muted);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+  /* Invisible until the outer list is hovered or this button is focused. */
+  opacity: 0;
+  transition:
+    opacity var(--t-fast),
+    border-color var(--t-fast),
+    color var(--t-fast);
+}
+
+/* Show gap buttons when the page-panel-list is hovered so any gap in the
+   panel becomes interactive, not just the one currently moused-over. */
+.page-panel-list:hover .insert-gap-btn,
+.insert-gap-btn:focus-visible {
+  opacity: 1;
+}
+
+.insert-gap-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--fg);
+}
+
+.insert-gap-btn:focus-visible {
+  outline: 2px solid oklch(55% 0.16 250 / 0.85);
+  outline-offset: 2px;
+}
+
+/* When a desktop file drag is over a gap, make it very obvious. */
+.insert-gap.file-drag-over {
+  height: 28px;
+}
+
+.insert-gap.file-drag-over .insert-gap-btn {
+  opacity: 1;
+  border-style: solid;
+  border-color: oklch(55% 0.16 250 / 0.9);
+  color: oklch(40% 0.14 250);
+  background: oklch(55% 0.14 250 / 0.08);
+}
+
+/* Insert source menu popover ------------------------------------------- */
+
+.insert-menu {
+  position: absolute;
+  /* Sit below the gap button, left-aligned to the panel edge. */
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
+  min-width: 140px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: 0 6px 20px oklch(0% 0 0 / 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  /* Clip to avoid going off the left edge of the panel. */
+  max-width: 152px;
+}
+
+.insert-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast);
+}
+
+.insert-menu-item:hover {
+  background: var(--bg-subtle);
+}
+
+.insert-menu-item:focus-visible {
+  outline: 2px solid oklch(55% 0.16 250 / 0.85);
+  outline-offset: -2px;
+}

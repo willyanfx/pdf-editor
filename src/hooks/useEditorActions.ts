@@ -1,6 +1,8 @@
 import { useEditorStore } from "../store/useEditorStore";
 import { useToastStore } from "../store/useToastStore";
 import { addImageFromFile, openFiles, openConvertedFile, openPdfFromUrl } from "../lib/openFiles";
+import { CONVERTIBLE_ACCEPT } from "../lib/convertToPdf";
+import type { InsertSource } from "../lib/pageInsert";
 
 /** Callbacks the morphing Download button uses to drive its idle→spinner→check
  * animation; the export logic itself lives here so the rail, top bar, and
@@ -297,6 +299,30 @@ export function useEditorActions() {
     });
   }
 
+  /**
+   * Pick one or more PDF/image/Office files and insert them at the end of the
+   * current document (position = pageOrder.length). Used by the command palette
+   * and tool-rail "Add pages" entry so users don't have to hover a gap.
+   */
+  function addPages() {
+    void pickFiles("application/pdf," + CONVERTIBLE_ACCEPT, true).then(async (files) => {
+      if (!files.length) return;
+      const store = useEditorStore.getState();
+      if (!store.file || !store.insertPages) return;
+      const sources: InsertSource[] = files.map((file) =>
+        file.type === "application/pdf"
+          ? { kind: "pdf" as const, file }
+          : { kind: "convert" as const, file },
+      );
+      try {
+        await store.insertPages(sources, store.pageOrder.length);
+        useToastStore.getState().addToast("Pages inserted", "success");
+      } catch {
+        useToastStore.getState().addToast("Could not insert pages.", "error");
+      }
+    });
+  }
+
   /** Open the split-by-range dialog. */
   function openSplit() {
     if (!useEditorStore.getState().file) return;
@@ -366,5 +392,6 @@ export function useEditorActions() {
     compressPdf,
     mergePdfs,
     splitPdf,
+    addPages,
   };
 }
