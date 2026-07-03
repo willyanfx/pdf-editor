@@ -106,11 +106,11 @@ export function useEditorActions() {
     });
   }
 
-  /** Pick a non-PDF file (image/Word/Excel) and convert it into a new PDF. */
+  /** Pick a non-PDF file (image/Word/Excel/HEIC) and convert it into a new PDF. */
   function convertFile() {
     void pickFiles(
       // Lazy import keeps the accept string close to the converter.
-      ".docx,.xlsx,.xls,.csv,.png,.jpg,.jpeg",
+      ".docx,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.heic,.heif",
     ).then(async (files) => {
       if (!files[0]) return;
       try {

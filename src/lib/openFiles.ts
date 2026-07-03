@@ -3,7 +3,19 @@ import { useToastStore } from "../store/useToastStore";
 import { fileToDataUrl } from "./file";
 import { resolveImagePlacement } from "./signatureZones";
 
-const IMAGE_TYPES = ["image/png", "image/jpeg"];
+const IMAGE_TYPES = ["image/png", "image/jpeg", "image/heic", "image/heif"];
+const HEIC_EXTS = ["heic", "heif"];
+
+function extOf(name: string): string {
+  const dot = name.lastIndexOf(".");
+  return dot >= 0 ? name.slice(dot + 1).toLowerCase() : "";
+}
+
+function isHeicFile(file: File): boolean {
+  return (
+    file.type === "image/heic" || file.type === "image/heif" || HEIC_EXTS.includes(extOf(file.name))
+  );
+}
 
 /** Convert a non-PDF file (image/Word/Excel) to a PDF and open it as the doc. */
 export async function openConvertedFile(file: File): Promise<void> {
@@ -83,6 +95,15 @@ export function addImageDataUrl(
 
 /** Add an image/signature edit on the current page from a File. */
 export async function addImageFromFile(file: File): Promise<void> {
+  if (isHeicFile(file)) {
+    // Browsers other than Safari cannot decode HEIC natively; decode to JPEG
+    // first so the image overlay renders correctly in all browsers.
+    const { heicTo } = await import("heic-to");
+    const jpegBlob = await heicTo({ blob: file, type: "image/jpeg", quality: 0.92 });
+    const dataUrl = await fileToDataUrl(new File([jpegBlob], file.name, { type: "image/jpeg" }));
+    addImageDataUrl(dataUrl);
+    return;
+  }
   const dataUrl = await fileToDataUrl(file);
   addImageDataUrl(dataUrl);
 }
@@ -104,7 +125,9 @@ export function openFiles(files: FileList | File[] | null | undefined): void {
 
   // No PDF dropped. If one is already open, an image becomes an edit; otherwise
   // a convertible file (image/Word/Excel) is converted into a new PDF document.
-  const image = list.find((f) => IMAGE_TYPES.includes(f.type));
+  // Match by MIME type first; fall back to extension for empty-MIME HEIC drops
+  // (Windows assigns no MIME to .heic/.heif files).
+  const image = list.find((f) => IMAGE_TYPES.includes(f.type) || isHeicFile(f));
   if (hasPdf && image) {
     void addImageFromFile(image).catch(() => {
       useToastStore.getState().addToast("Could not decode that image.", "error");
@@ -112,7 +135,7 @@ export function openFiles(files: FileList | File[] | null | undefined): void {
     return;
   }
 
-  const convertible = list.find((f) => /\.(docx|xlsx|xls|csv|png|jpe?g)$/i.test(f.name));
+  const convertible = list.find((f) => /\.(docx|xlsx|xls|csv|png|jpe?g|heic|heif)$/i.test(f.name));
   if (convertible) {
     void openConvertedFile(convertible).catch(() => {
       useToastStore.getState().addToast("Could not convert that file.", "error");
