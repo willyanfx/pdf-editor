@@ -280,6 +280,9 @@ type EditorState = {
   metadataModalOpen: boolean;
   /** Whether the open-from-URL dialog is open. */
   urlDialogOpen: boolean;
+  /** Whether the compress-PDF dialog is open. */
+  compressDialogOpen: boolean;
+  setCompressDialogOpen: (open: boolean) => void;
 
   /** History stacks — NOT in initialState so setFile does not reset them. */
   _past: HistoryEntry[];
@@ -379,6 +382,7 @@ const initialState = {
   splitDialogOpen: false,
   metadataModalOpen: false,
   urlDialogOpen: false,
+  compressDialogOpen: false,
 };
 
 /** Capture a snapshot of the mutable document arrays plus the file identity and
@@ -596,6 +600,8 @@ export const useEditorStore = create<EditorState>()(
       setMetadataModalOpen: (metadataModalOpen) => set({ metadataModalOpen }),
 
       setUrlDialogOpen: (urlDialogOpen) => set({ urlDialogOpen }),
+
+      setCompressDialogOpen: (compressDialogOpen) => set({ compressDialogOpen }),
 
       setMode: (mode) => set({ mode }),
 

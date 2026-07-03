@@ -23,3 +23,25 @@ test("opens a PDF and renders its first page", async ({ page }) => {
   // The viewer mounts a canvas per rendered page once the document loads.
   await expect(page.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
 });
+
+test("compress dialog opens, shows preset tabs, and closes", async ({ page }) => {
+  await page.goto("/");
+  await page.locator('input[type="file"]').setInputFiles(FIXTURE_PDF);
+  await expect(page.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
+
+  await page.getByRole("button", { name: /compress/i }).click();
+
+  const dialog = page.getByRole("dialog", { name: "Compress PDF" });
+  await expect(dialog).toBeVisible({ timeout: 3_000 });
+
+  for (const preset of ["Lossless", "Screen", "Ebook", "Printer", "Prepress", "Custom"]) {
+    await expect(dialog.getByRole("tab", { name: preset })).toBeVisible();
+  }
+
+  const hint = await dialog.locator(".split-hint").first().textContent();
+  expect(hint).toMatch(/Current size:/);
+
+  await dialog.getByRole("tab", { name: "Screen" }).click();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).not.toBeVisible({ timeout: 2_000 });
+});

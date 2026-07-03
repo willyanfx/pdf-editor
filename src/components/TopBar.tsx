@@ -23,14 +23,13 @@ export function TopBar() {
   // Routes through the virtualizer in PdfViewer: a target page may not be mounted,
   // so a DOM scrollIntoView can't reach it.
   const scrollToPage = useEditorStore((s) => s.scrollToPage);
-  const { pickPdf, downloadPdf, compressPdf } = useEditorActions();
+  const { pickPdf, downloadPdf, openCompressDialog } = useEditorActions();
   const canUndo = useEditorStore((s) => s._past.length > 0);
   const canRedo = useEditorStore((s) => s._future.length > 0);
   const undo = useEditorStore((s) => s.undo);
   const redo = useEditorStore((s) => s.redo);
 
   const [downloadState, setDownloadState] = useState<DownloadState>("idle");
-  const [compressState, setCompressState] = useState<DownloadState>("idle");
   // Draft text for the page-jump input; null means "mirror the live page".
   const [pageDraft, setPageDraft] = useState<string | null>(null);
 
@@ -59,14 +58,7 @@ export function TopBar() {
   }
 
   function onCompress() {
-    void compressPdf({
-      onStart: () => setCompressState("exporting"),
-      onSuccess: () => {
-        setCompressState("done");
-        setTimeout(() => setCompressState("idle"), 1500);
-      },
-      onError: () => setCompressState("idle"),
-    });
+    openCompressDialog();
   }
 
   return (
@@ -173,17 +165,11 @@ export function TopBar() {
         type="button"
         className="topbar-btn"
         title="Compress and download (smaller file)"
-        disabled={!file || compressState === "exporting"}
+        disabled={!file}
         onClick={onCompress}
       >
-        {compressState === "exporting" ? (
-          <Loader2 size={15} className="dl-icon dl-spin" />
-        ) : compressState === "done" ? (
-          <Check size={15} className="dl-icon dl-pop" />
-        ) : (
-          <Minimize2 size={15} />
-        )}
-        <span>{compressState === "exporting" ? "Compressing…" : "Compress"}</span>
+        <Minimize2 size={15} />
+        <span>Compress</span>
       </button>
 
       <button
