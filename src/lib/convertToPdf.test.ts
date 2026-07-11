@@ -5,7 +5,14 @@ vi.mock("heic-to", () => ({
   heicTo: vi.fn(),
 }));
 
+// Mock the HTML pipeline: it needs a real DOM (iframe + html2canvas-pro),
+// which the Node test environment doesn't have. Routing is what's under test.
+vi.mock("./htmlToPdf", () => ({
+  htmlToPdf: vi.fn(),
+}));
+
 import { heicTo } from "heic-to";
+import { htmlToPdf } from "./htmlToPdf";
 import { isConvertible, convertToPdf, CONVERTIBLE_ACCEPT } from "./convertToPdf";
 
 // ---------------------------------------------------------------------------
@@ -118,8 +125,35 @@ test("isConvertible returns true for .heic with application/octet-stream mime", 
   );
 });
 
+test("isConvertible returns true for .html and .htm", () => {
+  expect(isConvertible(new File([], "page.html", { type: "text/html" }))).toBe(true);
+  expect(isConvertible(new File([], "page.htm", { type: "" }))).toBe(true);
+});
+
 test("isConvertible returns false for unsupported ext", () => {
   expect(isConvertible(new File([], "video.mp4", { type: "video/mp4" }))).toBe(false);
+});
+
+// ---------------------------------------------------------------------------
+// convertToPdf — HTML branch
+// ---------------------------------------------------------------------------
+
+test("CONVERTIBLE_ACCEPT includes html extensions and mime type", () => {
+  expect(CONVERTIBLE_ACCEPT).toContain(".html");
+  expect(CONVERTIBLE_ACCEPT).toContain(".htm");
+  expect(CONVERTIBLE_ACCEPT).toContain("text/html");
+});
+
+test("convertToPdf routes .html and .htm to htmlToPdf", async () => {
+  const fake = new Uint8Array([1, 2, 3]);
+  (htmlToPdf as ReturnType<typeof vi.fn>).mockResolvedValue(fake);
+
+  const html = new File(["<h1>hi</h1>"], "page.html", { type: "text/html" });
+  await expect(convertToPdf(html)).resolves.toBe(fake);
+  expect(htmlToPdf).toHaveBeenCalledWith(html);
+
+  const htm = new File(["<h1>hi</h1>"], "page.htm", { type: "" });
+  await expect(convertToPdf(htm)).resolves.toBe(fake);
 });
 
 // ---------------------------------------------------------------------------

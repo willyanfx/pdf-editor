@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { FIXTURE_PDF } from "./global-setup";
+import { FIXTURE_HTML, FIXTURE_PDF } from "./global-setup";
 
 /**
  * Phase 3 smoke test (item 10 spike). Proves the CI harness can: boot the app
@@ -21,6 +21,18 @@ test("opens a PDF and renders its first page", async ({ page }) => {
   await page.locator('input[type="file"]').setInputFiles(FIXTURE_PDF);
 
   // The viewer mounts a canvas per rendered page once the document loads.
+  await expect(page.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
+});
+
+test("converts an HTML file to PDF and renders it", async ({ page }) => {
+  await page.goto("/");
+
+  // The empty-state input routes every file through openFiles(), which
+  // detects the .html extension and converts it into a new PDF document.
+  await page.locator('input[type="file"]').setInputFiles(FIXTURE_HTML);
+
+  // Conversion succeeded (toast) and the resulting PDF's first page rendered.
+  await expect(page.getByText("Converted to PDF")).toBeVisible({ timeout: 20_000 });
   await expect(page.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
 });
 

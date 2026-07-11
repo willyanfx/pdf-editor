@@ -9,10 +9,10 @@ const LINE_HEIGHT = FONT_SIZE * 1.4;
 
 /** Office MIME types and extensions we can convert client-side. */
 export const CONVERTIBLE_ACCEPT =
-  ".docx,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.heic,.heif," +
+  ".docx,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.heic,.heif,.html,.htm," +
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document," +
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet," +
-  "application/vnd.ms-excel,text/csv,image/png,image/jpeg,image/heic,image/heif";
+  "application/vnd.ms-excel,text/csv,image/png,image/jpeg,image/heic,image/heif,text/html";
 
 function extOf(name: string): string {
   const dot = name.lastIndexOf(".");
@@ -22,12 +22,24 @@ function extOf(name: string): string {
 /** True for files convertToPdf() can handle (used to route drops/picks). */
 export function isConvertible(file: File): boolean {
   const ext = extOf(file.name);
-  return ["docx", "xlsx", "xls", "csv", "png", "jpg", "jpeg", "heic", "heif"].includes(ext);
+  return [
+    "docx",
+    "xlsx",
+    "xls",
+    "csv",
+    "png",
+    "jpg",
+    "jpeg",
+    "heic",
+    "heif",
+    "html",
+    "htm",
+  ].includes(ext);
 }
 
 /**
- * Convert a non-PDF file (image, Word .docx, Excel .xlsx/.csv, HEIC) into PDF bytes.
- * Throws for unsupported types. Pure client-side; no upload.
+ * Convert a non-PDF file (image, Word .docx, Excel .xlsx/.csv, HEIC, HTML) into
+ * PDF bytes. Throws for unsupported types. Pure client-side; no upload.
  */
 export async function convertToPdf(file: File): Promise<Uint8Array> {
   const ext = extOf(file.name);
@@ -35,6 +47,11 @@ export async function convertToPdf(file: File): Promise<Uint8Array> {
   if (ext === "heic" || ext === "heif") return heicToPdf(file);
   if (ext === "docx") return docxToPdf(file);
   if (ext === "xlsx" || ext === "xls" || ext === "csv") return spreadsheetToPdf(file);
+  if (ext === "html" || ext === "htm") {
+    // Lazy import keeps html2canvas-pro out of every non-HTML conversion.
+    const { htmlToPdf } = await import("./htmlToPdf");
+    return htmlToPdf(file);
+  }
   throw new Error(`Unsupported file type: .${ext}`);
 }
 

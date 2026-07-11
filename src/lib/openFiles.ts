@@ -135,7 +135,10 @@ export function openFiles(files: FileList | File[] | null | undefined): void {
     return;
   }
 
-  const convertible = list.find((f) => /\.(docx|xlsx|xls|csv|png|jpe?g|heic|heif)$/i.test(f.name));
+  const convertible = list.find(
+    (f) =>
+      /\.(docx|xlsx|xls|csv|png|jpe?g|heic|heif|html?)$/i.test(f.name) || f.type === "text/html",
+  );
   if (convertible) {
     void openConvertedFile(convertible).catch(() => {
       useToastStore.getState().addToast("Could not convert that file.", "error");

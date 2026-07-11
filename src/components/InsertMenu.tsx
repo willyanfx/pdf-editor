@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { FilePlus2, ImagePlus, FileText, Plus } from "lucide-react";
+import { FilePlus2, ImagePlus, FileText, FileCode, Plus } from "lucide-react";
 import { useEditorStore } from "../store/useEditorStore";
 import { useToastStore } from "../store/useToastStore";
 import { CONVERTIBLE_ACCEPT } from "../lib/convertToPdf";
@@ -90,6 +90,13 @@ export function InsertMenu({ position, onClose }: Props) {
     });
   }
 
+  function pickHtml() {
+    void pickFiles(".html,.htm,text/html", true).then((files) => {
+      if (!files.length) return;
+      void insert(files.map((file) => ({ kind: "convert" as const, file })));
+    });
+  }
+
   function insertBlank() {
     void insert([{ kind: "blank", size: "letter" }]);
   }
@@ -129,6 +136,10 @@ export function InsertMenu({ position, onClose }: Props) {
       <button type="button" role="menuitem" className="insert-menu-item" onClick={pickOffice}>
         <FileText size={14} aria-hidden="true" />
         Word / Excel…
+      </button>
+      <button type="button" role="menuitem" className="insert-menu-item" onClick={pickHtml}>
+        <FileCode size={14} aria-hidden="true" />
+        HTML…
       </button>
       <button type="button" role="menuitem" className="insert-menu-item" onClick={insertBlank}>
         <Plus size={14} aria-hidden="true" />
