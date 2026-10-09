@@ -37,8 +37,3 @@ export function buildLayerTree(
   }
   return out;
 }
-
-/** Ids of every layer in the tree, in display order. */
-export function layerIds(tree: LayerNode[]): string[] {
-  return tree.flatMap((n) => (n.kind === "layer" ? [n.id] : layerIds(n.children)));
-}

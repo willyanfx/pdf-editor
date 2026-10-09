@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   FilePlus2,
   Download,
@@ -42,6 +42,11 @@ export function TopBar() {
   // Draft text for the page-jump input; null means "mirror the live page".
   const [pageDraft, setPageDraft] = useState<string | null>(null);
 
+  const rows = useMemo(
+    () => buildPageRows(visiblePages(numPages, pageOrder), pageLayout, coverPage),
+    [numPages, pageOrder, pageLayout, coverPage],
+  );
+
   function goToPage(index: number) {
     if (index < 0 || index >= numPages) return;
     setSelectedPageIndex(index);
@@ -51,7 +56,6 @@ export function TopBar() {
   /** The page the previous/next controls lead to: a row away, skipping pages the
    * organizer removed (two-page view moves two pages at a time). */
   function adjacentPage(direction: 1 | -1): number | null {
-    const rows = buildPageRows(visiblePages(numPages, pageOrder), pageLayout, coverPage);
     return stepPage(rows, selectedPageIndex, direction);
   }
 

@@ -34,7 +34,7 @@ import {
   type FormValue,
   type FormValues,
 } from "../lib/formFields";
-import { textMatches, type FindOptions } from "../lib/findText";
+import { buildFindRegExp, type FindOptions } from "../lib/findText";
 import { useToastStore } from "./useToastStore";
 
 export type { InsertSource };
@@ -1137,11 +1137,10 @@ function searchOptionsOf(state: {
 
 /** Ids of the text edits whose text matches `query` under `options`, in edit order. */
 function findTextEditIds(edits: PdfEdit[], query: string, options: FindOptions): string[] {
-  if (!query.trim()) return [];
+  const re = buildFindRegExp(query, options);
+  if (!re) return [];
   return edits
-    .filter(
-      (e): e is TextEdit => e.type === "text" && textMatches(runsToText(e.runs), query, options),
-    )
+    .filter((e): e is TextEdit => e.type === "text" && re.test(runsToText(e.runs)))
     .map((e) => e.id);
 }
 

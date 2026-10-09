@@ -1,5 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import { buildLayerTree, layerIds, UNTITLED_LAYER, type LayerOrderItem } from "./layerTree";
+import { buildLayerTree, UNTITLED_LAYER, type LayerOrderItem } from "./layerTree";
 
 const names: Record<string, string | null> = {
   "1R": "Background",
@@ -47,13 +47,4 @@ test("ids without a group, and folders left empty by that, are dropped", () => {
   expect(buildLayerTree(order, name, has)).toEqual([
     { kind: "layer", id: "1R", name: "Background" },
   ]);
-});
-
-test("layerIds lists every layer through nested folders in order", () => {
-  const tree = buildLayerTree(
-    ["1R", { name: "A", order: ["2R", { name: "B", order: ["3R"] }] }],
-    name,
-    has,
-  );
-  expect(layerIds(tree)).toEqual(["1R", "2R", "3R"]);
 });
