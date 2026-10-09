@@ -33,6 +33,9 @@ import {
   type FontVariantKey,
 } from "./fonts";
 
+import type { Bookmark } from "./bookmarks";
+import { writeOutline } from "./outline";
+
 export { mapScreenRectToPdf, VIEWER_WIDTH } from "./pdfGeometry";
 
 type FontKey = `${FontFamily}-${"r" | "b" | "i" | "bi"}`;
@@ -176,6 +179,9 @@ export type ExportOptions = {
   pageOps?: PageOp[];
   /** Compress the output (object streams; images are downsampled separately). */
   compress?: boolean;
+  /** Bookmarks to write as the output's outline (replacing the file's own).
+   * Omit to leave the outline untouched; see bookmarksForExport(). */
+  bookmarks?: Bookmark[];
 };
 
 import { COMPRESS_PRESETS } from "./compressPresets";
@@ -427,6 +433,8 @@ export async function exportEditedPdf(
       drawInkEdit(page, edit, pageWidth, pageHeight);
     }
   }
+
+  if (options.bookmarks) writeOutline(pdfDoc, options.bookmarks, origToOut);
 
   return pdfDoc.save(options.compress ? { useObjectStreams: true } : undefined);
 }

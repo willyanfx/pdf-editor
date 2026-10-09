@@ -5,6 +5,8 @@ import { CONVERTIBLE_ACCEPT } from "../lib/convertToPdf";
 import type { InsertSource } from "../lib/pageInsert";
 import type { CompressOptions } from "../lib/compressPresets";
 import { markDocumentSaved } from "../lib/autosave";
+import { addBookmarkForCurrentPage, showBookmarks } from "../lib/bookmarkActions";
+import { bookmarksForExport } from "../lib/bookmarks";
 
 /** Callbacks the morphing Download button uses to drive its idle→spinner→check
  * animation; the export logic itself lives here so the rail, top bar, and
@@ -193,6 +195,7 @@ export function useEditorActions() {
     return {
       pageOrder: pageOrder.length ? pageOrder : Array.from({ length: numPages }, (_, i) => i),
       pageOps,
+      bookmarks: bookmarksForExport(useEditorStore.getState()),
     };
   }
 
@@ -401,5 +404,7 @@ export function useEditorActions() {
     mergePdfs,
     splitPdf,
     addPages,
+    addBookmark: addBookmarkForCurrentPage,
+    showBookmarks,
   };
 }

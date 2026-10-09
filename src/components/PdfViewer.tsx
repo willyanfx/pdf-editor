@@ -12,7 +12,8 @@ import { AnnotateLayer } from "./AnnotateLayer";
 import { InkLayer } from "./InkLayer";
 import { TextDrawLayer } from "./TextDrawLayer";
 import { PageActionsBar } from "./PageActionsBar";
-import { PagePanel } from "./PagePanel";
+import { SidePanel } from "./SidePanel";
+import { loadOutlineIntoStore } from "../lib/outlineRead";
 import { useEditorStore, makeCoverTextEdit, clampZoom } from "../store/useEditorStore";
 import { useToastStore } from "../store/useToastStore";
 import { openFiles } from "../lib/openFiles";
@@ -410,6 +411,7 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
           // the unlock modal if it was open.
           useEditorStore.getState().setPasswordPrompt(null);
           setNumPages(pdf.numPages);
+          void loadOutlineIntoStore(pdf, file);
         }}
         onLoadError={(err) => {
           // A PasswordException here means the modal is (or will be) up; don't
@@ -421,7 +423,7 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
         loading={<p className="muted">Loading PDF…</p>}
         error={<p className="muted">Could not open this PDF.</p>}
       >
-        {pagePanelOpen && <PagePanel onClose={() => {}} />}
+        {pagePanelOpen && <SidePanel />}
         {/* Zoom sizer: reserves the scaled height so the scroll container scrolls
             the full zoomed document. The inner spacer is scaled from its top
             center — pages render at VIEWER_WIDTH (keeping every stored coordinate
