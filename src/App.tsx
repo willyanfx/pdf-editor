@@ -18,6 +18,9 @@ import { PasswordModal } from "./components/PasswordModal";
 import { ExtractPagesDialog, ReplacePagesDialog } from "./components/PageSelectionDialogs";
 import { FindBar } from "./components/FindBar";
 import { RecoveryBanner } from "./components/RecoveryBanner";
+import { FullscreenHint } from "./components/FullscreenHint";
+import { useViewerStore } from "./store/useViewerStore";
+import { toggleFullscreen, watchFullscreen } from "./lib/fullscreen";
 import { isDocumentDirty, useEditorStore } from "./store/useEditorStore";
 import { RedactSearchDialog } from "./components/RedactSearchDialog";
 import { RedactConfirmDialog } from "./components/RedactConfirmDialog";
@@ -35,6 +38,7 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [pagesOpen, setPagesOpen] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
+  const fullscreen = useViewerStore((s) => s.fullscreen);
 
   function hasFiles(e: React.DragEvent) {
     return Array.from(e.dataTransfer.types).includes("Files");
@@ -171,6 +175,11 @@ export default function App() {
           store.setMode("redact");
           return;
         }
+        if (k === "f") {
+          e.preventDefault();
+          void toggleFullscreen();
+          return;
+        }
         if (k === "w") {
           e.preventDefault();
           store.setZoomPreset("fit-width");
@@ -217,6 +226,9 @@ export default function App() {
     return startAutosave();
   }, []);
 
+  // Keep the full-screen flag in step with the browser (Esc and F11 included).
+  useEffect(() => watchFullscreen(), []);
+
   // Bookmark actions (⌘B, the command palette) ask for the sidebar to open.
   useEffect(
     () =>
@@ -242,7 +254,7 @@ export default function App() {
 
   return (
     <main
-      className="app"
+      className={fullscreen ? "app is-fullscreen" : "app"}
       onDragEnter={(e) => {
         if (!hasFiles(e)) return;
         e.preventDefault();
@@ -289,6 +301,7 @@ export default function App() {
       <PageStampsDialogs />
       <PasswordModal />
       <RecoveryBanner />
+      {fullscreen && <FullscreenHint />}
       <ExtractPagesDialog />
       <ReplacePagesDialog />
       <RedactSearchDialog />

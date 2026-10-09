@@ -34,6 +34,7 @@ import {
   type FormValue,
   type FormValues,
 } from "../lib/formFields";
+import { buildFindRegExp, type FindOptions } from "../lib/findText";
 import { useToastStore } from "./useToastStore";
 
 export type { InsertSource };
@@ -228,9 +229,11 @@ export type PageOp = {
 /** Select vs. Edit-Text vs. OCR. In edit-text mode, clicking existing PDF text
  * turns it into an editable box. In ocr mode, dragging a rectangle runs OCR on
  * that region and turns recognized text into editable boxes. In addText mode,
- * dragging (or clicking) places a new empty text box where the user draws it. */
+ * dragging (or clicking) places a new empty text box where the user draws it. In
+ * hand mode, dragging pans the page stage and nothing on the pages is touched. */
 export type EditorMode =
   | "select"
+  | "hand"
   | "editText"
   | "ocr"
   | "addText"
@@ -314,6 +317,8 @@ type EditorState = {
   /** Find-in-page: the active query and the ordered ids of matching text edits. */
   searchQuery: string;
   searchMatchIds: string[];
+  searchCaseSensitive: boolean;
+  searchWholeWord: boolean;
 
   /** The password used to decrypt the open PDF, once supplied. Held so direct
    * pdfjs.getDocument() paths (OCR, CSV, page-height, scanned-detection) can
@@ -446,6 +451,8 @@ type EditorState = {
   /** Remove a page from the export and drop its edits/transforms. */
   deletePage: (pageIndex: number) => void;
   setSearchQuery: (query: string) => void;
+  /** Toggle find-in-page's match-case / whole-word options; re-runs the search. */
+  setSearchOptions: (options: Partial<FindOptions>) => void;
   setSignatureModalOpen: (open: boolean) => void;
   setSignaturePlacement: (placement: SignaturePlacement | null) => void;
   setDocumentPassword: (password: string | null) => void;
@@ -533,6 +540,8 @@ const initialState = {
   pendingFocus: null as { editId: string; caretOffset: number } | null,
   searchQuery: "",
   searchMatchIds: [] as string[],
+  searchCaseSensitive: false,
+  searchWholeWord: false,
   documentPassword: null as string | null,
   passwordPrompt: null as { wrong: boolean } | null,
   passwordAttempt: 0,
@@ -818,17 +827,19 @@ export const useEditorStore = create<EditorState>()(
         }),
 
       setSearchQuery: (searchQuery) =>
+        set((state) => ({
+          searchQuery,
+          searchMatchIds: findTextEditIds(state.edits, searchQuery, searchOptionsOf(state)),
+        })),
+
+      setSearchOptions: (options) =>
         set((state) => {
-          const q = searchQuery.trim().toLowerCase();
-          const matchIds = q
-            ? state.edits
-                .filter(
-                  (e): e is TextEdit =>
-                    e.type === "text" && runsToText(e.runs).toLowerCase().includes(q),
-                )
-                .map((e) => e.id)
-            : [];
-          return { searchQuery, searchMatchIds: matchIds };
+          const next = { ...searchOptionsOf(state), ...options };
+          return {
+            searchCaseSensitive: next.caseSensitive,
+            searchWholeWord: next.wholeWord,
+            searchMatchIds: findTextEditIds(state.edits, state.searchQuery, next),
+          };
         }),
 
       setSignatureModalOpen: (signatureModalOpen) => set({ signatureModalOpen }),
@@ -1127,6 +1138,23 @@ export function isDocumentDirty(
 /** Flatten a runs array to a plain string. */
 export function runsToText(runs: TextRun[]): string {
   return runs.map((r) => r.text).join("");
+}
+
+/** The find-in-page options held in the store, in `FindOptions` shape. */
+function searchOptionsOf(state: {
+  searchCaseSensitive: boolean;
+  searchWholeWord: boolean;
+}): FindOptions {
+  return { caseSensitive: state.searchCaseSensitive, wholeWord: state.searchWholeWord };
+}
+
+/** Ids of the text edits whose text matches `query` under `options`, in edit order. */
+function findTextEditIds(edits: PdfEdit[], query: string, options: FindOptions): string[] {
+  const re = buildFindRegExp(query, options);
+  if (!re) return [];
+  return edits
+    .filter((e): e is TextEdit => e.type === "text" && re.test(runsToText(e.runs)))
+    .map((e) => e.id);
 }
 
 /** Wrap a plain string as a single run, optionally carrying style overrides. */

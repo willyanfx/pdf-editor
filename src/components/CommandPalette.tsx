@@ -49,10 +49,19 @@ import {
   EyeOff,
   SearchCheck,
   SquareDashed,
+  Hand,
+  Columns2,
+  BookOpen,
+  Moon,
+  Paperclip,
+  Layers,
 } from "lucide-react";
 import { useEditorStore } from "../store/useEditorStore";
 import { useEditorActions } from "../hooks/useEditorActions";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useViewerStore } from "../store/useViewerStore";
+import { toggleFullscreen } from "../lib/fullscreen";
+import { showAttachments, showLayers } from "../lib/sidebarActions";
 
 type Props = {
   onClose: () => void;
@@ -86,6 +95,9 @@ export function CommandPalette({ onClose }: Props) {
   const hasHeaderFooter = useEditorStore((s) => !!s.pageStamps.headerFooter);
   const hasWatermark = useEditorStore((s) => !!s.pageStamps.watermark);
   const hasForm = useEditorStore((s) => (s.formFields?.length ?? 0) > 0);
+  const hasAttachments = useViewerStore((s) => s.attachments.length > 0);
+  const hasLayers = useViewerStore((s) => s.layers !== null);
+  const twoPage = useViewerStore((s) => s.pageLayout === "two");
   const actions = useEditorActions();
 
   const [query, setQuery] = useState("");
@@ -162,6 +174,15 @@ export function CommandPalette({ onClose }: Props) {
         shortcut: "V",
         disabled: noFile,
         run: () => runAndClose(() => actions.setMode("select")),
+      },
+      {
+        id: "mode-hand",
+        group: "Mode",
+        label: "Hand Tool (drag to pan)",
+        icon: <Hand size={16} />,
+        shortcut: "Space",
+        disabled: noFile,
+        run: () => runAndClose(() => actions.setMode("hand")),
       },
       {
         id: "mode-edit",
@@ -463,6 +484,62 @@ export function CommandPalette({ onClose }: Props) {
         run: () => runAndClose(() => useEditorStore.getState().resetZoom()),
       },
       {
+        id: "view-two-page",
+        group: "View",
+        label: "Toggle Two-Page View",
+        icon: <Columns2 size={16} />,
+        disabled: noFile,
+        run: () =>
+          runAndClose(() => {
+            const { pageLayout, setPageLayout } = useViewerStore.getState();
+            setPageLayout(pageLayout === "two" ? "single" : "two");
+          }),
+      },
+      {
+        id: "view-cover-page",
+        group: "View",
+        label: "Toggle Cover Page in Two-Page View",
+        icon: <BookOpen size={16} />,
+        disabled: noFile || !twoPage,
+        run: () =>
+          runAndClose(() => {
+            const { coverPage, setCoverPage } = useViewerStore.getState();
+            setCoverPage(!coverPage);
+          }),
+      },
+      {
+        id: "view-full-screen",
+        group: "View",
+        label: "Toggle Full Screen",
+        icon: <Maximize size={16} />,
+        shortcut: "F",
+        disabled: noFile,
+        run: () => runAndClose(() => void toggleFullscreen()),
+      },
+      {
+        id: "view-dark-theme",
+        group: "View",
+        label: "Toggle Dark Theme",
+        icon: <Moon size={16} />,
+        run: () => runAndClose(() => useViewerStore.getState().toggleTheme()),
+      },
+      {
+        id: "view-attachments",
+        group: "View",
+        label: "Show Attachments",
+        icon: <Paperclip size={16} />,
+        disabled: noFile || !hasAttachments,
+        run: () => runAndClose(showAttachments),
+      },
+      {
+        id: "view-layers",
+        group: "View",
+        label: "Show Layers",
+        icon: <Layers size={16} />,
+        disabled: noFile || !hasLayers,
+        run: () => runAndClose(showLayers),
+      },
+      {
         id: "extract",
         group: "Export",
         label: "Extract Text (OCR page)",
@@ -562,7 +639,7 @@ export function CommandPalette({ onClose }: Props) {
     // actions is recreated each render but its handlers read the store at call
     // time, so the static list is fine to memoize on the reactive inputs only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [noFile, ocrBusy, hasHeaderFooter, hasWatermark, hasForm],
+    [noFile, ocrBusy, hasHeaderFooter, hasWatermark, hasForm, hasAttachments, hasLayers, twoPage],
   );
 
   const filtered = useMemo(() => {

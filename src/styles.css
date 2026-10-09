@@ -55,9 +55,31 @@
 
   /* The PDF page reads as elevated paper — the one place a shadow earns its keep. */
   --page-shadow: 0 2px 14px oklch(0% 0 0 / 0.12);
+  /* Paper stays white in every theme: it is the document, not interface chrome. */
+  --paper: #fff;
+  --selected-bg: oklch(92% 0 0);
 
   --t-fast: 120ms ease;
   --t-mid: 200ms ease;
+}
+
+/* Dark theme: set on <html> by the viewer store (see src/lib/theme.ts). Only the
+   light-surface tokens change — the top bar, rail and floating bars are already
+   dark — and --paper stays white so the document itself is untouched. */
+:root[data-theme="dark"] {
+  --bg: oklch(16% 0 0);
+  --bg-subtle: oklch(21% 0 0);
+  --surface: oklch(24% 0 0);
+  --surface-glass: rgba(38, 38, 38, 0.78);
+  --surface-raised: oklch(27% 0 0);
+  --border: oklch(34% 0 0);
+  --border-strong: oklch(46% 0 0);
+  --fg: oklch(93% 0 0);
+  --fg-muted: oklch(72% 0 0);
+  --fg-faint: oklch(54% 0 0);
+  --selected-bg: oklch(32% 0 0);
+  --error: #f2585a;
+  --page-shadow: 0 2px 18px oklch(0% 0 0 / 0.55);
 }
 
 * {
@@ -73,6 +95,10 @@ body {
   /* The document surface (scroll area, page canvas) is light; dark chrome opts
      back in to color-scheme: dark locally so its native controls render right. */
   color-scheme: light;
+}
+
+:root[data-theme="dark"] body {
+  color-scheme: dark;
 }
 
 button {
@@ -768,12 +794,16 @@ button {
   display: flex;
   flex-direction: column;
   align-items: center;
+  /* "safe" keeps wide content (two-page view, high zoom) scrollable from its left
+     edge instead of clipping it; browsers without it keep plain centering. */
+  align-items: safe center;
   overflow-y: auto;
   background: var(--bg-subtle);
 }
 
 /* Reserves the scaled scroll height/width so the scroll container scrolls the
-   full zoomed document. Sized inline (totalSize * zoom, VIEWER_WIDTH * zoom). */
+   full zoomed document. Sized inline (the virtualizer's on-screen total height,
+   and the row content width * zoom). */
 .pdf-zoom-sizer {
   position: relative;
 }
@@ -791,7 +821,10 @@ button {
 .page-shell {
   /* Positioned absolutely by the virtualizer (see PdfViewer). The inter-page gap
      is reserved by the virtual slot, not a margin here. */
-  background: var(--surface);
+  background: var(--paper);
+  /* The document is always light, so its form widgets (pdf.js annotation layer)
+     must not pick up the dark theme's color-scheme. */
+  color-scheme: light;
   box-shadow: var(--page-shadow);
   line-height: 0;
 }
@@ -1035,7 +1068,7 @@ button {
 }
 
 .fp-option--selected {
-  background: oklch(92% 0 0);
+  background: var(--selected-bg);
   font-weight: 600;
 }
 
@@ -3255,12 +3288,297 @@ p.page-sel-error {
   margin-bottom: 0;
 }
 
+/* Viewer comfort: view controls, hand tool, full screen, attachments, layers ---- */
+
+:root[data-theme="dark"] .ocr-menu-popover {
+  color-scheme: dark;
+}
+
+.find-bar .find-toggle.active {
+  background: oklch(60% 0.16 250 / 0.28);
+  box-shadow: inset 0 0 0 1px oklch(60% 0.16 250 / 0.6);
+}
+
+/* Bottom bar: page layout + full screen, then zoom. */
+.bottombar-view {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.bottombar-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--topbar-border);
+}
+.bottombar-btn.is-active {
+  background: var(--topbar-btn-hover);
+  color: var(--rail-active-fg);
+}
+.topbar-icon-btn {
+  justify-content: center;
+  width: 28px;
+  padding: 0;
+}
+
+/* Hand tool: the stage pans; nothing on the pages reacts to the pointer. */
+.pdf-wrapper.is-hand {
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.pdf-wrapper.is-hand.is-panning {
+  cursor: grabbing;
+}
+.pdf-wrapper.is-hand .page-shell * {
+  pointer-events: none !important;
+}
+.pdf-wrapper.is-hand .side-panel {
+  cursor: default;
+  user-select: auto;
+  -webkit-user-select: auto;
+}
+
+/* Full screen: the document alone. Chrome returns when the browser leaves
+   full screen (Esc), restoring the sidebar exactly as it was. */
+.app.is-fullscreen {
+  grid-template: 1fr / 1fr;
+}
+.app.is-fullscreen > .topbar,
+.app.is-fullscreen > .tool-rail,
+.app.is-fullscreen > .bottombar,
+.app.is-fullscreen .side-panel {
+  display: none;
+}
+.app.is-fullscreen .pdf-wrapper {
+  grid-area: 1 / 1 / 2 / 2;
+}
+.app.is-fullscreen .find-bar {
+  top: 16px;
+}
+.fs-exit {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  z-index: 90;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border: 1px solid var(--topbar-border);
+  border-radius: var(--r-pill);
+  background: var(--topbar-bg);
+  color: var(--topbar-fg);
+  font-size: 12px;
+  cursor: pointer;
+  /* Visible long enough to be noticed, then out of the way until hovered. */
+  animation: fs-hint 4s ease forwards;
+}
+.fs-exit:hover,
+.fs-exit:focus-visible {
+  opacity: 1;
+  animation: none;
+}
+.fs-exit kbd {
+  padding: 0 5px;
+  border: 1px solid var(--topbar-border);
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  opacity: 0.7;
+}
+@keyframes fs-hint {
+  0%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Sidebar: extra tabs (Attachments, Layers) appear only when the PDF has them. */
+.side-panel[data-tabs="3"] {
+  width: 244px;
+}
+.side-panel[data-tabs="4"] {
+  width: 284px;
+}
+.side-panel[data-tabs="3"] .side-panel-tab,
+.side-panel[data-tabs="4"] .side-panel-tab {
+  padding-inline: 2px;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.side-panel-tab-count {
+  margin-left: 4px;
+  padding: 1px 5px;
+  border-radius: var(--r-pill);
+  background: var(--bg-subtle);
+  color: var(--fg-muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.att-panel,
+.layer-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.att-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+.att-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 6px;
+  border-radius: var(--r-sm);
+}
+.att-row:hover {
+  background: var(--bg-subtle);
+}
+.att-icon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--fg-muted);
+}
+.att-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.att-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  color: var(--fg);
+}
+.att-meta,
+.att-desc {
+  font-size: 11.5px;
+  color: var(--fg-muted);
+}
+.att-desc {
+  overflow-wrap: anywhere;
+}
+.att-page-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.att-page-link:hover {
+  color: var(--fg);
+}
+.att-page-link:focus-visible {
+  outline: 2px solid oklch(55% 0.16 250 / 0.85);
+  outline-offset: 1px;
+}
+.att-save {
+  flex: none;
+}
+
+.layer-heading {
+  padding-left: 4px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.layer-tree {
+  flex: 1;
+  min-height: 0;
+  padding: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.layer-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.layer-row label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding-right: 6px;
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  color: var(--fg);
+  cursor: pointer;
+}
+.layer-row label:hover {
+  background: var(--bg-subtle);
+}
+.layer-row input {
+  flex: none;
+  margin: 0;
+  accent-color: oklch(55% 0.16 250);
+}
+.layer-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.layer-folder {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-height: 28px;
+  padding-right: 6px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.layer-folder:hover {
+  background: var(--bg-subtle);
+}
+.layer-folder:focus-visible,
+.layer-row input:focus-visible {
+  outline: 2px solid oklch(55% 0.16 250 / 0.85);
+  outline-offset: -2px;
+}
+.layer-twisty {
+  flex: none;
+  color: var(--fg-muted);
+  transition: transform var(--t-fast);
+}
+.layer-twisty.open {
+  transform: rotate(90deg);
+}
+
 /* Export-tool dialogs (page images, embedded images, remove hidden info).
    .split-dialog sets color-scheme: dark, but its surface is white, so native
    radios/checkboxes would render dark-on-light; these controls opt back out. */
 .export-fieldset,
 .export-opt {
   color-scheme: light;
+}
+/* In the dark theme the dialog surface is dark too, so the controls follow it. */
+:root[data-theme="dark"] .export-fieldset,
+:root[data-theme="dark"] .export-opt {
+  color-scheme: dark;
 }
 .export-fieldset {
   margin: 0 0 12px;

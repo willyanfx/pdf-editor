@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { ZoomIn, ZoomOut, ChevronDown } from "lucide-react";
+import { ZoomIn, ZoomOut, ChevronDown, Columns2, BookOpen, Maximize, Minimize } from "lucide-react";
 import { useEditorStore, MIN_ZOOM, MAX_ZOOM } from "../store/useEditorStore";
+import { useViewerStore } from "../store/useViewerStore";
+import { fullscreenSupported, toggleFullscreen } from "../lib/fullscreen";
 
 /** Discrete zoom levels offered in the dropdown, alongside the fit presets. */
 const ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
@@ -13,6 +15,12 @@ export function BottomBar() {
   const zoomOut = useEditorStore((s) => s.zoomOut);
   const setZoom = useEditorStore((s) => s.setZoom);
   const setZoomPreset = useEditorStore((s) => s.setZoomPreset);
+  const pageLayout = useViewerStore((s) => s.pageLayout);
+  const coverPage = useViewerStore((s) => s.coverPage);
+  const fullscreen = useViewerStore((s) => s.fullscreen);
+  const setPageLayout = useViewerStore((s) => s.setPageLayout);
+  const setCoverPage = useViewerStore((s) => s.setCoverPage);
+  const twoPage = pageLayout === "two";
 
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -50,6 +58,48 @@ export function BottomBar() {
 
   return (
     <footer className="bottombar">
+      <div className="bottombar-view">
+        <button
+          type="button"
+          className={"bottombar-btn" + (twoPage ? " is-active" : "")}
+          aria-label="Two-page view"
+          aria-pressed={twoPage}
+          title="Two-page view"
+          onClick={() => setPageLayout(twoPage ? "single" : "two")}
+        >
+          <Columns2 size={15} aria-hidden="true" />
+        </button>
+        {twoPage && (
+          <button
+            type="button"
+            className={"bottombar-btn" + (coverPage ? " is-active" : "")}
+            aria-label="Show cover page"
+            aria-pressed={coverPage}
+            title="Show cover page (first page alone)"
+            onClick={() => setCoverPage(!coverPage)}
+          >
+            <BookOpen size={15} aria-hidden="true" />
+          </button>
+        )}
+        {fullscreenSupported() && (
+          <button
+            type="button"
+            className="bottombar-btn"
+            aria-label={fullscreen ? "Exit full screen" : "Full screen"}
+            title={fullscreen ? "Exit full screen (Esc)" : "Full screen (F)"}
+            onClick={() => void toggleFullscreen()}
+          >
+            {fullscreen ? (
+              <Minimize size={15} aria-hidden="true" />
+            ) : (
+              <Maximize size={15} aria-hidden="true" />
+            )}
+          </button>
+        )}
+      </div>
+
+      <span className="bottombar-sep" aria-hidden="true" />
+
       <div className="bottombar-zoom" ref={menuRef}>
         <button
           type="button"
