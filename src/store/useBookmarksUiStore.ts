@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type SidePanelTab = "pages" | "bookmarks" | "attachments" | "layers";
+export type SidePanelTab = "pages" | "bookmarks" | "attachments" | "layers" | "comments";
 
 /**
  * UI-only state for the sidebar (its active view and the Bookmarks tree). Kept out of the editor store

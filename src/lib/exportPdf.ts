@@ -195,6 +195,11 @@ export type ExportOptions = {
   formValues?: FormValues;
   /** Draw form fields into the page content and remove the form. */
   flattenForms?: boolean;
+  /** What happens to comment/markup annotations (highlights, notes, shapes,
+   * stamps, ...): "flatten" draws them into the page (the default), "native"
+   * writes real PDF annotations that stay editable comments, with replies and
+   * review status. */
+  annotations?: AnnotationMode;
   /** Set by lib/redact.ts, which applies `redact` edits as a post-pass. Without
    * it, exporting edits that contain redaction marks throws — a cover-only
    * export would silently leak the content the user asked to remove. */
@@ -208,6 +213,14 @@ import type { PageStamps } from "./pageStampsModel";
 import type { FormValues } from "./formFields";
 import { applyFormValues, flattenForm } from "./formExport";
 import { reorderPagesInPlace } from "./pageReorder";
+import { isAnnotation } from "./annotations";
+import {
+  createAnnotationContext,
+  flattenAnnotation,
+  usesSharedFlatten,
+  writeNativeAnnotation,
+  type AnnotationMode,
+} from "./annotationExport";
 // Re-exported so existing callers can keep importing from exportPdf; UI code
 // should import from compressPresets directly to stay off the heavy chunk.
 export type { CompressPreset, CompressOptions } from "./compressPresets";
@@ -382,6 +395,9 @@ export async function exportEditedPdf(
     return fallbackEmbedded;
   };
 
+  const annotationCtx = createAnnotationContext(pdfDoc);
+  const native = options.annotations === "native";
+
   for (const { edit } of remappedEdits) {
     const page = pages[origToOut[edit.pageIndex]];
     if (!page) continue;
@@ -389,6 +405,17 @@ export async function exportEditedPdf(
     const pageWidth = page.getWidth();
     const pageHeight = page.getHeight();
     const pdfRect = mapScreenRectToPdf(edit, pageWidth, pageHeight);
+
+    if (isAnnotation(edit)) {
+      if (native) {
+        await writeNativeAnnotation(annotationCtx, page, edit);
+        continue;
+      }
+      if (usesSharedFlatten(edit)) {
+        await flattenAnnotation(annotationCtx, page, edit);
+        continue;
+      }
+    }
 
     if (edit.type === "text") {
       await drawTextEdit(page, edit, pdfRect.scale, pdfRect.x, pageHeight, getFont);
@@ -400,8 +427,8 @@ export async function exportEditedPdf(
         y: pdfRect.y,
         width: pdfRect.width,
         height: pdfRect.height,
-        borderColor: rgb(0, 0, 0),
-        borderWidth: 1,
+        borderColor: hexToRgb(edit.color ?? "#000000"),
+        borderWidth: edit.strokeWidth ? edit.strokeWidth * pdfRect.scale : 1,
       });
     }
 

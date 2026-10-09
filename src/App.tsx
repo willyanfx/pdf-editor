@@ -160,6 +160,11 @@ export default function App() {
           store.setMode("underline");
           return;
         }
+        if (k === "s") {
+          e.preventDefault();
+          store.setMode("strikeout");
+          return;
+        }
         if (k === "c") {
           e.preventDefault();
           store.setMode("comment");

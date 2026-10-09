@@ -4,6 +4,7 @@ import { useBookmarksUiStore, type SidePanelTab } from "../store/useBookmarksUiS
 import { useViewerStore } from "../store/useViewerStore";
 import { PagePanel } from "./PagePanel";
 import { BookmarksPanel } from "./BookmarksPanel";
+import { CommentsPanel } from "./CommentsPanel";
 import { AttachmentsPanel } from "./AttachmentsPanel";
 import { LayersPanel } from "./LayersPanel";
 
@@ -14,7 +15,7 @@ type Props = {
 
 /**
  * The left sidebar: a tab switch over the page organizer, the bookmarks tree,
- * and — only when the open PDF has them — its attachments and layers. Rendered
+ * the comments list, and — only when the open PDF has them — its attachments and layers. Rendered
  * inside the viewer's react-pdf <Document> so the page thumbnails can draw. The
  * Pages view stays mounted while hidden so its thumbnails and scroll position
  * survive switching back and forth.
@@ -29,6 +30,7 @@ export function SidePanel({ pdf }: Props) {
   const tabs: { id: SidePanelTab; label: string; count?: number }[] = [
     { id: "pages", label: "Pages" },
     { id: "bookmarks", label: "Bookmarks" },
+    { id: "comments", label: "Comments" },
     ...(attachmentCount > 0
       ? [{ id: "attachments" as const, label: "Attachments", count: attachmentCount }]
       : []),
@@ -48,7 +50,11 @@ export function SidePanel({ pdf }: Props) {
   }
 
   return (
-    <aside className="side-panel" aria-label="Sidebar" data-tabs={tabs.length}>
+    <aside
+      className={"side-panel" + (tab === "comments" ? " wide" : "")}
+      aria-label="Sidebar"
+      data-tabs={tabs.length}
+    >
       <div className="side-panel-tabs" role="tablist" aria-label="Sidebar view">
         {tabs.map((t) => (
           <button
@@ -88,6 +94,15 @@ export function SidePanel({ pdf }: Props) {
         hidden={tab !== "bookmarks"}
       >
         {tab === "bookmarks" && <BookmarksPanel />}
+      </div>
+      <div
+        role="tabpanel"
+        id="side-tabpanel-comments"
+        aria-labelledby="side-tab-comments"
+        className="side-panel-body"
+        hidden={tab !== "comments"}
+      >
+        {tab === "comments" && <CommentsPanel />}
       </div>
       {attachmentCount > 0 && (
         <div

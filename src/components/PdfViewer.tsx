@@ -11,6 +11,7 @@ import { SignatureZoneLayer } from "./SignatureZoneLayer";
 import { AnnotateLayer } from "./AnnotateLayer";
 import { RedactLayer } from "./RedactLayer";
 import { InkLayer } from "./InkLayer";
+import { ShapeLayer } from "./ShapeLayer";
 import { TextDrawLayer } from "./TextDrawLayer";
 import { PageStampsLayer } from "./PageStampsLayer";
 import { PageActionsBar } from "./PageActionsBar";
@@ -702,6 +703,7 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
                       <AnnotateLayer pageIndex={index} />
                       <RedactLayer pageIndex={index} page={getPage(index)} />
                       <InkLayer pageIndex={index} />
+                      <ShapeLayer pageIndex={index} />
                       <TextDrawLayer pageIndex={index} />
                       <EditableLayer pageIndex={index} />
                       <PageStampsLayer pageIndex={index} page={getPage(index)} />

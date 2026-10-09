@@ -30,6 +30,8 @@ Unit tests live next to their modules (`src/lib/*.test.ts`); the e2e specs in `e
 
 **Adding a new edit type** touches four places: extend the `PdfEdit` union + add a factory in `useEditorStore.ts`, render it in `EditableLayer.tsx`, and bake it in `lib/exportPdf.ts`.
 
+**Comments are edits too.** Highlight/underline/strikeout, sticky notes, ink, rectangle, line/arrow/oval/polygon/cloud and stamps are the "annotation family" (`isAnnotation` in `lib/annotations.ts`); each can carry `CommentFields` (note, author, review status, replies). `lib/annotationExport.ts` writes them either flattened or as native PDF annotations from one appearance-stream builder (chosen by `ExportOptions.annotations`, preference in `useCommentsUiStore`); `lib/xfdf.ts` converts them to/from XFDF; the sidebar's Comments tab is `CommentsPanel.tsx`. A new annotation type also needs a case in `annotationExport.ts` `build()` and `xfdf.ts`.
+
 `src/hooks/useEditorActions.ts` is the unified action layer — TopBar, ToolRail, CommandPalette, and keyboard shortcuts all dispatch through it rather than calling the store directly.
 
 ### One coordinate system: 800px screen space
