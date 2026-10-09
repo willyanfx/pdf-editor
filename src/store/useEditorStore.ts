@@ -2,11 +2,19 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { OcrEngine } from "../lib/vlmOcr/types";
 import type { InsertSource } from "../lib/pageInsert";
+import {
+  formValueEquals,
+  type FormFieldSummary,
+  type FormValue,
+  type FormValues,
+} from "../lib/formFields";
 import { useToastStore } from "./useToastStore";
 
 export type { InsertSource };
 
 export type { OcrEngine };
+
+export type { FormFieldSummary, FormValue, FormValues };
 
 /** A history snapshot of the three mutable document arrays. */
 /** A history snapshot. `file`/`numPages` are captured so insert/merge (which
@@ -18,6 +26,7 @@ type HistoryEntry = {
   pageOrder: number[];
   file: File | null;
   numPages: number;
+  formValues: FormValues;
 };
 
 /** Module-level coalesce tracker for updateEdit bursts (typing, arrow nudge). */
@@ -284,6 +293,20 @@ type EditorState = {
   compressDialogOpen: boolean;
   setCompressDialogOpen: (open: boolean) => void;
 
+  /** AcroForm values the user entered, keyed by fully-qualified field name.
+   * Only fields the user touched (or Reset form set) appear; anything absent
+   * shows the document's own value. Undoable; baked in on export. */
+  formValues: FormValues;
+  /** The open document's fillable fields (derived by the viewer from pdf.js),
+   * or null when it has none / hasn't been read yet. Not undoable. */
+  formFields: FormFieldSummary[] | null;
+  /** Set one field's value. Text typing passes coalesce=true so a burst of
+   * keystrokes on the same field is one undo step (like updateEdit). */
+  setFormValue: (name: string, value: FormValue, coalesce?: boolean) => void;
+  /** Replace all form values in one undoable step (Reset form). */
+  replaceFormValues: (values: FormValues) => void;
+  setFormFields: (fields: FormFieldSummary[] | null) => void;
+
   /** History stacks — NOT in initialState so setFile does not reset them. */
   _past: HistoryEntry[];
   _future: HistoryEntry[];
@@ -383,6 +406,8 @@ const initialState = {
   metadataModalOpen: false,
   urlDialogOpen: false,
   compressDialogOpen: false,
+  formValues: {} as FormValues,
+  formFields: null as FormFieldSummary[] | null,
 };
 
 /** Capture a snapshot of the mutable document arrays plus the file identity and
@@ -394,12 +419,14 @@ function snapshot(state: {
   pageOrder: number[];
   file: File | null;
   numPages: number;
+  formValues: FormValues;
 }): HistoryEntry {
   return {
     ...structuredClone({
       edits: state.edits,
       pageOps: state.pageOps,
       pageOrder: state.pageOrder,
+      formValues: state.formValues,
     }),
     file: state.file,
     numPages: state.numPages,
@@ -455,6 +482,7 @@ export const useEditorStore = create<EditorState>()(
             // added pages and restores the page count (a no-op for plain edits).
             file: entry.file,
             numPages: entry.numPages,
+            formValues: entry.formValues,
             selectedEditId: null,
             _past: state._past.slice(0, -1),
             _future: [current, ...state._future],
@@ -473,6 +501,7 @@ export const useEditorStore = create<EditorState>()(
             pageOrder: entry.pageOrder,
             file: entry.file,
             numPages: entry.numPages,
+            formValues: entry.formValues,
             selectedEditId: null,
             _past: [...state._past, current],
             _future: state._future.slice(1),
@@ -602,6 +631,32 @@ export const useEditorStore = create<EditorState>()(
       setUrlDialogOpen: (urlDialogOpen) => set({ urlDialogOpen }),
 
       setCompressDialogOpen: (compressDialogOpen) => set({ compressDialogOpen }),
+
+      setFormValue: (name, value, coalesceBurst = false) => {
+        if (formValueEquals(useEditorStore.getState().formValues[name], value)) return;
+        // Same coalescing scheme as updateEdit, keyed by a "form:" id so a field
+        // name can never collide with an edit id.
+        const key = `form:${name}`;
+        const now = Date.now();
+        const coalesce =
+          coalesceBurst &&
+          lastCoalesce !== null &&
+          lastCoalesce.id === key &&
+          now - lastCoalesce.timestamp < COALESCE_MS;
+        lastCoalesce = coalesceBurst ? { id: key, timestamp: now } : null;
+        set((state) => {
+          const formValues = { ...state.formValues, [name]: value };
+          return coalesce ? { formValues } : { ...pushHistory(state, snapshot(state)), formValues };
+        });
+      },
+
+      replaceFormValues: (values) =>
+        set((state) => {
+          lastCoalesce = null;
+          return { ...pushHistory(state, snapshot(state)), formValues: values };
+        }),
+
+      setFormFields: (formFields) => set({ formFields }),
 
       setMode: (mode) => set({ mode }),
 

@@ -176,10 +176,17 @@ export type ExportOptions = {
   pageOps?: PageOp[];
   /** Compress the output (object streams; images are downsampled separately). */
   compress?: boolean;
+  /** Form field values by fully-qualified field name (see lib/formFields). */
+  formValues?: FormValues;
+  /** Draw form fields into the page content and remove the form. */
+  flattenForms?: boolean;
 };
 
 import { COMPRESS_PRESETS } from "./compressPresets";
 import type { CompressOptions } from "./compressPresets";
+import type { FormValues } from "./formFields";
+import { applyFormValues, flattenForm } from "./formExport";
+import { reorderPagesInPlace } from "./pageReorder";
 // Re-exported so existing callers can keep importing from exportPdf; UI code
 // should import from compressPresets directly to stay off the heavy chunk.
 export type { CompressPreset, CompressOptions } from "./compressPresets";
@@ -190,8 +197,9 @@ export { COMPRESS_PRESETS } from "./compressPresets";
  * new PDF bytes. Existing-text edits first paint a cover rectangle over the
  * original glyphs, then draw the replacement text on top.
  *
- * When `options.pageOrder` is given the output is rebuilt page-by-page in that
- * order (dropping unlisted pages); `options.pageOps` applies rotate/crop.
+ * When `options.pageOrder` is given the pages are reordered in place (dropping
+ * unlisted pages); `options.pageOps` applies rotate/crop; `options.formValues`
+ * fills AcroForm fields and `options.flattenForms` bakes them into the pages.
  */
 export async function exportEditedPdf(
   sourceFile: File,
@@ -209,19 +217,15 @@ export async function exportEditedPdf(
   );
   const isReordered = order.length !== srcCount || order.some((origIdx, pos) => origIdx !== pos);
 
-  let pdfDoc: PDFDocument;
+  const pdfDoc: PDFDocument = srcDoc;
   // Maps an ORIGINAL page index to its position in the output (or -1 if dropped).
-  const origToOut = new Array<number>(srcCount).fill(-1);
+  let origToOut = Array.from({ length: srcCount }, () => -1);
 
   if (isReordered) {
-    pdfDoc = await PDFDocument.create();
-    const copied = await pdfDoc.copyPages(srcDoc, order);
-    copied.forEach((p, pos) => {
-      pdfDoc.addPage(p);
-      origToOut[order[pos]] = pos;
-    });
+    // Rewrite the page tree of the loaded document rather than copying pages
+    // into a fresh one, so the catalog (AcroForm, Outlines, Names) survives.
+    origToOut = reorderPagesInPlace(pdfDoc, order);
   } else {
-    pdfDoc = srcDoc;
     order.forEach((origIdx, pos) => (origToOut[origIdx] = pos));
   }
 
@@ -234,6 +238,11 @@ export async function exportEditedPdf(
     if (outIdx < 0) continue;
     applyPageOp(pages[outIdx], op);
   }
+
+  // Form values (and flattening) go in before overlay edits are drawn, so a
+  // flattened field sits under anything the user placed on top of it.
+  applyFormValues(pdfDoc, options.formValues);
+  if (options.flattenForms) flattenForm(pdfDoc);
 
   // Edits are stored against ORIGINAL page indices; remap to output pages and
   // drop any whose page was deleted.
@@ -428,7 +437,12 @@ export async function exportEditedPdf(
     }
   }
 
-  return pdfDoc.save(options.compress ? { useObjectStreams: true } : undefined);
+  // applyFormValues already drew the appearances it changed; don't let save()
+  // redraw untouched fields that merely lack one.
+  return pdfDoc.save({
+    ...(options.compress ? { useObjectStreams: true } : {}),
+    updateFieldAppearances: false,
+  });
 }
 
 /** Apply a rotate/crop transform to an output page. */

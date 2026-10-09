@@ -4,6 +4,7 @@ import { addImageFromFile, openFiles, openConvertedFile, openPdfFromUrl } from "
 import { CONVERTIBLE_ACCEPT } from "../lib/convertToPdf";
 import type { InsertSource } from "../lib/pageInsert";
 import type { CompressOptions } from "../lib/compressPresets";
+import { defaultFormValues } from "../lib/formFields";
 
 /** Callbacks the morphing Download button uses to drive its idle→spinner→check
  * animation; the export logic itself lives here so the rail, top bar, and
@@ -188,21 +189,22 @@ export function useEditorActions() {
 
   /** Build export options from the current page order / transforms. */
   function exportOptions() {
-    const { pageOrder, pageOps, numPages } = useEditorStore.getState();
+    const { pageOrder, pageOps, numPages, formValues } = useEditorStore.getState();
     return {
       pageOrder: pageOrder.length ? pageOrder : Array.from({ length: numPages }, (_, i) => i),
       pageOps,
+      formValues,
     };
   }
 
-  async function downloadPdf(hooks: DownloadHooks = {}) {
+  async function downloadPdf(hooks: DownloadHooks = {}, opts: { flattenForms?: boolean } = {}) {
     const { file, edits } = useEditorStore.getState();
     if (!file) return;
 
     hooks.onStart?.();
     try {
       const { exportEditedPdf } = await import("../lib/exportPdf");
-      const bytes = await exportEditedPdf(file, edits, exportOptions());
+      const bytes = await exportEditedPdf(file, edits, { ...exportOptions(), ...opts });
       downloadBytes(bytes, file.name.replace(/\.pdf$/i, "") + ".edited.pdf");
       useToastStore.getState().addToast("PDF exported", "success");
       hooks.onSuccess?.();
@@ -210,6 +212,22 @@ export function useEditorActions() {
       useToastStore.getState().addToast("Could not export this PDF.", "error");
       hooks.onError?.();
     }
+  }
+
+  /** Download with every form field drawn into the page (no longer fillable). */
+  function downloadPdfFlattened(hooks: DownloadHooks = {}) {
+    return downloadPdf(hooks, { flattenForms: true });
+  }
+
+  /** Put every fillable field back to the document's default value (undoable). */
+  function resetForm() {
+    const { formFields, replaceFormValues } = useEditorStore.getState();
+    if (!formFields?.length) {
+      useToastStore.getState().addToast("This PDF has no form to reset.", "info");
+      return;
+    }
+    replaceFormValues(defaultFormValues(formFields));
+    useToastStore.getState().addToast("Form reset", "info");
   }
 
   /** Export the OCR/text edits as a formatted .docx (headings + bullet lists). */
@@ -392,6 +410,8 @@ export function useEditorActions() {
     openMetadata,
     openCompressDialog,
     downloadPdf,
+    downloadPdfFlattened,
+    resetForm,
     downloadDocx,
     downloadCsv,
     compressPdf,

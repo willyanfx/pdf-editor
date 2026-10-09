@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Document, Page } from "react-pdf";
-import type { PDFPageProxy } from "pdfjs-dist";
+import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { UploadCloud } from "lucide-react";
 import { EditableLayer } from "./EditableLayer";
@@ -22,6 +22,8 @@ import { PDF_DOCUMENT_OPTIONS } from "../lib/pdfOptions";
 import { makeOnPassword } from "../lib/pdfPassword";
 import { usePageHeights } from "../hooks/usePageHeights";
 import { useScannedPdfPrompt } from "../hooks/useScannedPdfPrompt";
+import { useFormFieldSync } from "../hooks/useFormFieldSync";
+import { goToLinkedPage, EXTERNAL_LINK_REL, EXTERNAL_LINK_TARGET } from "../lib/pdfLinks";
 
 /** Vertical gap between page shells, reserved inside each virtual slot. */
 const PAGE_GAP = 24;
@@ -81,6 +83,11 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
 
   // Nudge the user to run OCR when an opened PDF looks scanned (image-only).
   useScannedPdfPrompt(file);
+
+  // The loaded pdf.js document, tagged with its File so a stale proxy from the
+  // previous file is never handed to the form sync while the next one loads.
+  const [loadedPdf, setLoadedPdf] = useState<{ file: File; pdf: PDFDocumentProxy } | null>(null);
+  useFormFieldSync(loadedPdf && loadedPdf.file === file ? loadedPdf.pdf : null, scrollRef);
 
   const estimateSize = useCallback(
     (index: number) => (pageHeights[index] ?? ESTIMATED_PAGE_HEIGHT) + PAGE_GAP,
@@ -397,6 +404,11 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
         key={`doc-${passwordAttempt}`}
         file={file}
         options={PDF_DOCUMENT_OPTIONS}
+        // Internal links / named destinations: react-pdf resolves the target
+        // page and hands us its index; external URI links open in a new tab.
+        onItemClick={({ pageIndex }) => goToLinkedPage(pageIndex)}
+        externalLinkTarget={EXTERNAL_LINK_TARGET}
+        externalLinkRel={EXTERNAL_LINK_REL}
         onPassword={makeOnPassword({
           getPassword: () => useEditorStore.getState().documentPassword,
           onNeedPassword: () => useEditorStore.getState().setPasswordPrompt({ wrong: false }),
@@ -410,6 +422,7 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
           // the unlock modal if it was open.
           useEditorStore.getState().setPasswordPrompt(null);
           setNumPages(pdf.numPages);
+          setLoadedPdf({ file, pdf });
         }}
         onLoadError={(err) => {
           // A PasswordException here means the modal is (or will be) up; don't
@@ -486,7 +499,10 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
                       pageNumber={index + 1}
                       width={VIEWER_WIDTH}
                       renderTextLayer={false}
-                      renderAnnotationLayer={false}
+                      // Links + fillable form widgets. Only interactive in Select
+                      // mode; see the "Form fields + links" block in styles.css.
+                      renderAnnotationLayer
+                      renderForms
                       canvasRef={(el) => {
                         canvasRefs.current.set(index, el);
                       }}

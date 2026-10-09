@@ -28,6 +28,8 @@ import {
   MoveHorizontal,
   Maximize,
   FilePlus,
+  Stamp,
+  Eraser,
 } from "lucide-react";
 import { useEditorStore } from "../store/useEditorStore";
 import { useEditorActions } from "../hooks/useEditorActions";
@@ -61,6 +63,7 @@ const GROUP_ORDER: PaletteAction["group"][] = [
 export function CommandPalette({ onClose }: Props) {
   const file = useEditorStore((s) => s.file);
   const ocrBusy = useEditorStore((s) => s.ocrBusy);
+  const hasForm = useEditorStore((s) => (s.formFields?.length ?? 0) > 0);
   const actions = useEditorActions();
 
   const [query, setQuery] = useState("");
@@ -299,6 +302,22 @@ export function CommandPalette({ onClose }: Props) {
         icon: <Download size={16} />,
         disabled: noFile,
         run: () => runAndClose(() => void actions.downloadPdf()),
+      },
+      {
+        id: "download-flattened",
+        group: "Export",
+        label: "Download with form flattened",
+        icon: <Stamp size={16} />,
+        disabled: noFile || !hasForm,
+        run: () => runAndClose(() => void actions.downloadPdfFlattened()),
+      },
+      {
+        id: "form-reset",
+        group: "Export",
+        label: "Reset form",
+        icon: <Eraser size={16} />,
+        disabled: noFile || !hasForm,
+        run: () => runAndClose(actions.resetForm),
       },
       {
         id: "download-docx",
