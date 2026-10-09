@@ -4,6 +4,7 @@ import { addImageFromFile, openFiles, openConvertedFile, openPdfFromUrl } from "
 import { CONVERTIBLE_ACCEPT } from "../lib/convertToPdf";
 import type { InsertSource } from "../lib/pageInsert";
 import type { CompressOptions } from "../lib/compressPresets";
+import { usePageStampsUi } from "../store/usePageStampsUi";
 
 /** Callbacks the morphing Download button uses to drive its idle→spinner→check
  * animation; the export logic itself lives here so the rail, top bar, and
@@ -188,10 +189,11 @@ export function useEditorActions() {
 
   /** Build export options from the current page order / transforms. */
   function exportOptions() {
-    const { pageOrder, pageOps, numPages } = useEditorStore.getState();
+    const { pageOrder, pageOps, numPages, pageStamps } = useEditorStore.getState();
     return {
       pageOrder: pageOrder.length ? pageOrder : Array.from({ length: numPages }, (_, i) => i),
       pageOps,
+      pageStamps,
     };
   }
 
@@ -339,6 +341,19 @@ export function useEditorActions() {
     useEditorStore.getState().setCompressDialogOpen(true);
   }
 
+  /** Open the header & footer dialog; `presetId` (see HEADER_FOOTER_PRESETS,
+   * e.g. "page-of" or "bates") pre-fills a slot. */
+  function openHeaderFooter(presetId?: string) {
+    if (!useEditorStore.getState().file) return;
+    usePageStampsUi.getState().openHeaderFooter(presetId);
+  }
+
+  /** Open the watermark dialog. */
+  function openWatermark() {
+    if (!useEditorStore.getState().file) return;
+    usePageStampsUi.getState().openWatermark();
+  }
+
   /**
    * Split the open PDF. `mode` "ranges" parses the spec ("" → one file per page);
    * "interval" emits one file per `chunkSize` consecutive pages.
@@ -391,6 +406,8 @@ export function useEditorActions() {
     openSplit,
     openMetadata,
     openCompressDialog,
+    openHeaderFooter,
+    openWatermark,
     downloadPdf,
     downloadDocx,
     downloadCsv,

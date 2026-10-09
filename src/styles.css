@@ -2443,3 +2443,193 @@ button {
   outline: 2px solid oklch(55% 0.16 250 / 0.85);
   outline-offset: -2px;
 }
+
+/* Page stamps: header/footer, page & Bates numbers, watermark ------------ */
+
+/* Live preview layer inside .page-transform, covering the kept (cropped)
+   region. Above the page and hit layers, below the editable boxes, and never
+   interactive. */
+.page-stamps-layer {
+  position: absolute;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+.page-stamps-svg {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  overflow: hidden;
+}
+.page-stamps-svg text {
+  white-space: pre;
+}
+
+/* The dialogs are a non-modal side panel so the pages (and the preview on
+   them) stay visible and scrollable while settings change. */
+.stamp-dialog {
+  left: auto;
+  right: 24px;
+  transform: translateY(-50%);
+  width: min(460px, calc(100vw - 32px));
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+}
+@media (max-width: 600px) {
+  .stamp-dialog {
+    right: 16px;
+  }
+}
+.stamp-section {
+  margin: 0 0 14px;
+}
+.stamp-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.stamp-details > summary {
+  cursor: pointer;
+}
+.stamp-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  font-size: 13px;
+  color: var(--fg);
+}
+.stamp-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.stamp-input {
+  min-width: 0;
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+.stamp-input:focus-visible,
+.stamp-chip:focus-visible,
+.stamp-color:focus-visible {
+  outline: 2px solid oklch(60% 0.16 250 / 0.85);
+  outline-offset: 1px;
+}
+.stamp-input[aria-invalid="true"] {
+  border-color: var(--error);
+}
+.stamp-num {
+  width: 64px;
+  font-variant-numeric: tabular-nums;
+}
+.stamp-short {
+  width: 72px;
+}
+.stamp-grow {
+  flex: 1;
+}
+.stamp-color {
+  width: 32px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: transparent;
+  cursor: pointer;
+}
+.stamp-slots {
+  display: grid;
+  grid-template-columns: auto repeat(3, minmax(0, 1fr));
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.stamp-col {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.stamp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.stamp-chip {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--fg);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background var(--t-fast);
+}
+.stamp-chip:hover {
+  background: var(--bg-subtle);
+}
+.stamp-chip.active {
+  background: var(--fg);
+  border-color: var(--fg);
+  color: var(--surface);
+}
+.stamp-token {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.stamp-note,
+.stamp-error {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--fg-muted);
+}
+.stamp-error {
+  color: var(--error);
+}
+.stamp-wm-text {
+  margin-bottom: 10px;
+}
+.stamp-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--fg);
+}
+.stamp-slider span {
+  font-variant-numeric: tabular-nums;
+}
+.stamp-thumb {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: oklch(98% 0 0);
+}
+.sig-actions .stamp-remove {
+  margin-right: auto;
+  color: var(--error);
+}
+.stamp-on {
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: var(--r-pill);
+  background: var(--fg);
+  color: var(--surface);
+  font-size: 10px;
+  font-weight: 600;
+}
+.stamp-tokens .stamp-note {
+  margin: 0;
+}

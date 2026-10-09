@@ -2,6 +2,12 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { OcrEngine } from "../lib/vlmOcr/types";
 import type { InsertSource } from "../lib/pageInsert";
+import {
+  EMPTY_PAGE_STAMPS,
+  type HeaderFooterSettings,
+  type PageStamps,
+  type WatermarkSettings,
+} from "../lib/pageStampsModel";
 import { useToastStore } from "./useToastStore";
 
 export type { InsertSource };
@@ -18,6 +24,7 @@ type HistoryEntry = {
   pageOrder: number[];
   file: File | null;
   numPages: number;
+  pageStamps: PageStamps;
 };
 
 /** Module-level coalesce tracker for updateEdit bursts (typing, arrow nudge). */
@@ -284,6 +291,13 @@ type EditorState = {
   compressDialogOpen: boolean;
   setCompressDialogOpen: (open: boolean) => void;
 
+  /** Document-level header/footer and watermark (each null when not applied). */
+  pageStamps: PageStamps;
+  /** Apply (or, with null, remove) the header/footer. One undo step. */
+  setHeaderFooter: (settings: HeaderFooterSettings | null) => void;
+  /** Apply (or, with null, remove) the watermark. One undo step. */
+  setWatermark: (settings: WatermarkSettings | null) => void;
+
   /** History stacks — NOT in initialState so setFile does not reset them. */
   _past: HistoryEntry[];
   _future: HistoryEntry[];
@@ -383,6 +397,7 @@ const initialState = {
   metadataModalOpen: false,
   urlDialogOpen: false,
   compressDialogOpen: false,
+  pageStamps: EMPTY_PAGE_STAMPS as PageStamps,
 };
 
 /** Capture a snapshot of the mutable document arrays plus the file identity and
@@ -394,12 +409,14 @@ function snapshot(state: {
   pageOrder: number[];
   file: File | null;
   numPages: number;
+  pageStamps: PageStamps;
 }): HistoryEntry {
   return {
     ...structuredClone({
       edits: state.edits,
       pageOps: state.pageOps,
       pageOrder: state.pageOrder,
+      pageStamps: state.pageStamps,
     }),
     file: state.file,
     numPages: state.numPages,
@@ -455,6 +472,7 @@ export const useEditorStore = create<EditorState>()(
             // added pages and restores the page count (a no-op for plain edits).
             file: entry.file,
             numPages: entry.numPages,
+            pageStamps: entry.pageStamps,
             selectedEditId: null,
             _past: state._past.slice(0, -1),
             _future: [current, ...state._future],
@@ -473,6 +491,7 @@ export const useEditorStore = create<EditorState>()(
             pageOrder: entry.pageOrder,
             file: entry.file,
             numPages: entry.numPages,
+            pageStamps: entry.pageStamps,
             selectedEditId: null,
             _past: [...state._past, current],
             _future: state._future.slice(1),
@@ -602,6 +621,24 @@ export const useEditorStore = create<EditorState>()(
       setUrlDialogOpen: (urlDialogOpen) => set({ urlDialogOpen }),
 
       setCompressDialogOpen: (compressDialogOpen) => set({ compressDialogOpen }),
+
+      setHeaderFooter: (headerFooter) =>
+        set((state) => {
+          lastCoalesce = null;
+          return {
+            ...pushHistory(state, snapshot(state)),
+            pageStamps: { ...state.pageStamps, headerFooter },
+          };
+        }),
+
+      setWatermark: (watermark) =>
+        set((state) => {
+          lastCoalesce = null;
+          return {
+            ...pushHistory(state, snapshot(state)),
+            pageStamps: { ...state.pageStamps, watermark },
+          };
+        }),
 
       setMode: (mode) => set({ mode }),
 

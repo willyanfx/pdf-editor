@@ -19,6 +19,7 @@ import { useEditorStore, type EditorMode } from "../store/useEditorStore";
 import { useEditorActions } from "../hooks/useEditorActions";
 import { RailButton } from "./RailButton";
 import { OcrMenu } from "./OcrMenu";
+import { StampsMenu } from "./StampsMenu";
 
 type Props = {
   onOpenPalette: () => void;
@@ -100,6 +101,7 @@ export function ToolRail({ onOpenPalette, onTogglePages, pagesActive }: Props) {
         disabled={noFile}
         onClick={addPages}
       />
+      <StampsMenu />
       <RailButton icon={<FileInput size={18} />} tip="Convert file to PDF" onClick={convertFile} />
 
       <span className="rail-spacer" />
