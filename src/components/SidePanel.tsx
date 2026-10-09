@@ -2,15 +2,17 @@ import { useRef } from "react";
 import { useBookmarksUiStore, type SidePanelTab } from "../store/useBookmarksUiStore";
 import { PagePanel } from "./PagePanel";
 import { BookmarksPanel } from "./BookmarksPanel";
+import { CommentsPanel } from "./CommentsPanel";
 
 const TABS: { id: SidePanelTab; label: string }[] = [
   { id: "pages", label: "Pages" },
   { id: "bookmarks", label: "Bookmarks" },
+  { id: "comments", label: "Comments" },
 ];
 
 /**
- * The left sidebar: a "Pages | Bookmarks" switch over the page organizer and
- * the bookmarks tree. Rendered inside the viewer's react-pdf <Document> so the
+ * The left sidebar: a "Pages | Bookmarks | Comments" switch over the page
+ * organizer, the bookmarks tree and the comments list. Rendered inside the viewer's react-pdf <Document> so the
  * page thumbnails can draw. The Pages view stays mounted while hidden so its
  * thumbnails and scroll position survive switching back and forth.
  */
@@ -30,7 +32,7 @@ export function SidePanel() {
   }
 
   return (
-    <aside className="side-panel" aria-label="Sidebar">
+    <aside className={"side-panel" + (tab === "comments" ? " wide" : "")} aria-label="Sidebar">
       <div className="side-panel-tabs" role="tablist" aria-label="Sidebar view">
         {TABS.map((t) => (
           <button
@@ -69,6 +71,15 @@ export function SidePanel() {
         hidden={tab !== "bookmarks"}
       >
         {tab === "bookmarks" && <BookmarksPanel />}
+      </div>
+      <div
+        role="tabpanel"
+        id="side-tabpanel-comments"
+        aria-labelledby="side-tab-comments"
+        className="side-panel-body"
+        hidden={tab !== "comments"}
+      >
+        {tab === "comments" && <CommentsPanel />}
       </div>
     </aside>
   );

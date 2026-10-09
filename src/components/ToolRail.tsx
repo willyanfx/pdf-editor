@@ -10,6 +10,8 @@ import {
   Underline,
   MessageSquare,
   PenTool,
+  Strikethrough,
+  MessagesSquare,
   Signature,
   Files,
   FileInput,
@@ -21,6 +23,7 @@ import { RailButton } from "./RailButton";
 import { OcrMenu } from "./OcrMenu";
 import { StampsMenu } from "./StampsMenu";
 import { RedactMenu } from "./RedactMenu";
+import { ShapesMenu } from "./ShapesMenu";
 
 type Props = {
   onOpenPalette: () => void;
@@ -31,7 +34,7 @@ type Props = {
 export function ToolRail({ onOpenPalette, onTogglePages, pagesActive }: Props) {
   const file = useEditorStore((s) => s.file);
   const mode = useEditorStore((s) => s.mode);
-  const { setMode, pickImage, addRectangle, openSignature, convertFile, addPages } =
+  const { setMode, pickImage, addRectangle, openSignature, convertFile, addPages, showComments } =
     useEditorActions();
 
   const noFile = !file;
@@ -83,8 +86,11 @@ export function ToolRail({ onOpenPalette, onTogglePages, pagesActive }: Props) {
 
       {modeBtn("highlight", <Highlighter size={18} />, "Highlight (H)")}
       {modeBtn("underline", <Underline size={18} />, "Underline (U)")}
+      {modeBtn("strikeout", <Strikethrough size={18} />, "Strikeout (S)")}
       {modeBtn("comment", <MessageSquare size={18} />, "Comment (C)")}
       {modeBtn("ink", <PenTool size={18} />, "Draw (D)")}
+      {/* Line, arrow, rectangle, oval, polygon, cloud and stamps in a popover. */}
+      <ShapesMenu />
       {/* Redaction: marking tool, search dialog, preview toggle in a popover. */}
       <RedactMenu />
 
@@ -109,6 +115,12 @@ export function ToolRail({ onOpenPalette, onTogglePages, pagesActive }: Props) {
 
       <span className="rail-spacer" />
 
+      <RailButton
+        icon={<MessagesSquare size={18} />}
+        tip="Comments panel"
+        disabled={noFile}
+        onClick={() => showComments()}
+      />
       <RailButton icon={<Command size={18} />} tip="Command palette (⌘K)" onClick={onOpenPalette} />
     </nav>
   );

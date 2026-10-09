@@ -27,6 +27,10 @@ Every file you open stays on your machine. pdf-editor runs entirely in the brows
 - **Freehand ink drawing** — pointer/stylus strokes stored as polylines
 - **Markup annotations** — highlight (yellow), underline (red), and strikeout bands
 - **Sticky-note comments** — click to pin; hover/click to expand and type
+- **Shapes & stamps** — line, arrow, rectangle, oval, polygon and revision-cloud tools (Shift snaps lines to 45°), plus the 14 standard PDF stamps (Approved, Draft, Confidential, …)
+- **Comments panel** — sidebar tab listing every comment and markup with search, filters (type, status, author, this page) and sorting; open one to edit its note, reply, and set a review status (Accepted / Rejected / Cancelled / Completed)
+- **XFDF import / export** — move comments, replies and review status to and from Acrobat and other tools as `.xfdf`
+- **Native or flattened comments** — on download, keep comments as real, editable PDF annotations (with replies and status) or flatten them into the page
 - **Rectangle overlays** — whitebox covers or decorative shapes
 - **Signatures** — draw freehand on a canvas or type a name in cursive; embedded as a transparent PNG
 
@@ -54,7 +58,7 @@ Every file you open stays on your machine. pdf-editor runs entirely in the brows
 - **Find in page** (`Cmd+F`) — searches across all text overlays; `Enter`/`Shift+Enter` to step through matches
 - **Page organizer** — thumbnail sidebar with drag-and-drop reorder, Alt+Arrow keyboard reorder, per-page delete
 - **Per-page actions** — rotate CCW/CW, draw-to-crop with confirm checkmark, reset transforms, delete page
-- **Full keyboard shortcuts** — `V E T H U C D` for tool modes; arrow keys to nudge (1 px; 10 px with Shift); `Delete` to remove; `W P` for fit modes
+- **Full keyboard shortcuts** — `V E T H U S C D` for tool modes; arrow keys to nudge (1 px; 10 px with Shift); `Delete` to remove; `W P` for fit modes
 - **Unsaved-changes guard** — browser prompts before navigating away if there are pending edits
 
 ---

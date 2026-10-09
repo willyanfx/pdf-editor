@@ -1036,3 +1036,59 @@ test("exportEditedPdf refuses to bake pending redaction marks on its own", async
     exportEditedPdf(toFile(src), [mark({ x: 10, y: 10, width: 10, height: 10 })]),
   ).rejects.toThrow(/redaction/);
 });
+
+test("native comments: a redacted page keeps none of its comments (note text and replies included); other pages keep theirs", async () => {
+  let secret!: UserRect;
+  const src = await buildDoc((doc, font) => {
+    const p1 = doc.addPage([612, 792]);
+    secret = drawText(p1, font, "SECRET-ALPHA", 72, 700);
+    const p2 = doc.addPage([612, 792]);
+    drawText(p2, font, "Page two text", 72, 700);
+  });
+  const note = (id: string, pageIndex: number, text: string): PdfEdit => ({
+    id,
+    type: "comment",
+    pageIndex,
+    x: 300,
+    y: 300,
+    width: 20,
+    height: 20,
+    text,
+    color: "#ffd43b",
+    author: "Ada",
+    replies: [{ id: `${id}-r`, author: "Bob", text: `reply to ${text}`, createdAt: 1 }],
+    status: "accepted",
+  });
+  const edits = [
+    mark(await viewerRect(src, 0, secret)),
+    note("n1", 0, "SECRET-NOTE"),
+    note("n2", 1, "KEEP-NOTE"),
+  ];
+  // UTF-16 text strings are NUL-padded in the raw file; strip them so the
+  // sweep reads them as plain text.
+  const sweep = async (b: Uint8Array) => (await recoverable(b)).replaceAll("\u0000", "");
+
+  // Sanity: without the redaction pass the sweep does see the note.
+  const unredacted = await exportEditedPdf(toFile(src), edits.slice(1), {
+    pageOrder: [0, 1],
+    annotations: "native",
+  });
+  expect(await sweep(unredacted)).toContain("SECRET-NOTE");
+
+  const { bytes, warnings } = await exportRedactedPdf(
+    toFile(src),
+    edits,
+    { pageOrder: [0, 1], annotations: "native" },
+    { deps },
+  );
+  expect(warnings).toEqual([]);
+  const text = await sweep(bytes);
+  expect(text).not.toContain("SECRET-NOTE");
+  expect(text).not.toContain("reply to SECRET-NOTE");
+  expect(text).toContain("KEEP-NOTE");
+  expect(text).toContain("reply to KEEP-NOTE");
+
+  const out = await PDFDocument.load(bytes);
+  expect(out.getPage(0).node.Annots()?.size() ?? 0).toBe(0);
+  expect(out.getPage(1).node.Annots()?.size()).toBe(3); // note, status, reply
+});

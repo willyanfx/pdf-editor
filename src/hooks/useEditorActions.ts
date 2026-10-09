@@ -13,6 +13,9 @@ import { usePageStampsUi } from "../store/usePageStampsUi";
 import { defaultFormValues } from "../lib/formFields";
 import { confirmRedactions, redactedSourceFile } from "../lib/redactActions";
 import { blankRedactedTextEdits, excludeRedactedTextEdits } from "../lib/redactGeometry";
+import { newMarkMeta, useCommentsUiStore } from "../store/useCommentsUiStore";
+import { exportCommentsXfdf, importCommentsXfdf, showComments } from "../lib/commentActions";
+import type { AnnotationMode } from "../lib/annotationExport";
 
 /** Callbacks the morphing Download button uses to drive its idle→spinner→check
  * animation; the export logic itself lives here so the rail, top bar, and
@@ -137,6 +140,7 @@ export function useEditorActions() {
       y: 120,
       width: 180,
       height: 80,
+      ...newMarkMeta(),
     });
   }
 
@@ -200,6 +204,7 @@ export function useEditorActions() {
   function exportOptions(pages?: number[]) {
     const state = useEditorStore.getState();
     const { pageOrder, pageOps, numPages, pageStamps, formValues } = state;
+    const annotations = useCommentsUiStore.getState().exportMode;
     const order =
       pages ?? (pageOrder.length ? pageOrder : Array.from({ length: numPages }, (_, i) => i));
     return {
@@ -208,10 +213,14 @@ export function useEditorActions() {
       bookmarks: bookmarksForExport(state, order),
       pageStamps,
       formValues,
+      annotations,
     };
   }
 
-  async function downloadPdf(hooks: DownloadHooks = {}, opts: { flattenForms?: boolean } = {}) {
+  async function downloadPdf(
+    hooks: DownloadHooks = {},
+    opts: { flattenForms?: boolean; annotations?: AnnotationMode } = {},
+  ) {
     const { file, edits, revision } = useEditorStore.getState();
     if (!file) return;
     // Pending redaction marks: explain once (per document) what the download
@@ -241,6 +250,24 @@ export function useEditorActions() {
   /** Download with every form field drawn into the page (no longer fillable). */
   function downloadPdfFlattened(hooks: DownloadHooks = {}) {
     return downloadPdf(hooks, { flattenForms: true });
+  }
+
+  /** Download with comments kept as native, editable PDF comments. */
+  function downloadPdfWithComments(hooks: DownloadHooks = {}) {
+    return downloadPdf(hooks, { annotations: "native" });
+  }
+
+  /** Download with comments and markup baked into the page. */
+  function downloadPdfCommentsFlattened(hooks: DownloadHooks = {}) {
+    return downloadPdf(hooks, { annotations: "flatten" });
+  }
+
+  /** Pick an .xfdf file and import its comments. */
+  function importXfdf() {
+    if (!useEditorStore.getState().file) return;
+    void pickFiles(".xfdf,application/vnd.adobe.xfdf,application/xml,text/xml").then((files) => {
+      if (files[0]) void importCommentsXfdf(files[0]);
+    });
   }
 
   /** Put every fillable field back to the document's default value (undoable). */
@@ -617,6 +644,11 @@ export function useEditorActions() {
     openWatermark,
     downloadPdf,
     downloadPdfFlattened,
+    downloadPdfWithComments,
+    downloadPdfCommentsFlattened,
+    showComments,
+    importXfdf,
+    exportXfdf: exportCommentsXfdf,
     resetForm,
     downloadDocx,
     downloadCsv,

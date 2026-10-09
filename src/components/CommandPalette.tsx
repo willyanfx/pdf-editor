@@ -16,6 +16,16 @@ import {
   Underline,
   MessageSquare,
   PenTool,
+  Strikethrough,
+  MessagesSquare,
+  Minus,
+  MoveUpRight,
+  Circle,
+  Pentagon,
+  Cloud,
+  FileUp,
+  FileDown,
+  MessageSquareDashed,
   Signature,
   FileInput,
   Combine,
@@ -48,6 +58,8 @@ import {
 import { useEditorStore } from "../store/useEditorStore";
 import { useEditorActions } from "../hooks/useEditorActions";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useCommentsUiStore } from "../store/useCommentsUiStore";
+import { STAMP_PRESETS, isAnnotation } from "../lib/annotations";
 
 type Props = {
   onClose: () => void;
@@ -81,6 +93,7 @@ export function CommandPalette({ onClose }: Props) {
   const hasHeaderFooter = useEditorStore((s) => !!s.pageStamps.headerFooter);
   const hasWatermark = useEditorStore((s) => !!s.pageStamps.watermark);
   const hasForm = useEditorStore((s) => (s.formFields?.length ?? 0) > 0);
+  const hasComments = useEditorStore((s) => s.edits.some(isAnnotation));
   const actions = useEditorActions();
 
   const [query, setQuery] = useState("");
@@ -235,6 +248,72 @@ export function CommandPalette({ onClose }: Props) {
         shortcut: "C",
         disabled: noFile,
         run: () => runAndClose(() => actions.setMode("comment")),
+      },
+      {
+        id: "ann-strikeout",
+        group: "Annotate",
+        label: "Strikeout",
+        icon: <Strikethrough size={16} />,
+        shortcut: "S",
+        disabled: noFile,
+        run: () => runAndClose(() => actions.setMode("strikeout")),
+      },
+      ...(
+        [
+          ["line", "Line", <Minus size={16} key="l" />],
+          ["arrow", "Arrow", <MoveUpRight size={16} key="a" />],
+          ["rectangle", "Rectangle", <Square size={16} key="r" />],
+          ["oval", "Oval", <Circle size={16} key="o" />],
+          ["polygon", "Polygon", <Pentagon size={16} key="p" />],
+          ["cloud", "Cloud", <Cloud size={16} key="c" />],
+        ] as const
+      ).map(
+        ([mode, label, icon]): PaletteAction => ({
+          id: `ann-${mode}`,
+          group: "Annotate",
+          label: `Draw ${label.toLowerCase()}`,
+          icon,
+          disabled: noFile,
+          run: () => runAndClose(() => actions.setMode(mode)),
+        }),
+      ),
+      ...STAMP_PRESETS.map(
+        (p): PaletteAction => ({
+          id: `ann-stamp-${p.id}`,
+          group: "Annotate",
+          label: `Stamp: ${p.label.charAt(0)}${p.label.slice(1).toLowerCase()}`,
+          icon: <Stamp size={16} />,
+          disabled: noFile,
+          run: () =>
+            runAndClose(() => {
+              useCommentsUiStore.getState().setStampId(p.id);
+              actions.setMode("stamp");
+            }),
+        }),
+      ),
+      {
+        id: "ann-panel",
+        group: "Annotate",
+        label: "Show comments panel",
+        icon: <MessagesSquare size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(() => actions.showComments()),
+      },
+      {
+        id: "ann-import-xfdf",
+        group: "Annotate",
+        label: "Import comments (XFDF)…",
+        icon: <FileUp size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(actions.importXfdf),
+      },
+      {
+        id: "ann-export-xfdf",
+        group: "Annotate",
+        label: "Export comments (XFDF)",
+        icon: <FileDown size={16} />,
+        disabled: noFile || !hasComments,
+        run: () => runAndClose(() => void actions.exportXfdf()),
       },
       {
         id: "ann-ink",
@@ -481,6 +560,22 @@ export function CommandPalette({ onClose }: Props) {
         icon: <Stamp size={16} />,
         disabled: noFile || !hasForm,
         run: () => runAndClose(() => void actions.downloadPdfFlattened()),
+      },
+      {
+        id: "download-comments-native",
+        group: "Export",
+        label: "Download with editable comments",
+        icon: <MessageSquare size={16} />,
+        disabled: noFile || !hasComments,
+        run: () => runAndClose(() => void actions.downloadPdfWithComments()),
+      },
+      {
+        id: "download-comments-flattened",
+        group: "Export",
+        label: "Download with comments flattened",
+        icon: <MessageSquareDashed size={16} />,
+        disabled: noFile || !hasComments,
+        run: () => runAndClose(() => void actions.downloadPdfCommentsFlattened()),
       },
       {
         id: "form-reset",

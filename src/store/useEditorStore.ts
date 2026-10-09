@@ -143,6 +143,30 @@ export type ImageEdit = {
   coverRect?: { x: number; y: number; width: number; height: number };
 };
 
+/** Review state a reviewer can put on a comment (Acrobat's "Review" model). */
+export type ReviewStatus = "none" | "accepted" | "rejected" | "cancelled" | "completed";
+
+/** A reply in a comment's thread. */
+export type CommentReply = {
+  id: string;
+  author: string;
+  text: string;
+  createdAt: number; // epoch ms
+};
+
+/** Comment metadata shared by every annotation type, so any mark can carry a
+ * note, a review status and a thread of replies. Everything is optional: edits
+ * made before comments existed (and autosave snapshots of them) lack all of it. */
+export type CommentFields = {
+  /** The note attached to the mark (a sticky note's body, or a popup note). */
+  text?: string;
+  author?: string;
+  createdAt?: number; // epoch ms
+  modifiedAt?: number; // epoch ms
+  status?: ReviewStatus;
+  replies?: CommentReply[];
+};
+
 /** Highlight / underline / strikeout — a rectangular text-markup annotation. */
 export type MarkupEdit = {
   id: string;
@@ -153,7 +177,7 @@ export type MarkupEdit = {
   width: number;
   height: number;
   color: string; // hex
-};
+} & CommentFields;
 
 /** A sticky-note comment: a pin with attached text shown on hover/click. */
 export type CommentEdit = {
@@ -166,7 +190,7 @@ export type CommentEdit = {
   height: number;
   text: string;
   color: string; // hex pin color
-};
+} & CommentFields;
 
 /** Freehand ink: a polyline in screen-px points relative to the page. */
 export type InkEdit = {
@@ -181,7 +205,52 @@ export type InkEdit = {
   points: { x: number; y: number }[];
   color: string; // hex
   strokeWidth: number;
-};
+} & CommentFields;
+
+/** A plain outlined box. The "Add Box" button makes it black and thin; the
+ * rectangle drawing tool sets color/strokeWidth. */
+export type RectangleEdit = {
+  id: string;
+  type: "rectangle";
+  pageIndex: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color?: string; // hex; default black
+  strokeWidth?: number; // screen px; default 1
+} & CommentFields;
+
+/** Line, arrow (head at the second point), oval, polygon and cloud. Line, arrow
+ * and polygon carry `points` (relative to x, y, like ink); oval and cloud are
+ * defined by the bounding box alone. */
+export type ShapeEdit = {
+  id: string;
+  type: "line" | "arrow" | "oval" | "polygon" | "cloud";
+  pageIndex: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  points?: { x: number; y: number }[];
+  color: string; // hex
+  strokeWidth: number;
+} & CommentFields;
+
+/** A rubber stamp (Approved, Draft, ...): a bordered label. `stamp` is the
+ * standard PDF stamp name, so it survives a native / XFDF round trip. */
+export type StampEdit = {
+  id: string;
+  type: "stamp";
+  pageIndex: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  stamp: string;
+  label: string;
+  color: string; // hex
+} & CommentFields;
 
 /** A redaction mark. Unlike a cover rectangle it is not drawn over the page:
  * on download the marked area is permanently removed (page rasterized, content
@@ -200,18 +269,12 @@ export type RedactEdit = {
 export type PdfEdit =
   | TextEdit
   | ImageEdit
-  | {
-      id: string;
-      type: "rectangle";
-      pageIndex: number;
-      x: number;
-      y: number;
-      width: number;
-      height: number;
-    }
+  | RectangleEdit
   | MarkupEdit
   | CommentEdit
   | InkEdit
+  | ShapeEdit
+  | StampEdit
   | RedactEdit;
 
 /** Per-page geometry mutation, kept separate from overlay edits so page
@@ -236,8 +299,16 @@ export type EditorMode =
   | "addText"
   | "highlight"
   | "underline"
+  | "strikeout"
   | "comment"
   | "ink"
+  | "line"
+  | "arrow"
+  | "rectangle"
+  | "oval"
+  | "polygon"
+  | "cloud"
+  | "stamp"
   | "signZones"
   | "redact";
 
@@ -419,6 +490,8 @@ type EditorState = {
   addEdits: (edits: PdfEdit[]) => void;
   /** Delete several edits as ONE undo step. */
   deleteEdits: (ids: string[]) => void;
+  /** Add new edits and replace existing ones (matched by id) as ONE undo step. */
+  applyEditChanges: (added: PdfEdit[], updated: PdfEdit[]) => void;
 
   /** History stacks — NOT in initialState so setFile does not reset them. */
   _past: HistoryEntry[];
@@ -964,6 +1037,19 @@ export const useEditorStore = create<EditorState>()(
           lastCoalesce = null;
           const hist = pushHistory(state, snapshot(state));
           return { ...hist, edits: [...state.edits, ...newEdits], selectedEditId: null };
+        }),
+
+      applyEditChanges: (added, updated) =>
+        set((state) => {
+          if (added.length === 0 && updated.length === 0) return {};
+          lastCoalesce = null;
+          const replacement = new Map(updated.map((e) => [e.id, e]));
+          const hist = pushHistory(state, snapshot(state));
+          return {
+            ...hist,
+            edits: [...state.edits.map((e) => replacement.get(e.id) ?? e), ...added],
+            selectedEditId: null,
+          };
         }),
 
       deleteEdits: (ids) =>

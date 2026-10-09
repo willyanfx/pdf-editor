@@ -111,6 +111,28 @@ describe("planDuplicate + remapPageState", () => {
     expect(ink.points[0].x).toBe(1);
   });
 
+  test("a copied comment thread gets its own reply ids; the original keeps its own", () => {
+    const note: PdfEdit = {
+      id: "note",
+      type: "comment",
+      pageIndex: 0,
+      x: 0,
+      y: 0,
+      width: 20,
+      height: 20,
+      text: "hi",
+      color: "#ffd43b",
+      replies: [{ id: "r1", author: "Bob", text: "yo", createdAt: 1 }],
+    };
+    const next = remapPageState(state([0], [note]), planDuplicate(1, [0], [0]), ids());
+    const original = next.edits.find((e) => e.id === "note");
+    const copy = next.edits.find((e) => e.id !== "note");
+    if (original?.type !== "comment" || copy?.type !== "comment") throw new Error("missing notes");
+    expect(original.replies?.[0].id).toBe("r1");
+    expect(copy.replies?.[0]).toMatchObject({ author: "Bob", text: "yo" });
+    expect(copy.replies?.[0].id).not.toBe("r1");
+  });
+
   test("follows the visible order when pages are reordered", () => {
     const plan = planDuplicate(3, [2, 0, 1], [2]);
     const next = remapPageState(state([2, 0, 1]), plan);
