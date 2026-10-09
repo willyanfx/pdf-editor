@@ -2,6 +2,16 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { OcrEngine } from "../lib/vlmOcr/types";
 import type { InsertSource } from "../lib/pageInsert";
+import type { PDFDocument } from "pdf-lib";
+import {
+  createdPages,
+  planDuplicate,
+  planInsert,
+  planReplace,
+  remapPageState,
+  removePagesFromState,
+  type PagePlan,
+} from "../lib/pageRemap";
 import { useToastStore } from "./useToastStore";
 
 export type { InsertSource };
@@ -343,6 +353,23 @@ type EditorState = {
    * via the normal history stack. No-ops if no file is open.
    */
   insertPages: (sources: InsertSource[], position: number) => Promise<void>;
+  /** Rotate several pages by `delta` degrees as one undo step. */
+  rotatePages: (pageIndices: number[], delta: number) => void;
+  /** Remove several pages (and their edits/transforms) as one undo step. Refuses
+   * to remove every visible page. */
+  deletePages: (pageIndices: number[]) => void;
+  /** Insert a real copy of each page right after it (rewrites the File; edits and
+   * transforms are copied too). One undo step. Resolves to the new pages' indices,
+   * or null if nothing changed. */
+  duplicatePages: (pageIndices: number[]) => Promise<number[] | null>;
+  /** Replace pages, in place, with `sourcePages` (0-based) of another PDF. Edits
+   * and transforms on the replaced pages are dropped. One undo step. Resolves to
+   * the new pages' indices, or null if nothing changed. */
+  replacePages: (
+    pageIndices: number[],
+    source: File,
+    sourcePages: number[],
+  ) => Promise<number[] | null>;
 };
 
 /**
@@ -404,6 +431,56 @@ function snapshot(state: {
     file: state.file,
     numPages: state.numPages,
   };
+}
+
+/**
+ * Shared engine for page-structure operations that rewrite the File (insert,
+ * duplicate, replace): builds the new bytes from a PagePlan, then commits the
+ * File together with all page-indexed state — remapped by remapPageState, the
+ * one place that knows every page-indexed field — as ONE history step.
+ * Resolves to the committed plan, or null when nothing changed (no file, an
+ * error — already toasted — or the document changed while bytes were built).
+ */
+async function rewritePages(
+  makePlan: (baseCount: number, pageOrder: number[], extraCount: number) => PagePlan,
+  loadExtra?: () => Promise<PDFDocument>,
+): Promise<PagePlan | null> {
+  const start = useEditorStore.getState();
+  const { file } = start;
+  if (!file) return null;
+  try {
+    const { loadPdf, buildPlannedPdf } = await import("../lib/pageOrganize");
+    const [baseDoc, extra] = await Promise.all([loadPdf(file), loadExtra?.()]);
+    const order = start.pageOrder.length ? start.pageOrder : baseDoc.getPageIndices();
+    const plan = makePlan(baseDoc.getPageCount(), order, extra?.getPageCount() ?? 0);
+    const bytes = await buildPlannedPdf(baseDoc, plan.layout, extra);
+    // .slice() strips the generic ArrayBufferLike parameter File() rejects.
+    const newFile = new File([bytes.slice()], file.name, { type: "application/pdf" });
+    let committed = false;
+    useEditorStore.setState((state) => {
+      // The plan's indices describe the document as it was when we started.
+      if (state.file !== file || state.pageOrder !== start.pageOrder) return {};
+      committed = true;
+      lastCoalesce = null;
+      return {
+        ...pushHistory(state, snapshot(state)),
+        ...remapPageState(state, plan),
+        file: newFile,
+        numPages: plan.layout.length,
+        selectedEditId: null,
+      };
+    });
+    if (!committed) {
+      useToastStore
+        .getState()
+        .addToast("The document changed while pages were being updated. Try again.", "error");
+    }
+    return committed ? plan : null;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Could not update the pages.";
+    useToastStore.getState().addToast(msg, "error");
+    return null;
+  }
 }
 
 /** Push an entry onto _past, capping at 100 entries, and clear _future. */
@@ -529,9 +606,11 @@ export const useEditorStore = create<EditorState>()(
         set((state) => ({
           numPages,
           // Seed the page order once the count is known (and only if not already set
-          // for this document, so reorder/delete survive incidental re-reports).
+          // for this document, so reorder/delete survive incidental re-reports —
+          // including the reload after a page rewrite, where deleted pages leave
+          // pageOrder shorter than the page count).
           pageOrder:
-            state.pageOrder.length === numPages
+            state.pageOrder.length > 0 && state.pageOrder.every((i) => i < numPages)
               ? state.pageOrder
               : Array.from({ length: numPages }, (_, i) => i),
         })),
@@ -563,9 +642,7 @@ export const useEditorStore = create<EditorState>()(
           const hist = pushHistory(state, snapshot(state));
           return {
             ...hist,
-            pageOrder: state.pageOrder.filter((i) => i !== pageIndex),
-            edits: state.edits.filter((e) => e.pageIndex !== pageIndex),
-            pageOps: state.pageOps.filter((op) => op.pageIndex !== pageIndex),
+            ...removePagesFromState(state, [pageIndex]),
             selectedEditId: null,
           };
         }),
@@ -635,77 +712,55 @@ export const useEditorStore = create<EditorState>()(
       setPendingFocus: (pendingFocus) => set({ pendingFocus }),
 
       insertPages: async (sources, position) => {
-        const { file, edits, pageOps, pageOrder } = useEditorStore.getState();
-        if (!file) return;
+        const plan = await rewritePages(
+          (baseCount, order, extraCount) => planInsert(baseCount, order, position, extraCount),
+          async () => (await import("../lib/pageInsert")).sourcesToDoc(sources),
+        );
+        const first = plan?.layout.findIndex((e) => e.kind === "new") ?? -1;
+        if (first >= 0) set({ selectedPageIndex: first });
+      },
 
-        // Translate the VISIBLE position (index into pageOrder) into the base-document
-        // insertion point `at` for buildInsertedPdf.
-        //
-        // buildInsertedPdf splices by output/base index: pages [0, at) stay before the
-        // new pages; pages [at, baseCount) shift right by insertedCount. So `at` must be
-        // the original index of the page that currently sits at pageOrder[position] —
-        // that is the first base page that should appear AFTER the newly inserted pages.
-        // If position equals pageOrder.length (insertion after the last visible page), we
-        // use baseCount (which buildInsertedPdf clamps to the actual end anyway).
-        //
-        // We read baseCount from pageOrder.length here as a proxy: pageOrder always
-        // contains every valid original index (deleted pages are filtered out of pageOrder
-        // but we can't recover the old baseCount cheaply). For a fresh file pageOrder ===
-        // [0..n-1], so pageOrder.length === baseCount. For files with deleted pages the
-        // pageOrder is shorter; we use the max entry + 1 as the real baseCount below.
-        const baseCount = pageOrder.length > 0 ? Math.max(...pageOrder) + 1 : 0;
-        const at = position < pageOrder.length ? pageOrder[position] : baseCount;
-
-        try {
-          const { buildInsertedPdf, remapIndexAfterInsert, insertedIndices } =
-            await import("../lib/pageInsert");
-
-          const { bytes, insertedCount } = await buildInsertedPdf(file, sources, at);
-
-          // Build a new File from the merged bytes, keeping the original name.
-          // .slice() strips the generic ArrayBufferLike parameter that TypeScript
-          // otherwise rejects when constructing a File (same pattern as openFiles.ts).
-          const newFile = new File([bytes.slice()], file.name, { type: "application/pdf" });
-
-          // Remap existing indices: any original index >= at shifts right by insertedCount.
-          const newEdits = edits.map((edit) => ({
-            ...edit,
-            pageIndex: remapIndexAfterInsert(edit.pageIndex, at, insertedCount),
-          }));
-          const newPageOps = pageOps.map((op) => ({
-            ...op,
-            pageIndex: remapIndexAfterInsert(op.pageIndex, at, insertedCount),
-          }));
-          // Remap each existing entry, then splice the new indices at position.
-          const remappedOrder = pageOrder.map((idx) =>
-            remapIndexAfterInsert(idx, at, insertedCount),
-          );
-          const newIndices = insertedIndices(at, insertedCount);
-          const newPageOrder = [
-            ...remappedOrder.slice(0, position),
-            ...newIndices,
-            ...remappedOrder.slice(position),
-          ];
-
-          set((state) => {
-            lastCoalesce = null;
-            const hist = pushHistory(state, snapshot(state));
-            return {
-              ...hist,
-              file: newFile,
-              edits: newEdits,
-              pageOps: newPageOps,
-              pageOrder: newPageOrder,
-              numPages: state.numPages + insertedCount,
-              selectedEditId: null,
-              selectedPageIndex: at,
-            };
+      rotatePages: (pageIndices, delta) =>
+        set((state) => {
+          const targets = new Set(pageIndices);
+          if (!targets.size) return {};
+          lastCoalesce = null;
+          const rotated = [...targets].map((pageIndex): PageOp => {
+            const op = state.pageOps.find((o) => o.pageIndex === pageIndex);
+            return op ? { ...op, rotation: op.rotation + delta } : { pageIndex, rotation: delta };
           });
-        } catch (err) {
-          const msg =
-            err instanceof Error ? err.message : "Could not insert pages into the document.";
-          useToastStore.getState().addToast(msg, "error");
-        }
+          return {
+            ...pushHistory(state, snapshot(state)),
+            pageOps: [...state.pageOps.filter((op) => !targets.has(op.pageIndex)), ...rotated],
+          };
+        }),
+
+      deletePages: (pageIndices) =>
+        set((state) => {
+          const drop = new Set(pageIndices);
+          const remaining = state.pageOrder.filter((i) => !drop.has(i)).length;
+          if (remaining === 0 || remaining === state.pageOrder.length) return {};
+          lastCoalesce = null;
+          return {
+            ...pushHistory(state, snapshot(state)),
+            ...removePagesFromState(state, drop),
+            selectedEditId: null,
+          };
+        }),
+
+      duplicatePages: async (pageIndices) => {
+        const plan = await rewritePages((baseCount, order) =>
+          planDuplicate(baseCount, order, pageIndices),
+        );
+        return plan && createdPages(plan);
+      },
+
+      replacePages: async (pageIndices, source, sourcePages) => {
+        const plan = await rewritePages(
+          (baseCount, order) => planReplace(baseCount, order, pageIndices, sourcePages),
+          async () => (await import("../lib/pageOrganize")).loadPdf(source),
+        );
+        return plan && createdPages(plan);
       },
     }),
     {

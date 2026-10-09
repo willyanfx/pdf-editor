@@ -11,6 +11,7 @@ import { MetadataModal } from "./components/MetadataModal";
 import { UrlDialog } from "./components/UrlDialog";
 import { CompressDialog } from "./components/CompressDialog";
 import { PasswordModal } from "./components/PasswordModal";
+import { ExtractPagesDialog, ReplacePagesDialog } from "./components/PageSelectionDialogs";
 import { FindBar } from "./components/FindBar";
 import { useEditorStore } from "./store/useEditorStore";
 import { openFiles } from "./lib/openFiles";
@@ -241,6 +242,8 @@ export default function App() {
       <UrlDialog />
       <CompressDialog />
       <PasswordModal />
+      <ExtractPagesDialog />
+      <ReplacePagesDialog />
 
       {findOpen && <FindBar onClose={() => setFindOpen(false)} />}
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}

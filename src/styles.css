@@ -2443,3 +2443,102 @@ button {
   outline: 2px solid oklch(55% 0.16 250 / 0.85);
   outline-offset: -2px;
 }
+
+/* Page organizing: multi-select, selection toolbar, extract/replace dialogs -- */
+.page-thumb.selected {
+  background: oklch(60% 0.12 250 / 0.14);
+  border-color: oklch(55% 0.14 250 / 0.55);
+}
+.page-sel-bar {
+  padding: 6px 8px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.page-sel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
+.page-sel-actions {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2px;
+}
+.page-sel-actions button,
+.page-sel-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  transition: background var(--t-fast);
+}
+.page-sel-clear {
+  width: 22px;
+  height: 22px;
+}
+.page-sel-actions button:hover:not(:disabled),
+.page-sel-clear:hover {
+  background: oklch(60% 0.02 250 / 0.14);
+}
+.page-sel-actions button.danger:hover:not(:disabled) {
+  background: var(--error);
+  color: white;
+}
+.page-sel-actions button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.page-sel-actions button:focus-visible,
+.page-sel-clear:focus-visible {
+  outline: 2px solid oklch(55% 0.16 250 / 0.85);
+  outline-offset: -2px;
+}
+.page-sel-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.page-sel-check input {
+  margin-top: 2px;
+}
+.page-sel-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.page-sel-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+.page-sel-note {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.page-sel-error {
+  font-size: 12px;
+  color: var(--error);
+}
+.page-sel-warn {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+p.page-sel-note,
+p.page-sel-error {
+  margin: 6px 0 0;
+}
