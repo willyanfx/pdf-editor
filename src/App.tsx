@@ -44,7 +44,11 @@ export default function App() {
       const target = e.target as HTMLElement | null;
       const typing =
         target &&
-        (target.tagName === "TEXTAREA" || target.tagName === "INPUT" || target.isContentEditable);
+        (target.tagName === "TEXTAREA" ||
+          target.tagName === "INPUT" ||
+          // Form dropdowns/list boxes use type-ahead and arrow keys.
+          target.tagName === "SELECT" ||
+          target.isContentEditable);
 
       // ⌘K / Ctrl+K opens the command palette from anywhere (even while typing).
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {

@@ -211,7 +211,7 @@ export function RedactSearchDialog() {
                       title="Show this page"
                       onClick={() => scrollToPage?.(m.pageIndex)}
                     >
-                      p. {m.pageIndex + 1}
+                      p. {pageOrder.indexOf(m.pageIndex) + 1 || m.pageIndex + 1}
                     </button>
                     {m.source === "overlay" && (
                       <span

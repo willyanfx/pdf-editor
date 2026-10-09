@@ -136,7 +136,12 @@ export function findMatches(text: string, query: RedactQuery): TextMatch[] {
         spec.re.lastIndex++;
         continue;
       }
-      if (spec.valid && !spec.valid(m)) continue;
+      if (spec.valid && !spec.valid(m)) {
+        // Rescan from the next character: a valid number can overlap the
+        // rejected match (e.g. an order number run into a card number).
+        spec.re.lastIndex = m.index + 1;
+        continue;
+      }
       found.push({ start: m.index, end: m.index + m[0].length, kind: id });
     }
   }

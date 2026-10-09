@@ -11,7 +11,7 @@ import {
   type PDFPage,
 } from "pdf-lib";
 import type { LayoutEntry } from "./pageRemap";
-import { pruneFieldsOnRemovedPages, removeUnreachableObjects } from "./pageReorder";
+import { pruneRemovedPages, removeUnreachableObjects } from "./pageReorder";
 
 /** Load a File as an editable pdf-lib document. */
 export async function loadPdf(file: File): Promise<PDFDocument> {
@@ -88,7 +88,7 @@ export async function buildPlannedPdf(
   //    page's field can keep its name), then the copies' fields join the form.
   const kept = new Set(layout.flatMap((e) => (e.kind === "base" && !e.clone ? [e.index] : [])));
   const removed = baseDoc.getPages().filter((_, i) => !kept.has(i));
-  if (removed.length > 0) pruneFieldsOnRemovedPages(baseDoc, removed);
+  if (removed.length > 0) pruneRemovedPages(baseDoc, removed);
   const taken = topLevelFieldNames(baseDoc);
   for (const { src, pages } of copies) adoptCopiedFields(baseDoc, src, pages, taken);
 

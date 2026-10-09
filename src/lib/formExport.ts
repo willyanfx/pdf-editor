@@ -45,9 +45,17 @@ export function applyFormValues(doc: PDFDocument, values: FormValues | undefined
   const names = Object.keys(values ?? {});
   if (!values || names.length === 0 || !hasAcroForm(doc)) return;
 
-  const form = doc.getForm();
+  // pdf-lib can reject an AcroForm pdf.js displays fine (malformed /Fields or
+  // /FT). Export the rest of the document rather than failing the download.
+  let form: PDFForm;
   const byName = new Map<string, PDFField>();
-  for (const field of form.getFields()) byName.set(field.getName(), field);
+  try {
+    form = doc.getForm();
+    for (const field of form.getFields()) byName.set(field.getName(), field);
+  } catch (err) {
+    console.warn("[formExport] could not read the form; exporting without form values:", err);
+    return;
+  }
 
   let font: PDFFont | undefined;
   const getFont = () => (font ??= form.getDefaultFont());

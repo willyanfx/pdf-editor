@@ -1,5 +1,14 @@
 import { expect, test } from "vite-plus/test";
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRef, StandardFonts } from "pdf-lib";
+import {
+  PDFArray,
+  PDFDict,
+  PDFDocument,
+  PDFHexString,
+  PDFName,
+  PDFRef,
+  PDFString,
+  StandardFonts,
+} from "pdf-lib";
 import { exportEditedPdf } from "./exportPdf";
 
 function toFile(bytes: Uint8Array, name = "doc.pdf") {
@@ -135,4 +144,69 @@ test("pages that inherited MediaBox/Resources from the tree keep them after a mo
   const outDoc = await PDFDocument.load(out);
   expect(outDoc.getPage(0).getSize()).toEqual({ width: 612, height: 792 });
   expect(outDoc.getPage(1).getSize()).toEqual({ width: 200, height: 200 });
+});
+
+/** Labels as pdf.js reports them for the exported document. */
+async function exportedLabels(bytes: Uint8Array): Promise<string[] | null> {
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const pdf = await pdfjs.getDocument({ data: bytes.slice(), isEvalSupported: false }).promise;
+  return pdf.getPageLabels();
+}
+
+test("page labels follow their pages through reorder and delete", async () => {
+  // i, ii, then 1, 2, 3.
+  const doc = await PDFDocument.create();
+  for (let i = 0; i < 5; i++) doc.addPage([300, 300]);
+  const ctx = doc.context;
+  doc.catalog.set(
+    PDFName.of("PageLabels"),
+    ctx.obj({ Nums: [0, ctx.obj({ S: "r" }), 2, ctx.obj({ S: "D" })] }),
+  );
+  const file = toFile(await doc.save());
+
+  // Drop "ii" and move "3" to the front: 3, i, 1, 2.
+  const out = await exportEditedPdf(file, [], { pageOrder: [4, 0, 2, 3] });
+  expect(await exportedLabels(out)).toEqual(["3", "i", "1", "2"]);
+});
+
+test("structure elements of a deleted page don't ship with the export", async () => {
+  const doc = await PDFDocument.create();
+  const kept = doc.addPage([300, 300]);
+  const gone = doc.addPage([300, 300]);
+  const ctx = doc.context;
+  const rootRef = ctx.nextRef();
+  const elemGone = ctx.register(
+    ctx.obj({
+      Type: "StructElem",
+      S: "P",
+      P: rootRef,
+      Pg: gone.ref,
+      K: 0,
+      ActualText: "DELETED-TEXT",
+    }),
+  );
+  const elemKept = ctx.register(
+    ctx.obj({
+      Type: "StructElem",
+      S: "P",
+      P: rootRef,
+      Pg: kept.ref,
+      K: 0,
+      ActualText: "KEPT-TEXT",
+    }),
+  );
+  ctx.assign(rootRef, ctx.obj({ Type: "StructTreeRoot", K: [elemKept, elemGone] }));
+  doc.catalog.set(PDFName.of("StructTreeRoot"), rootRef);
+  const file = toFile(await doc.save({ useObjectStreams: false }));
+
+  const out = await exportEditedPdf(file, [], { pageOrder: [0] });
+  // Every ActualText left anywhere in the output (objects are compressed, so
+  // inspect them rather than the raw bytes).
+  const loaded = await PDFDocument.load(out);
+  const actualTexts = loaded.context
+    .enumerateIndirectObjects()
+    .flatMap(([, obj]) => (obj instanceof PDFDict ? [obj.lookup(PDFName.of("ActualText"))] : []))
+    .filter((v) => v !== undefined)
+    .map((v) => (v as PDFString | PDFHexString).decodeText());
+  expect(actualTexts).toEqual(["KEPT-TEXT"]);
 });

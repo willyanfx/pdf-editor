@@ -195,13 +195,17 @@ export function useEditorActions() {
 
   // --- Export ------------------------------------------------------------
 
-  /** Build export options from the current page order / transforms. */
-  function exportOptions() {
-    const { pageOrder, pageOps, numPages, pageStamps, formValues } = useEditorStore.getState();
+  /** Build export options from the current page order / transforms, or for
+   * just `pages` (original indices, in output order) when given. */
+  function exportOptions(pages?: number[]) {
+    const state = useEditorStore.getState();
+    const { pageOrder, pageOps, numPages, pageStamps, formValues } = state;
+    const order =
+      pages ?? (pageOrder.length ? pageOrder : Array.from({ length: numPages }, (_, i) => i));
     return {
-      pageOrder: pageOrder.length ? pageOrder : Array.from({ length: numPages }, (_, i) => i),
+      pageOrder: order,
       pageOps,
-      bookmarks: bookmarksForExport(useEditorStore.getState()),
+      bookmarks: bookmarksForExport(state, order),
       pageStamps,
       formValues,
     };
@@ -533,10 +537,7 @@ export function useEditorActions() {
     if (!(await confirmRedactions())) return;
     try {
       const { exportRedactedPdf } = await import("../lib/redact");
-      const { bytes, warnings } = await exportRedactedPdf(file, edits, {
-        ...exportOptions(),
-        pageOrder: pages,
-      });
+      const { bytes, warnings } = await exportRedactedPdf(file, edits, exportOptions(pages));
       for (const w of warnings) useToastStore.getState().addToast(w, "info");
       const numbers = pages.map((p) => pageOrder.indexOf(p) + 1);
       const base = file.name.replace(/\.pdf$/i, "");

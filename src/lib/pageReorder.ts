@@ -2,12 +2,14 @@ import {
   PDFArray,
   PDFDict,
   PDFName,
+  PDFNumber,
   PDFRef,
   PDFStream,
   type PDFDocument,
   type PDFObject,
   type PDFPage,
 } from "pdf-lib";
+import { collectStructParentKeys, pruneStructTree } from "./structTree";
 
 /**
  * Reorder and/or drop pages IN PLACE on a loaded document.
@@ -43,9 +45,11 @@ export function reorderPagesInPlace(doc: PDFDocument, order: number[]): number[]
   // so do the same before detaching anything.
   for (const i of kept) pinInheritedAttributes(pages[i]);
 
-  // Fields need the original page → annotation mapping, so prune them before the
-  // removed pages leave the tree.
-  if (removed.length > 0) pruneFieldsOnRemovedPages(doc, removed);
+  // Fields and structure elements need the original page → content mapping, so
+  // prune them before the removed pages leave the tree.
+  if (removed.length > 0) pruneRemovedPages(doc, removed);
+  // Page labels are keyed by page index; rebuild them for the new order.
+  remapPageLabels(doc, kept);
 
   // Detach every page (pruning now-empty intermediate nodes), then re-insert the
   // kept ones in order. insertPage accepts the same PDFPage objects because they
@@ -58,6 +62,97 @@ export function reorderPagesInPlace(doc: PDFDocument, order: number[]): number[]
   if (removed.length > 0) removeUnreachableObjects(doc, new Set(removed.map((p) => p.ref)));
 
   return origToOut;
+}
+
+/**
+ * Drop what belongs only to `removedPages` from document-level structures:
+ * AcroForm fields whose widgets all sat there, and structure-tree elements
+ * (which can hold copies of the page's text in /ActualText, /Alt, /E).
+ * Call before the pages leave the page tree.
+ */
+export function pruneRemovedPages(doc: PDFDocument, removedPages: PDFPage[]) {
+  pruneFieldsOnRemovedPages(doc, removedPages);
+  const structParentKeys = new Set<number>();
+  for (const page of removedPages) collectStructParentKeys(page, structParentKeys);
+  const warnings: string[] = [];
+  pruneStructTree(
+    doc,
+    removedPages.map((p) => p.ref),
+    structParentKeys,
+    warnings,
+  );
+  for (const w of warnings) console.warn(`[pageReorder] ${w}`);
+}
+
+/** One page's label as the /PageLabels tree defines it. */
+type PageLabel = { style?: PDFObject; prefix?: PDFObject; number: number };
+
+/**
+ * Rewrite /PageLabels for pages that now appear in `kept` order (ORIGINAL
+ * indices). Each output page keeps the label it had; a new range starts
+ * wherever the numbering no longer simply continues. No-op without labels.
+ */
+export function remapPageLabels(doc: PDFDocument, kept: number[]) {
+  const { catalog, context } = doc;
+  const tree = catalog.lookupMaybe(PDFName.of("PageLabels"), PDFDict);
+  if (!tree) return;
+  const ranges: { start: number; dict: PDFDict }[] = [];
+  collectNumberTree(tree, ranges);
+  if (ranges.length === 0) return;
+  ranges.sort((a, b) => a.start - b.start);
+
+  const labelOf = (index: number): PageLabel | null => {
+    let range: (typeof ranges)[number] | undefined;
+    for (const r of ranges) if (r.start <= index) range = r;
+    if (!range) return null;
+    const st = range.dict.lookupMaybe(PDFName.of("St"), PDFNumber)?.asNumber() ?? 1;
+    return {
+      style: range.dict.get(PDFName.of("S")),
+      prefix: range.dict.get(PDFName.of("P")),
+      number: st + (index - range.start),
+    };
+  };
+
+  const nums: PDFObject[] = [];
+  let prev: PageLabel | null = null;
+  kept.forEach((orig, pos) => {
+    const label = labelOf(orig);
+    const continues =
+      prev !== null &&
+      label !== null &&
+      label.style === prev.style &&
+      label.prefix === prev.prefix &&
+      label.number === prev.number + 1;
+    if (!continues && (label !== null || pos === 0)) {
+      const dict = context.obj({});
+      if (label?.style) dict.set(PDFName.of("S"), label.style);
+      if (label?.prefix) dict.set(PDFName.of("P"), label.prefix);
+      if (label && label.number !== 1) dict.set(PDFName.of("St"), PDFNumber.of(label.number));
+      nums.push(PDFNumber.of(pos), dict);
+    }
+    prev = label;
+  });
+  catalog.set(PDFName.of("PageLabels"), context.obj({ Nums: context.obj(nums) }));
+}
+
+function collectNumberTree(node: PDFDict, into: { start: number; dict: PDFDict }[]) {
+  const nums = node.lookupMaybe(PDFName.of("Nums"), PDFArray);
+  if (nums) {
+    for (let i = 0; i + 1 < nums.size(); i += 2) {
+      const key = nums.lookup(i);
+      const dict = nums.lookup(i + 1);
+      if (key instanceof PDFNumber && dict instanceof PDFDict) {
+        into.push({ start: key.asNumber(), dict });
+      }
+    }
+  }
+  const kids = node.lookupMaybe(PDFName.of("Kids"), PDFArray);
+  if (kids) {
+    for (let i = 0; i < kids.size(); i++) {
+      const kid = kids.lookup(i);
+      if (kid instanceof PDFDict) collectNumberTree(kid, into);
+    }
+  }
 }
 
 const INHERITABLE = ["Resources", "MediaBox", "CropBox", "Rotate"] as const;
@@ -146,16 +241,23 @@ export function pruneFieldsOnRemovedPages(doc: PDFDocument, removedPages: PDFPag
 }
 
 /**
- * Delete every indirect object no longer reachable from the trailer. `cut`
- * refs are treated as dead ends: references to them from elsewhere (e.g. a
- * bookmark that targeted a deleted page) are left dangling, which the PDF spec
- * defines as a reference to the null object.
+ * Delete every indirect object no longer reachable from the trailer (Root,
+ * Info, Encrypt, ID). pdf-lib writes every indirect object it holds, so without
+ * this, unlinked content streams, images, fonts and annotations would still
+ * ship in the file — which page deletion and redaction must prevent.
+ *
+ * `cut` refs are dead ends: never marked reachable (so always deleted) and
+ * never traversed (so nothing is kept alive through them), whatever still
+ * points at them (e.g. a bookmark that targeted a deleted page). A reference to
+ * a deleted object is, per the spec, a reference to null.
  */
 export function removeUnreachableObjects(doc: PDFDocument, cut: Set<PDFRef> = new Set()) {
   const { context } = doc;
   const reachable = new Set<PDFRef>();
-  const { Root, Info, Encrypt } = context.trailerInfo;
-  const stack: PDFObject[] = [Root, Info, Encrypt].filter((o): o is PDFObject => o !== undefined);
+  const { Root, Info, Encrypt, ID } = context.trailerInfo;
+  const stack: PDFObject[] = [Root, Info, Encrypt, ID].filter(
+    (o): o is PDFObject => o !== undefined,
+  );
 
   while (stack.length > 0) {
     const obj = stack.pop()!;

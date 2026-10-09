@@ -113,10 +113,10 @@ test("replacing a page leaves its bookmark without a target", () => {
 
 test("bookmarksForExport only takes over the outline once it's known", () => {
   const some = [bm("A", 0)];
-  expect(bookmarksForExport({ bookmarks: [], outlineStatus: "pending" })).toBeUndefined();
-  expect(bookmarksForExport({ bookmarks: [], outlineStatus: "failed" })).toBeUndefined();
-  expect(bookmarksForExport({ bookmarks: [], outlineStatus: "ready" })).toEqual([]);
-  expect(bookmarksForExport({ bookmarks: some, outlineStatus: "failed" })).toBe(some);
+  expect(bookmarksForExport({ bookmarks: [], outlineStatus: "pending" }, [0, 1])).toBeUndefined();
+  expect(bookmarksForExport({ bookmarks: [], outlineStatus: "failed" }, [0, 1])).toBeUndefined();
+  expect(bookmarksForExport({ bookmarks: [], outlineStatus: "ready" }, [0, 1])).toEqual([]);
+  expect(bookmarksForExport({ bookmarks: some, outlineStatus: "failed" }, [0, 1])).toBe(some);
 });
 
 // --- Store integration --------------------------------------------------------
@@ -239,4 +239,18 @@ test("insertPages remaps bookmark pages; deleting a page leaves them pointing at
   store().deletePage(3);
   expect(pages(store().bookmarks)).toEqual([0, 3, 4]);
   expect(store().pageOrder).not.toContain(3);
+});
+
+test("bookmarksForExport keeps the file's own outline until a bookmark changes", () => {
+  const loaded = [bm("A", 0, [bm("A1", 1)]), bm("B", 2)];
+  const state = { bookmarks: structuredClone(loaded), outlineStatus: "ready" as const };
+  // Untouched (even as a clone, as after undo or recovery): leave the outline alone.
+  expect(bookmarksForExport({ ...state, loadedBookmarks: loaded }, [0, 1, 2])).toBeUndefined();
+  // Edited: write the user's bookmarks.
+  const renamed = [bm("A!", 0, [bm("A1", 1)]), bm("B", 2)];
+  expect(
+    bookmarksForExport({ ...state, bookmarks: renamed, loadedBookmarks: loaded }, [0, 1, 2]),
+  ).toBe(renamed);
+  // A bookmarked page left out of the export: rewrite so its entry is dropped.
+  expect(bookmarksForExport({ ...state, loadedBookmarks: loaded }, [0, 2])).toBe(state.bookmarks);
 });

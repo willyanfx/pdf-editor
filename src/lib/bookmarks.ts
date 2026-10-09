@@ -256,11 +256,33 @@ export function resolveBookmarksForOutput(
  * deleted them all, so the old outline is removed. If reading failed we only
  * write when the user has added bookmarks of their own.
  */
-export function bookmarksForExport(state: {
-  bookmarks: Bookmark[];
-  outlineStatus: "pending" | "ready" | "failed";
-}): Bookmark[] | undefined {
+export function bookmarksForExport(
+  state: {
+    bookmarks: Bookmark[];
+    outlineStatus: "pending" | "ready" | "failed";
+    /** The outline as read from the file, when it was. */
+    loadedBookmarks?: Bookmark[] | null;
+  },
+  /** Original page indices the export will contain. */
+  exportedPages: number[],
+): Bookmark[] | undefined {
+  // Untouched bookmarks whose pages all survive: keep the file's own outline,
+  // which carries what the Bookmark model drops (colours, styles, open state,
+  // non-URI actions, zoom). Compared by value because undo/restore hand back
+  // structured clones. Otherwise rewrite, so entries for dropped pages go.
+  const kept = new Set(exportedPages);
+  if (
+    state.loadedBookmarks &&
+    JSON.stringify(state.bookmarks) === JSON.stringify(state.loadedBookmarks) &&
+    everyBookmark(state.bookmarks, (b) => b.pageIndex === null || kept.has(b.pageIndex))
+  ) {
+    return undefined;
+  }
   return state.outlineStatus === "ready" || state.bookmarks.length > 0
     ? state.bookmarks
     : undefined;
+}
+
+function everyBookmark(tree: Bookmark[], test: (b: Bookmark) => boolean): boolean {
+  return tree.every((b) => test(b) && everyBookmark(b.children, test));
 }

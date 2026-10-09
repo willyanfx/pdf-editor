@@ -359,6 +359,9 @@ type EditorState = {
    * that sets `bookmarks` should also set this to "ready" so the file's original
    * outline doesn't replace the restored one. */
   outlineStatus: "pending" | "ready" | "failed";
+  /** The outline exactly as read from the file (null until read). Export keeps
+   * the file's own outline while `bookmarks` still equals it. Not undoable. */
+  loadedBookmarks: Bookmark[] | null;
   /** Apply the outline read from `file` (null = reading failed). Ignored unless
    * `file` is still the open file and its outline hasn't been applied yet.
    * Does not create an undo step. */
@@ -537,6 +540,7 @@ const initialState = {
   savedRevision: 0,
   bookmarks: [] as Bookmark[],
   outlineStatus: "pending" as "pending" | "ready" | "failed",
+  loadedBookmarks: null as Bookmark[] | null,
   pageStamps: EMPTY_PAGE_STAMPS as PageStamps,
   formValues: {} as FormValues,
   formFields: null as FormFieldSummary[] | null,
@@ -565,9 +569,11 @@ function snapshot(state: {
       pageOps: state.pageOps,
       pageOrder: state.pageOrder,
       bookmarks: state.bookmarks,
-      pageStamps: state.pageStamps,
       formValues: state.formValues,
     }),
+    // Shared, not cloned: pageStamps is only ever replaced (the dialogs clone
+    // their drafts), and a watermark image data URL can be megabytes.
+    pageStamps: state.pageStamps,
     file: state.file,
     numPages: state.numPages,
   };
@@ -867,6 +873,7 @@ export const useEditorStore = create<EditorState>()(
             entry.file === file ? { ...entry, bookmarks } : entry;
           return {
             bookmarks,
+            loadedBookmarks: bookmarks,
             outlineStatus: "ready",
             _past: state._past.map(withOutline),
             _future: state._future.map(withOutline),

@@ -44,6 +44,10 @@ export function RedactConfirmDialog() {
             still be searched, but it can no longer be edited as text. Pages without marks are not
             changed.
           </p>
+          <p>
+            Bookmark names, document properties (such as title and author) and attached files are
+            not changed. If they mention what you're redacting, edit them before you download.
+          </p>
           <p>Your original file and your work here stay exactly as they are.</p>
         </div>
         <div className="sig-actions">

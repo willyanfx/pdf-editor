@@ -88,3 +88,8 @@ test("overlapping matches from different sources are de-duplicated, earliest win
   expect(texts(s, m)).toEqual(["123-45-6789"]);
   expect(m[0].kind).toBe("ssn");
 });
+
+test("a card number right after a rejected digit run is still found", () => {
+  const s = "Order 12345678 4111 1111 1111 1111";
+  expect(texts(s, findMatches(s, { patterns: ["creditCard"] }))).toEqual(["4111 1111 1111 1111"]);
+});

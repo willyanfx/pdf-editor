@@ -40,8 +40,6 @@ import {
   PDFDict,
   PDFDocument,
   PDFName,
-  PDFNull,
-  PDFNumber,
   PDFPage,
   PDFPageLeaf,
   PDFRawStream,
@@ -59,6 +57,8 @@ import {
   type PDFFont,
   type PDFObject,
 } from "pdf-lib";
+import { removeUnreachableObjects } from "./pageReorder";
+import { collectStructParentKeys, pruneStructTree } from "./structTree";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import type { PdfEdit } from "../store/useEditorStore";
 import { VIEWER_WIDTH, type ScreenRect } from "./pdfGeometry";
@@ -270,9 +270,9 @@ export async function applyRedactions(
     pruneStructTree(pdfDoc, redactedPageRefs, structParentKeys, warnings);
     if (removedFields > 0) stripXfa(pdfDoc, warnings);
     exemptSharedPageParts(pdfDoc, cut);
-    collectGarbage(pdfDoc, cut);
+    removeUnreachableObjects(pdfDoc, cut);
     pruneSuspectXObjects(pdfDoc, suspectXObjects, warnings);
-    collectGarbage(pdfDoc, cut);
+    removeUnreachableObjects(pdfDoc, cut);
 
     // removeFormFieldsOnPage populated pdf-lib's form cache; the default
     // updateFieldAppearances: true would then redraw every untouched field
@@ -622,22 +622,6 @@ function collectSuspectXObjects(page: PDFPage, into: Set<PDFRef>) {
   }
 }
 
-/** The /StructParents key of the page and /StructParent keys of its annotations,
- * so their ParentTree entries can be dropped. */
-function collectStructParentKeys(page: PDFPage, into: Set<number>) {
-  const own = page.node.get(N.StructParents);
-  if (own instanceof PDFNumber) into.add(own.asNumber());
-  const annots = page.node.Annots();
-  if (!annots) return;
-  for (let i = 0; i < annots.size(); i++) {
-    const annot = annots.lookup(i);
-    if (annot instanceof PDFDict) {
-      const key = annot.get(N.StructParent);
-      if (key instanceof PDFNumber) into.add(key.asNumber());
-    }
-  }
-}
-
 /**
  * Remove every AcroForm field with a widget on this page (field value included).
  * A field with widgets on several pages is removed everywhere — conservative.
@@ -688,202 +672,6 @@ function stripXfa(pdfDoc: PDFDocument, warnings: string[]) {
   if (acro?.has(N.XFA)) {
     acro.delete(N.XFA);
     warnings.push("XFA form data was removed because it contained values of redacted fields.");
-  }
-}
-
-/**
- * Tagged-PDF structure can hold copies of page text (/ActualText, /Alt, /E).
- * Drop every structure element or marked-content reference that points at a
- * redacted page (its ref now resolves to the flattened page, which has no
- * marked content, so those kids are meaningless), and the ParentTree / IDTree
- * entries that would keep them alive. Elements that also have kids on other
- * pages survive with their text copies stripped.
- * Falls back to removing the whole structure tree if anything looks unusual.
- */
-function pruneStructTree(
-  pdfDoc: PDFDocument,
-  redactedPageRefs: PDFRef[],
-  structParentKeys: Set<number>,
-  warnings: string[],
-) {
-  const catalog = pdfDoc.catalog;
-  const root = catalog.lookupMaybe(N.StructTreeRoot, PDFDict);
-  if (!root || redactedPageRefs.length === 0) return;
-  const context = pdfDoc.context;
-  const removedPages = new Set(redactedPageRefs);
-  const droppedElements = new Set<PDFRef>();
-
-  const dropRefs = (arr: PDFArray, remove: (v: PDFObject) => boolean) => {
-    const kept = arr.asArray().filter((v) => !remove(v));
-    return context.obj(kept);
-  };
-
-  try {
-    const seen = new Set<PDFDict>();
-    /** Returns false when `kid` must be dropped from its parent's /K. */
-    const keepKid = (kid: PDFObject, inheritedPg: PDFRef | undefined): boolean => {
-      const resolved = kid instanceof PDFRef ? context.lookup(kid) : kid;
-      if (resolved instanceof PDFNumber) {
-        // A bare MCID lives on the element's page.
-        return !(inheritedPg && removedPages.has(inheritedPg));
-      }
-      if (!(resolved instanceof PDFDict)) return true;
-      const pg = resolved.get(N.Pg);
-      const ownPg = pg instanceof PDFRef ? pg : inheritedPg;
-      const type = resolved.get(N.Type);
-      if (type === N.MCR || type === N.OBJR) {
-        return !(ownPg && removedPages.has(ownPg));
-      }
-      // A structure element. If it sits on a removed page (its own /Pg, or the
-      // one it inherits from an ancestor), strip the text copies it may carry
-      // and keep only kids that live elsewhere; drop it once nothing remains.
-      const onRemovedPage = ownPg !== undefined && removedPages.has(ownPg);
-      if (onRemovedPage) {
-        resolved.delete(N.ActualText);
-        resolved.delete(N.Alt);
-        resolved.delete(N.E);
-      }
-      visit(resolved, ownPg);
-      const remaining = resolved.get(N.K);
-      const empty =
-        remaining === undefined || (remaining instanceof PDFArray && remaining.size() === 0);
-      if (empty && onRemovedPage) {
-        if (kid instanceof PDFRef) droppedElements.add(kid);
-        return false;
-      }
-      return true;
-    };
-    const visit = (elem: PDFDict, inheritedPg: PDFRef | undefined) => {
-      if (seen.has(elem)) return;
-      seen.add(elem);
-      const K = elem.get(N.K);
-      if (K === undefined) return;
-      if (K instanceof PDFArray) {
-        elem.set(
-          N.K,
-          dropRefs(K, (v) => !keepKid(v, inheritedPg)),
-        );
-      } else if (!keepKid(K, inheritedPg)) {
-        elem.delete(N.K);
-      }
-    };
-    visit(root, undefined);
-
-    // ParentTree: drop the removed page's / annotations' keys, and any dangling
-    // references to elements we dropped.
-    const parentTree = root.lookupMaybe(N.ParentTree, PDFDict);
-    if (parentTree) pruneNumberTree(parentTree, structParentKeys, droppedElements, context);
-    const idTree = root.lookupMaybe(N.IDTree, PDFDict);
-    if (idTree) pruneNameTree(idTree, droppedElements, context);
-  } catch {
-    catalog.delete(N.StructTreeRoot);
-    catalog.delete(N.MarkInfo);
-    warnings.push(
-      "Accessibility tags were removed from the file because they could not be updated safely.",
-    );
-  }
-}
-
-/** Walk a number tree's /Nums (recursing into /Kids) and rebuild each array
- * without the removed keys or values that point at dropped elements. */
-function pruneNumberTree(
-  node: PDFDict,
-  removedKeys: Set<number>,
-  dropped: Set<PDFRef>,
-  context: PDFDocument["context"],
-) {
-  const nums = node.lookupMaybe(N.Nums, PDFArray);
-  if (nums) {
-    const kept: PDFObject[] = [];
-    for (let i = 0; i + 1 < nums.size(); i += 2) {
-      const key = nums.lookup(i);
-      const value = nums.get(i + 1);
-      if (key instanceof PDFNumber && removedKeys.has(key.asNumber())) continue;
-      kept.push(nums.get(i), scrubValue(value, dropped, context));
-    }
-    node.set(N.Nums, context.obj(kept));
-  }
-  const kids = node.lookupMaybe(N.Kids, PDFArray);
-  if (kids) {
-    for (let i = 0; i < kids.size(); i++) {
-      const kid = kids.lookup(i);
-      if (kid instanceof PDFDict) pruneNumberTree(kid, removedKeys, dropped, context);
-    }
-  }
-}
-
-function pruneNameTree(node: PDFDict, dropped: Set<PDFRef>, context: PDFDocument["context"]) {
-  const names = node.lookupMaybe(N.Names, PDFArray);
-  if (names) {
-    const kept: PDFObject[] = [];
-    for (let i = 0; i + 1 < names.size(); i += 2) {
-      const value = names.get(i + 1);
-      if (value instanceof PDFRef && dropped.has(value)) continue;
-      kept.push(names.get(i), value);
-    }
-    node.set(N.Names, context.obj(kept));
-  }
-  const kids = node.lookupMaybe(N.Kids, PDFArray);
-  if (kids) {
-    for (let i = 0; i < kids.size(); i++) {
-      const kid = kids.lookup(i);
-      if (kid instanceof PDFDict) pruneNameTree(kid, dropped, context);
-    }
-  }
-}
-
-/** A ParentTree value is an element ref or an array of them; replace dropped
- * refs with null (allowed by the spec) so nothing dangles. */
-function scrubValue(value: PDFObject, dropped: Set<PDFRef>, context: PDFDocument["context"]) {
-  if (value instanceof PDFRef && dropped.has(value)) return PDFNull;
-  const resolved = value instanceof PDFRef ? context.lookup(value) : value;
-  if (resolved instanceof PDFArray) {
-    const arr = resolved
-      .asArray()
-      .map((v) => (v instanceof PDFRef && dropped.has(v) ? PDFNull : v));
-    return context.obj(arr);
-  }
-  return value;
-}
-
-/**
- * Mark-and-sweep over pdf-lib's object table from the trailer (Root, Info,
- * Encrypt, ID). pdf-lib writes every indirect object it holds, so without this
- * the unlinked content streams, images, fonts and annotations would still be
- * in the file — exactly what redaction must prevent.
- *
- * `cut` refs are dead ends: they are never marked reachable (so they are
- * always deleted) and never traversed (so nothing is kept alive through them),
- * whatever still points at them. A reference to a deleted object is, per the
- * spec, a reference to null.
- */
-export function collectGarbage(pdfDoc: PDFDocument, cut: Set<PDFRef> = new Set()) {
-  const context = pdfDoc.context;
-  const reachable = new Set<PDFRef>();
-  const stack: PDFObject[] = [];
-  const { Root, Info, Encrypt, ID } = context.trailerInfo;
-  for (const entry of [Root, Info, Encrypt, ID]) if (entry) stack.push(entry);
-
-  while (stack.length > 0) {
-    const obj = stack.pop()!;
-    if (obj instanceof PDFRef) {
-      if (cut.has(obj) || reachable.has(obj)) continue;
-      reachable.add(obj);
-      const target = context.lookup(obj);
-      if (target) stack.push(target);
-    } else if (obj instanceof PDFDict) {
-      for (const [, value] of obj.entries()) stack.push(value);
-    } else if (obj instanceof PDFArray) {
-      for (const value of obj.asArray()) stack.push(value);
-    } else if (obj instanceof PDFStream) {
-      stack.push(obj.dict);
-    }
-  }
-
-  // enumerateIndirectObjects() returns a fresh array, so deleting while
-  // iterating is safe.
-  for (const [ref] of context.enumerateIndirectObjects()) {
-    if (!reachable.has(ref)) context.delete(ref);
   }
 }
 
