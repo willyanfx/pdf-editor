@@ -39,6 +39,7 @@ import {
   Hash,
   Fingerprint,
   Droplets,
+  Stamp,
   Eraser,
 } from "lucide-react";
 import { useEditorStore } from "../store/useEditorStore";
@@ -75,6 +76,7 @@ export function CommandPalette({ onClose }: Props) {
   const ocrBusy = useEditorStore((s) => s.ocrBusy);
   const hasHeaderFooter = useEditorStore((s) => !!s.pageStamps.headerFooter);
   const hasWatermark = useEditorStore((s) => !!s.pageStamps.watermark);
+  const hasForm = useEditorStore((s) => (s.formFields?.length ?? 0) > 0);
   const actions = useEditorActions();
 
   const [query, setQuery] = useState("");
@@ -442,6 +444,22 @@ export function CommandPalette({ onClose }: Props) {
         icon: <Download size={16} />,
         disabled: noFile,
         run: () => runAndClose(() => void actions.downloadPdf()),
+      },
+      {
+        id: "download-flattened",
+        group: "Export",
+        label: "Download with form flattened",
+        icon: <Stamp size={16} />,
+        disabled: noFile || !hasForm,
+        run: () => runAndClose(() => void actions.downloadPdfFlattened()),
+      },
+      {
+        id: "form-reset",
+        group: "Export",
+        label: "Reset form",
+        icon: <Eraser size={16} />,
+        disabled: noFile || !hasForm,
+        run: () => runAndClose(actions.resetForm),
       },
       {
         id: "download-docx",

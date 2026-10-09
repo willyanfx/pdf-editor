@@ -3015,3 +3015,30 @@ p.page-sel-error {
 .stamp-tokens .stamp-note {
   margin: 0;
 }
+
+/* Form fields + links (pdf.js annotation layer) ------------------------- */
+/* react-pdf renders the annotation layer inside .react-pdf__Page, which is
+   position:relative with no z-index (not a stacking context), so its z-index
+   competes directly with our sibling overlays inside .page-transform. pdf.js
+   ships it at z-index 3, tied with .editable-layer. Pin it to 1: above the
+   canvas, below every overlay of ours (existing-text/-image hits 2, edit boxes
+   3, tool capture layers 4). In Select mode the only things above it that take
+   the pointer are edit boxes (.editable-layer itself is pointer-events:none),
+   so widgets and links work everywhere except under a box the user placed. */
+.page-transform .react-pdf__Page__annotations {
+  z-index: 1;
+}
+
+/* In every tool mode (editText, addText, ocr, highlight, underline, comment,
+   ink, signZones) our layers win: widgets and links stop taking the pointer so
+   clicks and drags reach the tool overlays and the page. pdf.js sets
+   pointer-events:auto on each section and control, hence the descendant rule. */
+.pdf-wrapper:not(.mode-select) .react-pdf__Page__annotations,
+.pdf-wrapper:not(.mode-select) .react-pdf__Page__annotations * {
+  pointer-events: none !important;
+}
+
+/* .page-shell sets line-height:0 for the canvas stack; form controls inherit it. */
+.react-pdf__Page__annotations :is(input, textarea, select) {
+  line-height: normal;
+}
