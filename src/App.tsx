@@ -14,6 +14,8 @@ import { PasswordModal } from "./components/PasswordModal";
 import { FindBar } from "./components/FindBar";
 import { useEditorStore } from "./store/useEditorStore";
 import { openFiles } from "./lib/openFiles";
+import { addBookmarkForCurrentPage } from "./lib/bookmarkActions";
+import { useBookmarksUiStore } from "./store/useBookmarksUiStore";
 
 export default function App() {
   // Whole-window drag-and-drop: drop a PDF anytime to open/replace it, or drop
@@ -76,6 +78,15 @@ export default function App() {
           e.preventDefault();
           setPaletteOpen(false);
           setFindOpen((v) => !v);
+          return;
+        }
+      }
+
+      // ⌘B / Ctrl+B bookmarks the current page (inside text fields it stays bold).
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "b") {
+        if (useEditorStore.getState().file) {
+          e.preventDefault();
+          addBookmarkForCurrentPage();
           return;
         }
       }
@@ -180,6 +191,15 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // Bookmark actions (⌘B, the command palette) ask for the sidebar to open.
+  useEffect(
+    () =>
+      useBookmarksUiStore.subscribe((s, prev) => {
+        if (s.openRequest !== prev.openRequest) setPagesOpen(true);
+      }),
+    [],
+  );
 
   // Warn before leaving if the open document has unsaved edits. Edits live only
   // in memory (no backend), so a reload/close would silently discard them.

@@ -2,11 +2,24 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { OcrEngine } from "../lib/vlmOcr/types";
 import type { InsertSource } from "../lib/pageInsert";
+import {
+  insertBookmark,
+  mapBookmarkPages,
+  moveBookmark as moveBookmarkInTree,
+  moveBookmarkTo as moveBookmarkToInTree,
+  removeBookmark,
+  updateBookmark as updateBookmarkInTree,
+  type Bookmark,
+  type BookmarkDropPlace,
+  type BookmarkMove,
+} from "../lib/bookmarks";
 import { useToastStore } from "./useToastStore";
 
 export type { InsertSource };
 
 export type { OcrEngine };
+
+export type { Bookmark };
 
 /** A history snapshot of the three mutable document arrays. */
 /** A history snapshot. `file`/`numPages` are captured so insert/merge (which
@@ -18,6 +31,7 @@ type HistoryEntry = {
   pageOrder: number[];
   file: File | null;
   numPages: number;
+  bookmarks: Bookmark[];
 };
 
 /** Module-level coalesce tracker for updateEdit bursts (typing, arrow nudge). */
@@ -284,6 +298,33 @@ type EditorState = {
   compressDialogOpen: boolean;
   setCompressDialogOpen: (open: boolean) => void;
 
+  /** The document outline (bookmarks), page targets as ORIGINAL page indices.
+   * Undoable document data; expand/collapse state is UI-only (not stored here). */
+  bookmarks: Bookmark[];
+  /** "pending" until the viewer has read the opened file's own outline; "ready"
+   * once it has (bookmarks now reflect the file plus any edits); "failed" if the
+   * outline couldn't be read. Editing is disabled while pending. A crash-restore
+   * that sets `bookmarks` should also set this to "ready" so the file's original
+   * outline doesn't replace the restored one. */
+  outlineStatus: "pending" | "ready" | "failed";
+  /** Apply the outline read from `file` (null = reading failed). Ignored unless
+   * `file` is still the open file and its outline hasn't been applied yet.
+   * Does not create an undo step. */
+  applyLoadedBookmarks: (file: File, bookmarks: Bookmark[] | null) => void;
+  /** Insert a bookmark after `afterId` (as its sibling) or at a top-level index. */
+  addBookmark: (
+    bookmark: Bookmark,
+    opts?: { afterId?: string | null; topLevelIndex?: number },
+  ) => void;
+  /** Rename and/or retarget a bookmark. */
+  updateBookmark: (id: string, patch: Partial<Omit<Bookmark, "id" | "children">>) => void;
+  /** Delete a bookmark and everything nested under it. */
+  deleteBookmark: (id: string) => void;
+  /** Move up/down among siblings, or indent/outdent one level. */
+  moveBookmark: (id: string, move: BookmarkMove) => void;
+  /** Drag-and-drop move relative to another bookmark. */
+  moveBookmarkTo: (id: string, targetId: string, place: BookmarkDropPlace) => void;
+
   /** History stacks — NOT in initialState so setFile does not reset them. */
   _past: HistoryEntry[];
   _future: HistoryEntry[];
@@ -383,6 +424,8 @@ const initialState = {
   metadataModalOpen: false,
   urlDialogOpen: false,
   compressDialogOpen: false,
+  bookmarks: [] as Bookmark[],
+  outlineStatus: "pending" as "pending" | "ready" | "failed",
 };
 
 /** Capture a snapshot of the mutable document arrays plus the file identity and
@@ -394,12 +437,14 @@ function snapshot(state: {
   pageOrder: number[];
   file: File | null;
   numPages: number;
+  bookmarks: Bookmark[];
 }): HistoryEntry {
   return {
     ...structuredClone({
       edits: state.edits,
       pageOps: state.pageOps,
       pageOrder: state.pageOrder,
+      bookmarks: state.bookmarks,
     }),
     file: state.file,
     numPages: state.numPages,
@@ -455,6 +500,7 @@ export const useEditorStore = create<EditorState>()(
             // added pages and restores the page count (a no-op for plain edits).
             file: entry.file,
             numPages: entry.numPages,
+            bookmarks: entry.bookmarks,
             selectedEditId: null,
             _past: state._past.slice(0, -1),
             _future: [current, ...state._future],
@@ -473,6 +519,7 @@ export const useEditorStore = create<EditorState>()(
             pageOrder: entry.pageOrder,
             file: entry.file,
             numPages: entry.numPages,
+            bookmarks: entry.bookmarks,
             selectedEditId: null,
             _past: [...state._past, current],
             _future: state._future.slice(1),
@@ -603,6 +650,72 @@ export const useEditorStore = create<EditorState>()(
 
       setCompressDialogOpen: (compressDialogOpen) => set({ compressDialogOpen }),
 
+      applyLoadedBookmarks: (file, bookmarks) =>
+        set((state) => {
+          // A newer file was opened, or this one's outline is already applied.
+          if (state.file !== file || state.outlineStatus !== "pending") return {};
+          if (bookmarks === null) return { outlineStatus: "failed" };
+          // Bookmarks already present means they were restored from a saved
+          // session; keep them rather than the file's original outline.
+          if (state.bookmarks.length > 0) return { outlineStatus: "ready" };
+          // The outline is part of the document as opened, so it must not be an
+          // undo step. Editing is disabled while pending, so every history entry
+          // recorded so far has no bookmarks; give them the loaded outline too,
+          // otherwise undoing an early edit would wipe it.
+          const withOutline = (entry: HistoryEntry) =>
+            entry.file === file ? { ...entry, bookmarks } : entry;
+          return {
+            bookmarks,
+            outlineStatus: "ready",
+            _past: state._past.map(withOutline),
+            _future: state._future.map(withOutline),
+          };
+        }),
+
+      addBookmark: (bookmark, opts) =>
+        set((state) => {
+          if (state.outlineStatus === "pending") return {};
+          lastCoalesce = null;
+          return {
+            ...pushHistory(state, snapshot(state)),
+            bookmarks: insertBookmark(state.bookmarks, bookmark, opts),
+          };
+        }),
+
+      updateBookmark: (id, patch) =>
+        set((state) => {
+          lastCoalesce = null;
+          return {
+            ...pushHistory(state, snapshot(state)),
+            bookmarks: updateBookmarkInTree(state.bookmarks, id, patch),
+          };
+        }),
+
+      deleteBookmark: (id) =>
+        set((state) => {
+          lastCoalesce = null;
+          return {
+            ...pushHistory(state, snapshot(state)),
+            bookmarks: removeBookmark(state.bookmarks, id),
+          };
+        }),
+
+      moveBookmark: (id, move) =>
+        set((state) => {
+          const bookmarks = moveBookmarkInTree(state.bookmarks, id, move);
+          if (bookmarks === state.bookmarks) return {}; // not possible: no undo step
+          lastCoalesce = null;
+          return { ...pushHistory(state, snapshot(state)), bookmarks };
+        }),
+
+      moveBookmarkTo: (id, targetId, place) =>
+        set((state) => {
+          const bookmarks = moveBookmarkToInTree(state.bookmarks, id, targetId, place);
+          if (bookmarks === state.bookmarks) return {};
+          lastCoalesce = null;
+          return { ...pushHistory(state, snapshot(state)), bookmarks };
+        }),
+
       setMode: (mode) => set({ mode }),
 
       // Manual zoom controls take over from any auto-fit mode, so they clear the
@@ -635,7 +748,7 @@ export const useEditorStore = create<EditorState>()(
       setPendingFocus: (pendingFocus) => set({ pendingFocus }),
 
       insertPages: async (sources, position) => {
-        const { file, edits, pageOps, pageOrder } = useEditorStore.getState();
+        const { file, edits, pageOps, pageOrder, bookmarks } = useEditorStore.getState();
         if (!file) return;
 
         // Translate the VISIBLE position (index into pageOrder) into the base-document
@@ -676,6 +789,9 @@ export const useEditorStore = create<EditorState>()(
             ...op,
             pageIndex: remapIndexAfterInsert(op.pageIndex, at, insertedCount),
           }));
+          const newBookmarks = mapBookmarkPages(bookmarks, (idx) =>
+            remapIndexAfterInsert(idx, at, insertedCount),
+          );
           // Remap each existing entry, then splice the new indices at position.
           const remappedOrder = pageOrder.map((idx) =>
             remapIndexAfterInsert(idx, at, insertedCount),
@@ -696,6 +812,7 @@ export const useEditorStore = create<EditorState>()(
               edits: newEdits,
               pageOps: newPageOps,
               pageOrder: newPageOrder,
+              bookmarks: newBookmarks,
               numPages: state.numPages + insertedCount,
               selectedEditId: null,
               selectedPageIndex: at,

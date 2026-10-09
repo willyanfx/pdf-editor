@@ -28,6 +28,8 @@ import {
   MoveHorizontal,
   Maximize,
   FilePlus,
+  Bookmark,
+  BookmarkPlus,
 } from "lucide-react";
 import { useEditorStore } from "../store/useEditorStore";
 import { useEditorActions } from "../hooks/useEditorActions";
@@ -248,6 +250,23 @@ export function CommandPalette({ onClose }: Props) {
         icon: <Trash2 size={16} />,
         disabled: noFile,
         run: () => runAndClose(() => actions.deletePage()),
+      },
+      {
+        id: "bookmark-add",
+        group: "Pages",
+        label: "Bookmark This Page",
+        icon: <BookmarkPlus size={16} />,
+        shortcut: "⌘B",
+        disabled: noFile,
+        run: () => runAndClose(() => void actions.addBookmark()),
+      },
+      {
+        id: "bookmark-show",
+        group: "Pages",
+        label: "Show Bookmarks",
+        icon: <Bookmark size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(actions.showBookmarks),
       },
       {
         id: "fit-width",
