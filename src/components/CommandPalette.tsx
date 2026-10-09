@@ -24,6 +24,7 @@ import {
   ImageDown,
   Images,
   ShieldCheck,
+  Lock,
   Table2,
   Info,
   RotateCw,
@@ -540,6 +541,14 @@ export function CommandPalette({ onClose }: Props) {
         icon: <ShieldCheck size={16} />,
         disabled: noFile,
         run: () => runAndClose(actions.openRemoveHiddenInfo),
+      },
+      {
+        id: "protect",
+        group: "Export",
+        label: "Protect PDF (password & permissions)…",
+        icon: <Lock size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(actions.openProtectDialog),
       },
     ],
     // actions is recreated each render but its handlers read the store at call
