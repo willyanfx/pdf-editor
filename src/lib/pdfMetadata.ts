@@ -1,4 +1,5 @@
 import { PDFDocument } from "pdf-lib";
+import { isEncryptedPdfError } from "./pdfSecurity";
 
 /** Document properties read from a PDF, for the read-only metadata panel. */
 export type PdfMetadata = {
@@ -17,6 +18,8 @@ export type PdfMetadata = {
   fieldCount: number;
   /** File size in bytes of the source file. */
   fileSize: number;
+  /** Whether the file is password-encrypted (open and/or permissions password). */
+  encrypted: boolean;
 };
 
 /** Trim a metadata string to null when empty/whitespace. */
@@ -67,7 +70,23 @@ export async function readPdfMetadata(file: File): Promise<PdfMetadata> {
     pageSizes,
     fieldCount,
     fileSize: file.size,
+    encrypted: doc.isEncrypted,
   };
+}
+
+/**
+ * Whether `file` is password-encrypted. Asks pdf-lib to load it normally: that
+ * rejects with its "is encrypted" error exactly for encrypted input — including
+ * AES-256 files whose encrypted object streams `ignoreEncryption` can't parse,
+ * which makes readPdfMetadata's `encrypted` flag unreliable for them.
+ */
+export async function isPdfEncrypted(file: File): Promise<boolean> {
+  try {
+    await PDFDocument.load(await file.arrayBuffer(), { updateMetadata: false });
+    return false;
+  } catch (err) {
+    return isEncryptedPdfError(err);
+  }
 }
 
 /** Human-readable file size (e.g. "1.4 MB"). */

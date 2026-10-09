@@ -3254,3 +3254,51 @@ p.page-sel-error {
 .redact-confirm-body p:last-child {
   margin-bottom: 0;
 }
+
+/* Protect PDF dialog */
+.protect-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.protect-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+.protect-field > span {
+  font-weight: 500;
+}
+.protect-inline {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+.protect-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.protect-perms {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+.protect-perms legend {
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--muted, var(--fg));
+}
+.protect-note {
+  margin: 0;
+}
+.sig-tabs button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

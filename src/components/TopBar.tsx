@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Minimize2,
+  Lock,
   Undo2,
   Redo2,
 } from "lucide-react";
@@ -23,7 +24,7 @@ export function TopBar() {
   // Routes through the virtualizer in PdfViewer: a target page may not be mounted,
   // so a DOM scrollIntoView can't reach it.
   const scrollToPage = useEditorStore((s) => s.scrollToPage);
-  const { pickPdf, downloadPdf, openCompressDialog } = useEditorActions();
+  const { pickPdf, downloadPdf, openCompressDialog, openProtectDialog } = useEditorActions();
   const canUndo = useEditorStore((s) => s._past.length > 0);
   const canRedo = useEditorStore((s) => s._future.length > 0);
   const undo = useEditorStore((s) => s.undo);
@@ -170,6 +171,17 @@ export function TopBar() {
       >
         <Minimize2 size={15} />
         <span>Compress</span>
+      </button>
+
+      <button
+        type="button"
+        className="topbar-btn"
+        title="Protect with a password and permissions"
+        disabled={!file}
+        onClick={openProtectDialog}
+      >
+        <Lock size={15} />
+        <span>Protect</span>
       </button>
 
       <button
