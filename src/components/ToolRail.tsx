@@ -19,6 +19,8 @@ import { useEditorStore, type EditorMode } from "../store/useEditorStore";
 import { useEditorActions } from "../hooks/useEditorActions";
 import { RailButton } from "./RailButton";
 import { OcrMenu } from "./OcrMenu";
+import { StampsMenu } from "./StampsMenu";
+import { RedactMenu } from "./RedactMenu";
 
 type Props = {
   onOpenPalette: () => void;
@@ -83,6 +85,8 @@ export function ToolRail({ onOpenPalette, onTogglePages, pagesActive }: Props) {
       {modeBtn("underline", <Underline size={18} />, "Underline (U)")}
       {modeBtn("comment", <MessageSquare size={18} />, "Comment (C)")}
       {modeBtn("ink", <PenTool size={18} />, "Draw (D)")}
+      {/* Redaction: marking tool, search dialog, preview toggle in a popover. */}
+      <RedactMenu />
 
       <span className="rail-divider" />
 
@@ -100,6 +104,7 @@ export function ToolRail({ onOpenPalette, onTogglePages, pagesActive }: Props) {
         disabled={noFile}
         onClick={addPages}
       />
+      <StampsMenu />
       <RailButton icon={<FileInput size={18} />} tip="Convert file to PDF" onClick={convertFile} />
 
       <span className="rail-spacer" />

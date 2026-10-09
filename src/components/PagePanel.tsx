@@ -6,6 +6,9 @@ import { useToastStore } from "../store/useToastStore";
 import { isConvertible } from "../lib/convertToPdf";
 import type { InsertSource } from "../lib/pageInsert";
 import { InsertMenu } from "./InsertMenu";
+import { PageSelectionBar } from "./PageSelectionBar";
+import { usePageSelectionStore } from "../store/usePageSelectionStore";
+import { clickSelection, moveGroup } from "../lib/pageRemap";
 
 type Props = {
   /** The react-pdf <Document> context is provided by the parent, so Thumbnail
@@ -21,6 +24,11 @@ type Props = {
  * Gap controls between (and at the ends of) thumbnails let the user insert pages
  * from PDFs, images, Word/Excel, or generate a blank — by clicking the "+ Add here"
  * pill or by dragging files from the desktop onto a gap.
+ *
+ * Multi-select: click selects one page, ⌘/Ctrl-click (or Space) toggles, Shift-
+ * click (or Shift+Space) selects a range; Esc clears and ⌘/Ctrl+A selects all
+ * while the panel has focus. Dragging a selected page moves the whole selection.
+ * PageSelectionBar shows the actions for the selection.
  */
 export function PagePanel(_props: Props) {
   const pageOrder = useEditorStore((s) => s.pageOrder);
@@ -28,6 +36,8 @@ export function PagePanel(_props: Props) {
   const deletePage = useEditorStore((s) => s.deletePage);
   const scrollToPage = useEditorStore((s) => s.scrollToPage);
   const selectedPageIndex = useEditorStore((s) => s.selectedPageIndex);
+  const selected = usePageSelectionStore((s) => s.selected);
+  const selectedSet = new Set(selected);
 
   const [dragPos, setDragPos] = useState<number | null>(null);
   // The gap the drag is currently hovering: an insertion index in [0, length]
@@ -69,9 +79,37 @@ export function PagePanel(_props: Props) {
     setDropGap(null);
   }
 
+  /** Dragging a page that's part of a multi-page selection moves the group. */
+  const groupDrag = dragPos !== null && selectedSet.has(pageOrder[dragPos]) && selected.length > 1;
+
   function onDrop() {
-    if (dragPos !== null && dropGap !== null) moveToGap(dragPos, dropGap);
+    if (dragPos !== null && dropGap !== null) {
+      if (groupDrag) {
+        const next = moveGroup(pageOrder, selectedSet, dropGap);
+        if (next.some((idx, i) => idx !== pageOrder[i])) setPageOrder(next);
+      } else {
+        moveToGap(dragPos, dropGap);
+      }
+    }
     endDrag();
+  }
+
+  function select(origIndex: number, mods: { toggle: boolean; range: boolean }) {
+    const { anchor, setSelection } = usePageSelectionStore.getState();
+    const next = clickSelection(selected, anchor, origIndex, pageOrder, mods);
+    setSelection(next.selected, next.anchor);
+  }
+
+  /** Panel-wide keys: Esc clears the selection, ⌘/Ctrl+A selects every page. */
+  function onPanelKeyDown(e: React.KeyboardEvent) {
+    if ((e.target as HTMLElement).tagName === "INPUT" || activeInsertGap !== null) return;
+    if (e.key === "Escape" && selected.length) {
+      e.preventDefault();
+      usePageSelectionStore.getState().clearSelection();
+    } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
+      e.preventDefault();
+      usePageSelectionStore.getState().setSelection([...pageOrder], pageOrder[0] ?? null);
+    }
   }
 
   function onRowKeyDown(e: React.KeyboardEvent, origIndex: number, pos: number) {
@@ -81,9 +119,15 @@ export function PagePanel(_props: Props) {
       move(pos, pos + (e.key === "ArrowUp" ? -1 : 1));
       return;
     }
-    if (e.key === "Enter" || e.key === " ") {
+    // Keys on the nested delete button belong to that button.
+    if (e.target !== e.currentTarget) return;
+    if (e.key === "Enter") {
       e.preventDefault();
+      select(origIndex, { toggle: false, range: false });
       scrollToPage?.(origIndex);
+    } else if (e.key === " ") {
+      e.preventDefault();
+      select(origIndex, { toggle: !e.shiftKey, range: e.shiftKey });
     }
   }
 
@@ -170,8 +214,9 @@ export function PagePanel(_props: Props) {
   }
 
   return (
-    <aside className="page-panel" aria-label="Pages">
+    <aside className="page-panel" aria-label="Pages" onKeyDown={onPanelKeyDown}>
       <div className="page-panel-title">Pages</div>
+      <PageSelectionBar />
       <div className="page-panel-list">
         {/* Gap before the very first page. */}
         <InsertGap gapIndex={0} />
@@ -182,12 +227,13 @@ export function PagePanel(_props: Props) {
             <div
               role="button"
               tabIndex={0}
-              aria-label={`Go to page ${pos + 1}. Alt plus arrow keys to reorder.`}
+              aria-label={`Go to page ${pos + 1}${selectedSet.has(origIndex) ? ", selected" : ""}. Space to select, Alt plus arrow keys to reorder.`}
               aria-current={origIndex === selectedPageIndex ? "true" : undefined}
               className={
                 "page-thumb" +
                 (origIndex === selectedPageIndex ? " current" : "") +
-                (dragPos === pos ? " dragging" : "") +
+                (selectedSet.has(origIndex) ? " selected" : "") +
+                (dragPos === pos || (groupDrag && selectedSet.has(origIndex)) ? " dragging" : "") +
                 (dropGap === pos ? " drop-before" : "") +
                 (dropGap === pageOrder.length && pos === pageOrder.length - 1 ? " drop-after" : "")
               }
@@ -204,7 +250,11 @@ export function PagePanel(_props: Props) {
                 if (isFileDrag(e)) return;
                 onDrop();
               }}
-              onClick={() => scrollToPage?.(origIndex)}
+              onClick={(e) => {
+                const toggle = e.metaKey || e.ctrlKey;
+                select(origIndex, { toggle, range: e.shiftKey });
+                if (!toggle && !e.shiftKey) scrollToPage?.(origIndex);
+              }}
               onKeyDown={(e) => onRowKeyDown(e, origIndex, pos)}
             >
               <GripVertical size={13} className="page-thumb-grip" aria-hidden="true" />

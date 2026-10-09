@@ -2,13 +2,52 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { OcrEngine } from "../lib/vlmOcr/types";
 import type { InsertSource } from "../lib/pageInsert";
+import {
+  insertBookmark,
+  moveBookmark as moveBookmarkInTree,
+  moveBookmarkTo as moveBookmarkToInTree,
+  removeBookmark,
+  updateBookmark as updateBookmarkInTree,
+  type Bookmark,
+  type BookmarkDropPlace,
+  type BookmarkMove,
+} from "../lib/bookmarks";
+import type { PDFDocument } from "pdf-lib";
+import {
+  createdPages,
+  planDuplicate,
+  planInsert,
+  planReplace,
+  remapPageState,
+  removePagesFromState,
+  type PagePlan,
+} from "../lib/pageRemap";
+import {
+  EMPTY_PAGE_STAMPS,
+  type HeaderFooterSettings,
+  type PageStamps,
+  type WatermarkSettings,
+} from "../lib/pageStampsModel";
+import {
+  formValueEquals,
+  type FormFieldSummary,
+  type FormValue,
+  type FormValues,
+} from "../lib/formFields";
 import { useToastStore } from "./useToastStore";
 
 export type { InsertSource };
 
 export type { OcrEngine };
 
-/** A history snapshot of the three mutable document arrays. */
+export type { Bookmark };
+export type { FormFieldSummary, FormValue, FormValues };
+
+/** The undoable document state, as captured by snapshot(), plus whether the
+ * file's own outline had been read when it was taken. Exposed so autosave can
+ * persist/restore it without knowing which fields it contains. */
+export type DocumentSnapshot = HistoryEntry & { outlineStatus?: "pending" | "ready" | "failed" };
+
 /** A history snapshot. `file`/`numPages` are captured so insert/merge (which
  * swap the underlying File and grow the page count) fully revert on undo; for
  * ordinary edits they're unchanged, so restoring them is a no-op. */
@@ -18,6 +57,9 @@ type HistoryEntry = {
   pageOrder: number[];
   file: File | null;
   numPages: number;
+  bookmarks: Bookmark[];
+  pageStamps: PageStamps;
+  formValues: FormValues;
 };
 
 /** Module-level coalesce tracker for updateEdit bursts (typing, arrow nudge). */
@@ -141,6 +183,20 @@ export type InkEdit = {
   strokeWidth: number;
 };
 
+/** A redaction mark. Unlike a cover rectangle it is not drawn over the page:
+ * on download the marked area is permanently removed (page rasterized, content
+ * under the mark blacked out, text/annotations/form fields dropped). See
+ * lib/redact.ts. Rendered as a red outline (Acrobat convention) until then. */
+export type RedactEdit = {
+  id: string;
+  type: "redact";
+  pageIndex: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 export type PdfEdit =
   | TextEdit
   | ImageEdit
@@ -155,7 +211,8 @@ export type PdfEdit =
     }
   | MarkupEdit
   | CommentEdit
-  | InkEdit;
+  | InkEdit
+  | RedactEdit;
 
 /** Per-page geometry mutation, kept separate from overlay edits so page
  * transforms survive independently. Insets/dimensions are in screen px at
@@ -181,7 +238,8 @@ export type EditorMode =
   | "underline"
   | "comment"
   | "ink"
-  | "signZones";
+  | "signZones"
+  | "redact";
 
 /** Where a signature image should be dropped, set by clicking an auto-detected
  * signature zone before opening the SignatureModal. Null = default placement. */
@@ -284,6 +342,84 @@ type EditorState = {
   compressDialogOpen: boolean;
   setCompressDialogOpen: (open: boolean) => void;
 
+  /** Bumped by every document mutation (history push, undo/redo, snapshot
+   * restore). Reset to 0 by setFile. Drives autosave and the dirty flag. */
+  revision: number;
+  /** The `revision` at open or at the last successful download. The document is
+   * dirty when revision !== savedRevision (see isDocumentDirty). */
+  savedRevision: number;
+  /** Record that the document is saved as of `revision` (default: right now). */
+  markSaved: (revision?: number) => void;
+  /** The document outline (bookmarks), page targets as ORIGINAL page indices.
+   * Undoable document data; expand/collapse state is UI-only (not stored here). */
+  bookmarks: Bookmark[];
+  /** "pending" until the viewer has read the opened file's own outline; "ready"
+   * once it has (bookmarks now reflect the file plus any edits); "failed" if the
+   * outline couldn't be read. Editing is disabled while pending. A crash-restore
+   * that sets `bookmarks` should also set this to "ready" so the file's original
+   * outline doesn't replace the restored one. */
+  outlineStatus: "pending" | "ready" | "failed";
+  /** The outline exactly as read from the file (null until read). Export keeps
+   * the file's own outline while `bookmarks` still equals it. Not undoable. */
+  loadedBookmarks: Bookmark[] | null;
+  /** Apply the outline read from `file` (null = reading failed). Ignored unless
+   * `file` is still the open file and its outline hasn't been applied yet.
+   * Does not create an undo step. */
+  applyLoadedBookmarks: (file: File, bookmarks: Bookmark[] | null) => void;
+  /** Insert a bookmark after `afterId` (as its sibling) or at a top-level index. */
+  addBookmark: (
+    bookmark: Bookmark,
+    opts?: { afterId?: string | null; topLevelIndex?: number },
+  ) => void;
+  /** Rename and/or retarget a bookmark. */
+  updateBookmark: (id: string, patch: Partial<Omit<Bookmark, "id" | "children">>) => void;
+  /** Delete a bookmark and everything nested under it. */
+  deleteBookmark: (id: string) => void;
+  /** Move up/down among siblings, or indent/outdent one level. */
+  moveBookmark: (id: string, move: BookmarkMove) => void;
+  /** Drag-and-drop move relative to another bookmark. */
+  moveBookmarkTo: (id: string, targetId: string, place: BookmarkDropPlace) => void;
+  /** Document-level header/footer and watermark (each null when not applied). */
+  pageStamps: PageStamps;
+  /** Apply (or, with null, remove) the header/footer. One undo step. */
+  setHeaderFooter: (settings: HeaderFooterSettings | null) => void;
+  /** Apply (or, with null, remove) the watermark. One undo step. */
+  setWatermark: (settings: WatermarkSettings | null) => void;
+  /** AcroForm values the user entered, keyed by fully-qualified field name.
+   * Only fields the user touched (or Reset form set) appear; anything absent
+   * shows the document's own value. Undoable; baked in on export. */
+  formValues: FormValues;
+  /** The open document's fillable fields (derived by the viewer from pdf.js),
+   * or null when it has none / hasn't been read yet. Not undoable. */
+  formFields: FormFieldSummary[] | null;
+  /** Set one field's value. Text typing passes coalesce=true so a burst of
+   * keystrokes on the same field is one undo step (like updateEdit). */
+  setFormValue: (name: string, value: FormValue, coalesce?: boolean) => void;
+  /** Replace all form values in one undoable step (Reset form). */
+  replaceFormValues: (values: FormValues) => void;
+  setFormFields: (fields: FormFieldSummary[] | null) => void;
+  /** Redaction UI state. The marks themselves are ordinary `redact` edits (so
+   * they're undoable and autosaved); these flags are transient per-document UI. */
+  /** Show redaction marks as solid black (what the download will look like)
+   * instead of the red outlines used while marking. */
+  redactPreviewSolid: boolean;
+  /** Whether the "Search & redact" dialog is open. */
+  redactSearchOpen: boolean;
+  /** True once the user has acknowledged, for this document, that downloading
+   * permanently removes the content under redaction marks. */
+  redactConfirmed: boolean;
+  /** A pending download waiting on that acknowledgement: `resolve(true)` lets the
+   * download proceed, `resolve(false)` cancels it. Null when nothing is pending. */
+  redactConfirm: { count: number; resolve: (ok: boolean) => void } | null;
+  setRedactPreviewSolid: (solid: boolean) => void;
+  setRedactSearchOpen: (open: boolean) => void;
+  setRedactConfirmed: (confirmed: boolean) => void;
+  setRedactConfirm: (pending: { count: number; resolve: (ok: boolean) => void } | null) => void;
+  /** Add several edits as ONE undo step (e.g. all marks from a search). */
+  addEdits: (edits: PdfEdit[]) => void;
+  /** Delete several edits as ONE undo step. */
+  deleteEdits: (ids: string[]) => void;
+
   /** History stacks — NOT in initialState so setFile does not reset them. */
   _past: HistoryEntry[];
   _future: HistoryEntry[];
@@ -343,6 +479,23 @@ type EditorState = {
    * via the normal history stack. No-ops if no file is open.
    */
   insertPages: (sources: InsertSource[], position: number) => Promise<void>;
+  /** Rotate several pages by `delta` degrees as one undo step. */
+  rotatePages: (pageIndices: number[], delta: number) => void;
+  /** Remove several pages (and their edits/transforms) as one undo step. Refuses
+   * to remove every visible page. */
+  deletePages: (pageIndices: number[]) => void;
+  /** Insert a real copy of each page right after it (rewrites the File; edits and
+   * transforms are copied too). One undo step. Resolves to the new pages' indices,
+   * or null if nothing changed. */
+  duplicatePages: (pageIndices: number[]) => Promise<number[] | null>;
+  /** Replace pages, in place, with `sourcePages` (0-based) of another PDF. Edits
+   * and transforms on the replaced pages are dropped. One undo step. Resolves to
+   * the new pages' indices, or null if nothing changed. */
+  replacePages: (
+    pageIndices: number[],
+    source: File,
+    sourcePages: number[],
+  ) => Promise<number[] | null>;
 };
 
 /**
@@ -383,6 +536,18 @@ const initialState = {
   metadataModalOpen: false,
   urlDialogOpen: false,
   compressDialogOpen: false,
+  revision: 0,
+  savedRevision: 0,
+  bookmarks: [] as Bookmark[],
+  outlineStatus: "pending" as "pending" | "ready" | "failed",
+  loadedBookmarks: null as Bookmark[] | null,
+  pageStamps: EMPTY_PAGE_STAMPS as PageStamps,
+  formValues: {} as FormValues,
+  formFields: null as FormFieldSummary[] | null,
+  redactPreviewSolid: false,
+  redactSearchOpen: false,
+  redactConfirmed: false,
+  redactConfirm: null as { count: number; resolve: (ok: boolean) => void } | null,
 };
 
 /** Capture a snapshot of the mutable document arrays plus the file identity and
@@ -394,25 +559,84 @@ function snapshot(state: {
   pageOrder: number[];
   file: File | null;
   numPages: number;
+  bookmarks: Bookmark[];
+  pageStamps: PageStamps;
+  formValues: FormValues;
 }): HistoryEntry {
   return {
     ...structuredClone({
       edits: state.edits,
       pageOps: state.pageOps,
       pageOrder: state.pageOrder,
+      bookmarks: state.bookmarks,
+      formValues: state.formValues,
     }),
+    // Shared, not cloned: pageStamps is only ever replaced (the dialogs clone
+    // their drafts), and a watermark image data URL can be megabytes.
+    pageStamps: state.pageStamps,
     file: state.file,
     numPages: state.numPages,
   };
 }
 
-/** Push an entry onto _past, capping at 100 entries, and clear _future. */
+/**
+ * Shared engine for page-structure operations that rewrite the File (insert,
+ * duplicate, replace): builds the new bytes from a PagePlan, then commits the
+ * File together with all page-indexed state — remapped by remapPageState, the
+ * one place that knows every page-indexed field — as ONE history step.
+ * Resolves to the committed plan, or null when nothing changed (no file, an
+ * error — already toasted — or the document changed while bytes were built).
+ */
+async function rewritePages(
+  makePlan: (baseCount: number, pageOrder: number[], extraCount: number) => PagePlan,
+  loadExtra?: () => Promise<PDFDocument>,
+): Promise<PagePlan | null> {
+  const start = useEditorStore.getState();
+  const { file } = start;
+  if (!file) return null;
+  try {
+    const { loadPdf, buildPlannedPdf } = await import("../lib/pageOrganize");
+    const [baseDoc, extra] = await Promise.all([loadPdf(file), loadExtra?.()]);
+    const order = start.pageOrder.length ? start.pageOrder : baseDoc.getPageIndices();
+    const plan = makePlan(baseDoc.getPageCount(), order, extra?.getPageCount() ?? 0);
+    const bytes = await buildPlannedPdf(baseDoc, plan.layout, extra);
+    // .slice() strips the generic ArrayBufferLike parameter File() rejects.
+    const newFile = new File([bytes.slice()], file.name, { type: "application/pdf" });
+    let committed = false;
+    useEditorStore.setState((state) => {
+      // The plan's indices describe the document as it was when we started.
+      if (state.file !== file || state.pageOrder !== start.pageOrder) return {};
+      committed = true;
+      lastCoalesce = null;
+      return {
+        ...pushHistory(state, snapshot(state)),
+        ...remapPageState(state, plan),
+        file: newFile,
+        numPages: plan.layout.length,
+        selectedEditId: null,
+      };
+    });
+    if (!committed) {
+      useToastStore
+        .getState()
+        .addToast("The document changed while pages were being updated. Try again.", "error");
+    }
+    return committed ? plan : null;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Could not update the pages.";
+    useToastStore.getState().addToast(msg, "error");
+    return null;
+  }
+}
+
+/** Push an entry onto _past, capping at 100 entries, and clear _future. Also
+ * bumps `revision` so every history-recorded change marks the document dirty. */
 function pushHistory(
-  state: { _past: HistoryEntry[]; _future: HistoryEntry[] },
+  state: { _past: HistoryEntry[]; _future: HistoryEntry[]; revision: number },
   entry: HistoryEntry,
-): { _past: HistoryEntry[]; _future: HistoryEntry[] } {
+): { _past: HistoryEntry[]; _future: HistoryEntry[]; revision: number } {
   const past = state._past.length >= 100 ? state._past.slice(1) : state._past;
-  return { _past: [...past, entry], _future: [] };
+  return { _past: [...past, entry], _future: [], revision: state.revision + 1 };
 }
 
 export const useEditorStore = create<EditorState>()(
@@ -455,7 +679,11 @@ export const useEditorStore = create<EditorState>()(
             // added pages and restores the page count (a no-op for plain edits).
             file: entry.file,
             numPages: entry.numPages,
+            bookmarks: entry.bookmarks,
+            pageStamps: entry.pageStamps,
+            formValues: entry.formValues,
             selectedEditId: null,
+            revision: state.revision + 1,
             _past: state._past.slice(0, -1),
             _future: [current, ...state._future],
           };
@@ -473,7 +701,11 @@ export const useEditorStore = create<EditorState>()(
             pageOrder: entry.pageOrder,
             file: entry.file,
             numPages: entry.numPages,
+            bookmarks: entry.bookmarks,
+            pageStamps: entry.pageStamps,
+            formValues: entry.formValues,
             selectedEditId: null,
+            revision: state.revision + 1,
             _past: [...state._past, current],
             _future: state._future.slice(1),
           };
@@ -506,7 +738,9 @@ export const useEditorStore = create<EditorState>()(
             edit.id === id ? ({ ...edit, ...patch } as PdfEdit) : edit,
           );
           // Coalescing keeps the existing burst's snapshot; otherwise capture one.
-          return coalesce ? { edits } : { ...pushHistory(state, snapshot(state)), edits };
+          return coalesce
+            ? { edits, revision: state.revision + 1 }
+            : { ...pushHistory(state, snapshot(state)), edits };
         });
       },
 
@@ -521,6 +755,8 @@ export const useEditorStore = create<EditorState>()(
           };
         }),
 
+      markSaved: (revision) => set((state) => ({ savedRevision: revision ?? state.revision })),
+
       selectEdit: (id) => set({ selectedEditId: id }),
 
       setSelectedPageIndex: (pageIndex) => set({ selectedPageIndex: pageIndex }),
@@ -529,9 +765,11 @@ export const useEditorStore = create<EditorState>()(
         set((state) => ({
           numPages,
           // Seed the page order once the count is known (and only if not already set
-          // for this document, so reorder/delete survive incidental re-reports).
+          // for this document, so reorder/delete survive incidental re-reports —
+          // including the reload after a page rewrite, where deleted pages leave
+          // pageOrder shorter than the page count).
           pageOrder:
-            state.pageOrder.length === numPages
+            state.pageOrder.length > 0 && state.pageOrder.every((i) => i < numPages)
               ? state.pageOrder
               : Array.from({ length: numPages }, (_, i) => i),
         })),
@@ -563,9 +801,7 @@ export const useEditorStore = create<EditorState>()(
           const hist = pushHistory(state, snapshot(state));
           return {
             ...hist,
-            pageOrder: state.pageOrder.filter((i) => i !== pageIndex),
-            edits: state.edits.filter((e) => e.pageIndex !== pageIndex),
-            pageOps: state.pageOps.filter((op) => op.pageIndex !== pageIndex),
+            ...removePagesFromState(state, [pageIndex]),
             selectedEditId: null,
           };
         }),
@@ -603,6 +839,147 @@ export const useEditorStore = create<EditorState>()(
 
       setCompressDialogOpen: (compressDialogOpen) => set({ compressDialogOpen }),
 
+      setHeaderFooter: (headerFooter) =>
+        set((state) => {
+          lastCoalesce = null;
+          return {
+            ...pushHistory(state, snapshot(state)),
+            pageStamps: { ...state.pageStamps, headerFooter },
+          };
+        }),
+
+      setWatermark: (watermark) =>
+        set((state) => {
+          lastCoalesce = null;
+          return {
+            ...pushHistory(state, snapshot(state)),
+            pageStamps: { ...state.pageStamps, watermark },
+          };
+        }),
+
+      applyLoadedBookmarks: (file, bookmarks) =>
+        set((state) => {
+          // A newer file was opened, or this one's outline is already applied.
+          if (state.file !== file || state.outlineStatus !== "pending") return {};
+          if (bookmarks === null) return { outlineStatus: "failed" };
+          // Bookmarks already present means they were restored from a saved
+          // session; keep them rather than the file's original outline.
+          if (state.bookmarks.length > 0) return { outlineStatus: "ready" };
+          // The outline is part of the document as opened, so it must not be an
+          // undo step. Editing is disabled while pending, so every history entry
+          // recorded so far has no bookmarks; give them the loaded outline too,
+          // otherwise undoing an early edit would wipe it.
+          const withOutline = (entry: HistoryEntry) =>
+            entry.file === file ? { ...entry, bookmarks } : entry;
+          return {
+            bookmarks,
+            loadedBookmarks: bookmarks,
+            outlineStatus: "ready",
+            _past: state._past.map(withOutline),
+            _future: state._future.map(withOutline),
+          };
+        }),
+
+      addBookmark: (bookmark, opts) =>
+        set((state) => {
+          if (state.outlineStatus === "pending") return {};
+          lastCoalesce = null;
+          return {
+            ...pushHistory(state, snapshot(state)),
+            bookmarks: insertBookmark(state.bookmarks, bookmark, opts),
+          };
+        }),
+
+      updateBookmark: (id, patch) =>
+        set((state) => {
+          lastCoalesce = null;
+          return {
+            ...pushHistory(state, snapshot(state)),
+            bookmarks: updateBookmarkInTree(state.bookmarks, id, patch),
+          };
+        }),
+
+      deleteBookmark: (id) =>
+        set((state) => {
+          lastCoalesce = null;
+          return {
+            ...pushHistory(state, snapshot(state)),
+            bookmarks: removeBookmark(state.bookmarks, id),
+          };
+        }),
+
+      moveBookmark: (id, move) =>
+        set((state) => {
+          const bookmarks = moveBookmarkInTree(state.bookmarks, id, move);
+          if (bookmarks === state.bookmarks) return {}; // not possible: no undo step
+          lastCoalesce = null;
+          return { ...pushHistory(state, snapshot(state)), bookmarks };
+        }),
+
+      moveBookmarkTo: (id, targetId, place) =>
+        set((state) => {
+          const bookmarks = moveBookmarkToInTree(state.bookmarks, id, targetId, place);
+          if (bookmarks === state.bookmarks) return {};
+          lastCoalesce = null;
+          return { ...pushHistory(state, snapshot(state)), bookmarks };
+        }),
+      setFormValue: (name, value, coalesceBurst = false) => {
+        if (formValueEquals(useEditorStore.getState().formValues[name], value)) return;
+        // Same coalescing scheme as updateEdit, keyed by a "form:" id so a field
+        // name can never collide with an edit id.
+        const key = `form:${name}`;
+        const now = Date.now();
+        const coalesce =
+          coalesceBurst &&
+          lastCoalesce !== null &&
+          lastCoalesce.id === key &&
+          now - lastCoalesce.timestamp < COALESCE_MS;
+        lastCoalesce = coalesceBurst ? { id: key, timestamp: now } : null;
+        set((state) => {
+          const formValues = { ...state.formValues, [name]: value };
+          // A coalesced keystroke adds no history entry but is still a change, so
+          // it bumps `revision` (autosave + dirty flag), as updateEdit does.
+          return coalesce
+            ? { formValues, revision: state.revision + 1 }
+            : { ...pushHistory(state, snapshot(state)), formValues };
+        });
+      },
+
+      replaceFormValues: (values) =>
+        set((state) => {
+          lastCoalesce = null;
+          return { ...pushHistory(state, snapshot(state)), formValues: values };
+        }),
+
+      setFormFields: (formFields) => set({ formFields }),
+
+      setRedactPreviewSolid: (redactPreviewSolid) => set({ redactPreviewSolid }),
+      setRedactSearchOpen: (redactSearchOpen) => set({ redactSearchOpen }),
+      setRedactConfirmed: (redactConfirmed) => set({ redactConfirmed }),
+      setRedactConfirm: (redactConfirm) => set({ redactConfirm }),
+
+      addEdits: (newEdits) =>
+        set((state) => {
+          if (newEdits.length === 0) return {};
+          lastCoalesce = null;
+          const hist = pushHistory(state, snapshot(state));
+          return { ...hist, edits: [...state.edits, ...newEdits], selectedEditId: null };
+        }),
+
+      deleteEdits: (ids) =>
+        set((state) => {
+          if (ids.length === 0) return {};
+          lastCoalesce = null;
+          const drop = new Set(ids);
+          const hist = pushHistory(state, snapshot(state));
+          return {
+            ...hist,
+            edits: state.edits.filter((edit) => !drop.has(edit.id)),
+            selectedEditId:
+              state.selectedEditId && drop.has(state.selectedEditId) ? null : state.selectedEditId,
+          };
+        }),
+
       setMode: (mode) => set({ mode }),
 
       // Manual zoom controls take over from any auto-fit mode, so they clear the
@@ -635,77 +1012,55 @@ export const useEditorStore = create<EditorState>()(
       setPendingFocus: (pendingFocus) => set({ pendingFocus }),
 
       insertPages: async (sources, position) => {
-        const { file, edits, pageOps, pageOrder } = useEditorStore.getState();
-        if (!file) return;
+        const plan = await rewritePages(
+          (baseCount, order, extraCount) => planInsert(baseCount, order, position, extraCount),
+          async () => (await import("../lib/pageInsert")).sourcesToDoc(sources),
+        );
+        const first = plan?.layout.findIndex((e) => e.kind === "new") ?? -1;
+        if (first >= 0) set({ selectedPageIndex: first });
+      },
 
-        // Translate the VISIBLE position (index into pageOrder) into the base-document
-        // insertion point `at` for buildInsertedPdf.
-        //
-        // buildInsertedPdf splices by output/base index: pages [0, at) stay before the
-        // new pages; pages [at, baseCount) shift right by insertedCount. So `at` must be
-        // the original index of the page that currently sits at pageOrder[position] —
-        // that is the first base page that should appear AFTER the newly inserted pages.
-        // If position equals pageOrder.length (insertion after the last visible page), we
-        // use baseCount (which buildInsertedPdf clamps to the actual end anyway).
-        //
-        // We read baseCount from pageOrder.length here as a proxy: pageOrder always
-        // contains every valid original index (deleted pages are filtered out of pageOrder
-        // but we can't recover the old baseCount cheaply). For a fresh file pageOrder ===
-        // [0..n-1], so pageOrder.length === baseCount. For files with deleted pages the
-        // pageOrder is shorter; we use the max entry + 1 as the real baseCount below.
-        const baseCount = pageOrder.length > 0 ? Math.max(...pageOrder) + 1 : 0;
-        const at = position < pageOrder.length ? pageOrder[position] : baseCount;
-
-        try {
-          const { buildInsertedPdf, remapIndexAfterInsert, insertedIndices } =
-            await import("../lib/pageInsert");
-
-          const { bytes, insertedCount } = await buildInsertedPdf(file, sources, at);
-
-          // Build a new File from the merged bytes, keeping the original name.
-          // .slice() strips the generic ArrayBufferLike parameter that TypeScript
-          // otherwise rejects when constructing a File (same pattern as openFiles.ts).
-          const newFile = new File([bytes.slice()], file.name, { type: "application/pdf" });
-
-          // Remap existing indices: any original index >= at shifts right by insertedCount.
-          const newEdits = edits.map((edit) => ({
-            ...edit,
-            pageIndex: remapIndexAfterInsert(edit.pageIndex, at, insertedCount),
-          }));
-          const newPageOps = pageOps.map((op) => ({
-            ...op,
-            pageIndex: remapIndexAfterInsert(op.pageIndex, at, insertedCount),
-          }));
-          // Remap each existing entry, then splice the new indices at position.
-          const remappedOrder = pageOrder.map((idx) =>
-            remapIndexAfterInsert(idx, at, insertedCount),
-          );
-          const newIndices = insertedIndices(at, insertedCount);
-          const newPageOrder = [
-            ...remappedOrder.slice(0, position),
-            ...newIndices,
-            ...remappedOrder.slice(position),
-          ];
-
-          set((state) => {
-            lastCoalesce = null;
-            const hist = pushHistory(state, snapshot(state));
-            return {
-              ...hist,
-              file: newFile,
-              edits: newEdits,
-              pageOps: newPageOps,
-              pageOrder: newPageOrder,
-              numPages: state.numPages + insertedCount,
-              selectedEditId: null,
-              selectedPageIndex: at,
-            };
+      rotatePages: (pageIndices, delta) =>
+        set((state) => {
+          const targets = new Set(pageIndices);
+          if (!targets.size) return {};
+          lastCoalesce = null;
+          const rotated = [...targets].map((pageIndex): PageOp => {
+            const op = state.pageOps.find((o) => o.pageIndex === pageIndex);
+            return op ? { ...op, rotation: op.rotation + delta } : { pageIndex, rotation: delta };
           });
-        } catch (err) {
-          const msg =
-            err instanceof Error ? err.message : "Could not insert pages into the document.";
-          useToastStore.getState().addToast(msg, "error");
-        }
+          return {
+            ...pushHistory(state, snapshot(state)),
+            pageOps: [...state.pageOps.filter((op) => !targets.has(op.pageIndex)), ...rotated],
+          };
+        }),
+
+      deletePages: (pageIndices) =>
+        set((state) => {
+          const drop = new Set(pageIndices);
+          const remaining = state.pageOrder.filter((i) => !drop.has(i)).length;
+          if (remaining === 0 || remaining === state.pageOrder.length) return {};
+          lastCoalesce = null;
+          return {
+            ...pushHistory(state, snapshot(state)),
+            ...removePagesFromState(state, drop),
+            selectedEditId: null,
+          };
+        }),
+
+      duplicatePages: async (pageIndices) => {
+        const plan = await rewritePages((baseCount, order) =>
+          planDuplicate(baseCount, order, pageIndices),
+        );
+        return plan && createdPages(plan);
+      },
+
+      replacePages: async (pageIndices, source, sourcePages) => {
+        const plan = await rewritePages(
+          (baseCount, order) => planReplace(baseCount, order, pageIndices, sourcePages),
+          async () => (await import("../lib/pageOrganize")).loadPdf(source),
+        );
+        return plan && createdPages(plan);
       },
     }),
     {
@@ -719,6 +1074,42 @@ export const useEditorStore = create<EditorState>()(
     },
   ),
 );
+
+/** What autosave persists: exactly what snapshot() captures for undo. */
+export function getDocumentSnapshot(): DocumentSnapshot {
+  const state = useEditorStore.getState();
+  return { ...snapshot(state), outlineStatus: state.outlineStatus };
+}
+
+/** Apply a snapshot (e.g. from crash recovery). No history entry; clears selection. */
+export function restoreDocumentSnapshot(entry: DocumentSnapshot): void {
+  lastCoalesce = null;
+  // Spread the entry so any field a feature adds to snapshot()/HistoryEntry is
+  // applied automatically (entry keys mirror state keys, as in undo()).
+  const { outlineStatus, ...rest } = entry;
+  // Snapshots without a status predate it: non-empty bookmarks can only come
+  // from a read outline.
+  const status = outlineStatus ?? (entry.bookmarks.length > 0 ? "ready" : "pending");
+  // Taken before the file's outline was read, the snapshot's empty bookmarks
+  // mean "unknown", not "all deleted": keep whatever the viewer has loaded (or
+  // will load) instead of wiping the outline on the next download.
+  const restored: Partial<EditorState> = { ...rest };
+  if (status === "pending") delete restored.bookmarks;
+  else restored.outlineStatus = status;
+  useEditorStore.setState((state) => ({
+    ...restored,
+    selectedEditId: null,
+    revision: state.revision + 1,
+  }));
+}
+
+/** True when a document is open and has changed since it was opened or last
+ * downloaded. Cheap: compares two counters. */
+export function isDocumentDirty(
+  state: Pick<EditorState, "file" | "revision" | "savedRevision"> = useEditorStore.getState(),
+): boolean {
+  return state.file !== null && state.revision !== state.savedRevision;
+}
 
 /** Flatten a runs array to a plain string. */
 export function runsToText(runs: TextRun[]): string {

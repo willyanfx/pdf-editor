@@ -1,5 +1,7 @@
 import { PDFDocument } from "pdf-lib";
 import { convertToPdf } from "./convertToPdf";
+import { buildPlannedPdf, loadPdf } from "./pageOrganize";
+import { planInsert } from "./pageRemap";
 
 /** US Letter, in PDF user units, for generated blank pages. */
 const LETTER: [number, number] = [612, 792];
@@ -36,69 +38,39 @@ async function sourceToDoc(source: InsertSource): Promise<PDFDocument> {
 }
 
 /**
+ * Concatenate every insert source into one document, in order: the "extra"
+ * document whose pages a page-insert plan (lib/pageRemap.ts planInsert) splices in.
+ */
+export async function sourcesToDoc(sources: InsertSource[]): Promise<PDFDocument> {
+  const docs = await Promise.all(sources.map(sourceToDoc));
+  if (docs.length === 1) return docs[0];
+  const out = await PDFDocument.create();
+  for (const doc of docs) {
+    const copied = await out.copyPages(doc, doc.getPageIndices());
+    for (const p of copied) out.addPage(p);
+  }
+  return out;
+}
+
+/**
  * Build a new PDF that splices the pages from `sources` into `baseFile` at the
  * given 0-based output position (0 = before the first page; baseCount = after the
  * last). Multiple sources are concatenated in order at that position.
  *
- * Returns the merged bytes plus `insertedCount` (how many pages were added), which
- * the caller needs to remap edit/page indices. The base document's pages keep
- * their relative order; only their absolute index shifts by `insertedCount` for
- * pages at or after `position`.
+ * Returns the merged bytes plus `insertedCount` (how many pages were added). The
+ * base document's pages keep their relative order; only their absolute index
+ * shifts by `insertedCount` for pages at or after `position`.
  */
 export async function buildInsertedPdf(
   baseFile: File,
   sources: InsertSource[],
   position: number,
 ): Promise<{ bytes: Uint8Array; insertedCount: number }> {
-  const baseBytes = await baseFile.arrayBuffer();
-  const baseDoc = await PDFDocument.load(baseBytes);
+  const [baseDoc, extra] = await Promise.all([loadPdf(baseFile), sourcesToDoc(sources)]);
   const baseCount = baseDoc.getPageCount();
-  const at = Math.max(0, Math.min(position, baseCount));
-
-  // Materialize all insert sources first so we know the total inserted count.
-  const insertDocs = await Promise.all(sources.map(sourceToDoc));
-
-  const out = await PDFDocument.create();
-
-  // Copy base pages [0, at), then all inserted pages, then base pages [at, end).
-  const head = await out.copyPages(
-    baseDoc,
-    Array.from({ length: at }, (_, i) => i),
-  );
-  for (const p of head) out.addPage(p);
-
-  let insertedCount = 0;
-  for (const doc of insertDocs) {
-    const copied = await out.copyPages(doc, doc.getPageIndices());
-    for (const p of copied) out.addPage(p);
-    insertedCount += copied.length;
-  }
-
-  const tail = await out.copyPages(
-    baseDoc,
-    Array.from({ length: baseCount - at }, (_, i) => at + i),
-  );
-  for (const p of tail) out.addPage(p);
-
-  const bytes = await out.save({ useObjectStreams: true });
+  const insertedCount = extra.getPageCount();
+  const identity = baseDoc.getPageIndices();
+  const { layout } = planInsert(baseCount, identity, Math.max(0, position), insertedCount);
+  const bytes = await buildPlannedPdf(baseDoc, layout, extra);
   return { bytes, insertedCount };
-}
-
-/**
- * Remap an original page index after `insertedCount` pages were inserted at output
- * position `at`. Existing pages at or after `at` shift right by `insertedCount`;
- * pages before `at` are unchanged. Used to rewrite edit.pageIndex, pageOps, and
- * pageOrder entries so they keep pointing at the same visual page.
- */
-export function remapIndexAfterInsert(index: number, at: number, insertedCount: number): number {
-  return index >= at ? index + insertedCount : index;
-}
-
-/**
- * The list of new page indices created by an insert at output position `at`.
- * (Contiguous: [at, at + insertedCount).) Useful for selecting/scrolling to the
- * first newly-added page after an insert.
- */
-export function insertedIndices(at: number, insertedCount: number): number[] {
-  return Array.from({ length: insertedCount }, (_, i) => at + i);
 }
