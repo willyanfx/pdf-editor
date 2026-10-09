@@ -7,6 +7,7 @@ import { Toaster } from "./components/Toaster";
 import { CommandPalette } from "./components/CommandPalette";
 import { SignatureModal } from "./components/SignatureModal";
 import { SplitDialog } from "./components/SplitDialog";
+import { CompareDialog } from "./components/CompareDialog";
 import { MetadataModal } from "./components/MetadataModal";
 import { UrlDialog } from "./components/UrlDialog";
 import { CompressDialog } from "./components/CompressDialog";
@@ -279,6 +280,7 @@ export default function App() {
       <Toaster />
       <SignatureModal />
       <SplitDialog />
+      <CompareDialog />
       <MetadataModal />
       <UrlDialog />
       <CompressDialog />

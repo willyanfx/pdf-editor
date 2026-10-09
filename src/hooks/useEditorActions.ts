@@ -480,6 +480,11 @@ export function useEditorActions() {
     useEditorStore.getState().setSplitDialogOpen(true);
   }
 
+  /** Open the compare-two-PDFs dialog (works with or without an open document). */
+  function openCompare() {
+    useEditorStore.getState().setCompareDialogOpen(true);
+  }
+
   /** Open the read-only document-properties (metadata) modal. */
   function openMetadata() {
     if (!useEditorStore.getState().file) return;
@@ -889,6 +894,7 @@ export function useEditorActions() {
     openSignature,
     setSearch,
     openSplit,
+    openCompare,
     openMetadata,
     openCompressDialog,
     openProtectDialog,

@@ -20,6 +20,7 @@ import {
   FileInput,
   Combine,
   Scissors,
+  Diff,
   Minimize2,
   ImageDown,
   Images,
@@ -137,6 +138,13 @@ export function CommandPalette({ onClose }: Props) {
         icon: <Scissors size={16} />,
         disabled: noFile,
         run: () => runAndClose(actions.openSplit),
+      },
+      {
+        id: "compare",
+        group: "File",
+        label: "Compare PDFs…",
+        icon: <Diff size={16} />,
+        run: () => runAndClose(actions.openCompare),
       },
       {
         id: "metadata",
