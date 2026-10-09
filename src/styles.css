@@ -3567,7 +3567,6 @@ p.page-sel-error {
 .layer-twisty.open {
   transform: rotate(90deg);
 }
-}
 
 /* Export-tool dialogs (page images, embedded images, remove hidden info).
    .split-dialog sets color-scheme: dark, but its surface is white, so native
