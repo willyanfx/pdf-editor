@@ -3,6 +3,7 @@ import {
   PDFDict,
   PDFDocument,
   PDFName,
+  PDFRef,
   PDFStream,
   type PDFContext,
   type PDFObject,
@@ -77,10 +78,23 @@ function dictOf(ctx: PDFContext, obj: PDFObject | undefined): PDFDict | undefine
   return undefined;
 }
 
+/** True for a JavaScript action, or any action whose /Next chain reaches one
+ * (a harmless-looking URI action can chain into a script). */
 function isJsAction(ctx: PDFContext, obj: PDFObject | undefined): boolean {
-  const action = dictOf(ctx, obj);
-  const s = action && ctx.lookup(action.get(n("S")));
-  return s instanceof PDFName && s.decodeText() === "JavaScript";
+  const seen = new Set<PDFDict>();
+  const queue: (PDFObject | undefined)[] = [obj];
+  for (let cur = queue.pop(); queue.length || cur; cur = queue.pop()) {
+    const action = dictOf(ctx, cur);
+    if (!action || seen.has(action)) continue;
+    seen.add(action);
+    const s = ctx.lookup(action.get(n("S")));
+    if (s instanceof PDFName && s.decodeText() === "JavaScript") return true;
+    // /Next is one action or an array of them.
+    const next = ctx.lookup(action.get(n("Next")));
+    if (next instanceof PDFArray) for (let i = 0; i < next.size(); i++) queue.push(next.get(i));
+    else queue.push(next);
+  }
+  return false;
 }
 
 function subtypeOf(ctx: PDFContext, dict: PDFDict): string | undefined {
@@ -172,7 +186,13 @@ function stripJsActions(ctx: PDFContext, owner: PDFDict): number {
 }
 
 /** Count (and, when `apply`, remove) each category of hidden information. */
-function process(doc: PDFDocument, options: SanitizeOptions, apply: boolean): HiddenInfoReport {
+function inspectOrStrip(
+  doc: PDFDocument,
+  options: SanitizeOptions,
+  apply: boolean,
+  /** Collects refs of removed annotations so the sweep can't keep them alive. */
+  removedRefs: Set<PDFRef> = new Set(),
+): HiddenInfoReport {
   const ctx = doc.context;
   const catalog = doc.catalog;
   const report = emptyReport();
@@ -210,7 +230,12 @@ function process(doc: PDFDocument, options: SanitizeOptions, apply: boolean): Hi
     report.javascript += countNameTree(ctx, names.get(n("JavaScript")));
     if (apply && options.javascript) names.delete(n("JavaScript"));
   }
+  // A merged field/widget is both an AcroForm field and a page annotation;
+  // visit each dict once so scan counts match what removal reports.
+  const jsDone = new Set<PDFDict>();
   const js = (owner: PDFDict) => {
+    if (jsDone.has(owner)) return;
+    jsDone.add(owner);
     const count = apply && options.javascript ? stripJsActions(ctx, owner) : countJs(ctx, owner);
     report.javascript += count;
   };
@@ -236,7 +261,11 @@ function process(doc: PDFDocument, options: SanitizeOptions, apply: boolean): Hi
       }
     }
     if (annots && remove.length) {
-      for (const i of remove.reverse()) annots.remove(i);
+      for (const i of remove.reverse()) {
+        const entry = annots.get(i);
+        if (entry instanceof PDFRef) removedRefs.add(entry);
+        annots.remove(i);
+      }
     }
   }
 
@@ -290,7 +319,7 @@ export async function scanHiddenInfo(
   pdfBytes: Uint8Array | ArrayBuffer,
 ): Promise<HiddenInfoReport> {
   const doc = await PDFDocument.load(pdfBytes, { updateMetadata: false });
-  const report = process(doc, DEFAULT_SANITIZE, false);
+  const report = inspectOrStrip(doc, DEFAULT_SANITIZE, false);
   report.javascript += stripOpenAction(doc, DEFAULT_SANITIZE, false);
   return report;
 }
@@ -306,9 +335,12 @@ export async function sanitizePdf(
   options: SanitizeOptions,
 ): Promise<{ bytes: Uint8Array; removed: HiddenInfoReport }> {
   const doc = await PDFDocument.load(pdfBytes, { updateMetadata: false });
-  const removed = process(doc, options, true);
+  const cut = new Set<PDFRef>();
+  const removed = inspectOrStrip(doc, options, true, cut);
   removed.javascript += stripOpenAction(doc, options, true);
-  removeUnreachableObjects(doc);
+  // A removed annotation can still hang off the structure tree (OBJR), which
+  // would keep its text alive in the file; cut those refs explicitly.
+  removeUnreachableObjects(doc, cut);
   const bytes = await doc.save();
   return { bytes, removed: pickRemoved(removed, options) };
 }

@@ -631,7 +631,11 @@ export function useEditorActions() {
   }): Promise<boolean> {
     const { file, edits } = useEditorStore.getState();
     const pages = pagesForScope(options.scope);
-    if (!file || pages.length === 0) return false;
+    if (!file) return false;
+    if (pages.length === 0) {
+      useToastStore.getState().addToast("No pages to export.", "info");
+      return false;
+    }
     // The images show the redacted pages, so the same confirmation applies.
     if (!(await confirmRedactions())) return false;
 
@@ -679,7 +683,11 @@ export function useEditorActions() {
   }): Promise<boolean> {
     const { file, edits } = useEditorStore.getState();
     const pages = pagesForScope(options.scope);
-    if (!file || pages.length === 0) return false;
+    if (!file) return false;
+    if (pages.length === 0) {
+      useToastStore.getState().addToast("No pages to scan for images.", "info");
+      return false;
+    }
     if (!(await confirmRedactions())) return false;
 
     try {

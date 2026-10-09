@@ -187,3 +187,70 @@ test("describeRemoved reads as a sentence", () => {
     "3 comments, 1 attachment and metadata",
   );
 });
+
+test("a removed comment stays gone even when the structure tree references it", async () => {
+  const doc = await PDFDocument.create();
+  const page = doc.addPage();
+  const ctx = doc.context;
+  const note = ctx.register(
+    ctx.obj({
+      Type: "Annot",
+      Subtype: "Text",
+      Rect: [10, 10, 30, 30],
+      Contents: PDFString.of("secret note"),
+    }),
+  );
+  page.node.set(PDFName.of("Annots"), ctx.obj([note]));
+  // A tagged PDF's structure tree can point at annotations via an OBJR.
+  const elem = ctx.register(
+    ctx.obj({ Type: "StructElem", S: "Annot", K: [{ Type: "OBJR", Obj: note }] }),
+  );
+  doc.catalog.set(PDFName.of("StructTreeRoot"), ctx.obj({ Type: "StructTreeRoot", K: [elem] }));
+
+  const { bytes } = await sanitizePdf(await doc.save(), DEFAULT_SANITIZE);
+  const out = await PDFDocument.load(bytes, { updateMetadata: false });
+  const contents = allDicts(out.context).map((d) => d.get(PDFName.of("Contents"))?.toString());
+  expect(contents.some((c) => c?.includes("secret note"))).toBe(false);
+});
+
+test("a form field that is also a widget annotation is counted once", async () => {
+  const doc = await PDFDocument.create();
+  const page = doc.addPage();
+  const field = doc.getForm().createTextField("f");
+  field.addToPage(page, { x: 10, y: 10, width: 100, height: 20 });
+  const [widget] = field.acroField.getWidgets();
+  widget.dict.set(
+    PDFName.of("AA"),
+    doc.context.obj({ K: { S: "JavaScript", JS: PDFString.of("x()") } }),
+  );
+
+  const scanned = await scanHiddenInfo(await doc.save());
+  expect(scanned.javascript).toBe(1);
+  const { removed } = await sanitizePdf(await doc.save(), DEFAULT_SANITIZE);
+  expect(removed.javascript).toBe(1);
+});
+
+test("a script chained behind a harmless action via /Next is removed", async () => {
+  const doc = await PDFDocument.create();
+  const page = doc.addPage();
+  const ctx = doc.context;
+  const link = ctx.register(
+    ctx.obj({
+      Type: "Annot",
+      Subtype: "Link",
+      Rect: [0, 0, 10, 10],
+      A: {
+        S: "URI",
+        URI: PDFString.of("https://example.com"),
+        Next: { S: "JavaScript", JS: PDFString.of("x()") },
+      },
+    }),
+  );
+  page.node.set(PDFName.of("Annots"), ctx.obj([link]));
+
+  const { bytes, removed } = await sanitizePdf(await doc.save(), DEFAULT_SANITIZE);
+  expect(removed.javascript).toBe(1);
+  const out = await PDFDocument.load(bytes, { updateMetadata: false });
+  const annot = out.context.lookup((out.getPage(0).node.Annots() as PDFArray).get(0)) as PDFDict;
+  expect(annot.has(PDFName.of("A"))).toBe(false);
+});
