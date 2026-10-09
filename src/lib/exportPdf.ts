@@ -25,6 +25,7 @@ import type {
 } from "../store/useEditorStore";
 import { runsToText } from "../store/useEditorStore";
 import { mapScreenRectToPdf, VIEWER_WIDTH as VIEWER_W } from "./pdfGeometry";
+import { isEncryptedPdfError } from "./pdfSecurity";
 import {
   isStandardFont,
   getGoogleFontEntry,
@@ -176,7 +177,25 @@ export type ExportOptions = {
   pageOps?: PageOp[];
   /** Compress the output (object streams; images are downsampled separately). */
   compress?: boolean;
+  /** Password for an encrypted source PDF (user or owner). The export is always
+   * written decrypted; apply `encryptPdf` afterwards to protect it again. */
+  password?: string;
 };
+
+/**
+ * Load the source PDF for editing. pdf-lib refuses encrypted input outright
+ * (and `ignoreEncryption` would hand back undecrypted streams), so an encrypted
+ * file is first run through qpdf to strip the encryption.
+ */
+async function loadSourceDocument(bytes: ArrayBuffer, password?: string): Promise<PDFDocument> {
+  try {
+    return await PDFDocument.load(bytes);
+  } catch (err) {
+    if (!isEncryptedPdfError(err)) throw err;
+    const { decryptPdf } = await import("./pdfSecurity");
+    return PDFDocument.load(await decryptPdf(new Uint8Array(bytes), password));
+  }
+}
 
 import { COMPRESS_PRESETS } from "./compressPresets";
 import type { CompressOptions } from "./compressPresets";
@@ -199,7 +218,7 @@ export async function exportEditedPdf(
   options: ExportOptions = {},
 ): Promise<Uint8Array> {
   const originalBytes = await sourceFile.arrayBuffer();
-  const srcDoc = await PDFDocument.load(originalBytes);
+  const srcDoc = await loadSourceDocument(originalBytes, options.password);
   const srcCount = srcDoc.getPageCount();
 
   // Default order = every page as-is. An order that differs (reordered or with

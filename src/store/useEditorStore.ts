@@ -283,6 +283,9 @@ type EditorState = {
   /** Whether the compress-PDF dialog is open. */
   compressDialogOpen: boolean;
   setCompressDialogOpen: (open: boolean) => void;
+  /** Whether the protect-PDF (password / permissions) dialog is open. */
+  protectDialogOpen: boolean;
+  setProtectDialogOpen: (open: boolean) => void;
 
   /** History stacks — NOT in initialState so setFile does not reset them. */
   _past: HistoryEntry[];
@@ -383,6 +386,7 @@ const initialState = {
   metadataModalOpen: false,
   urlDialogOpen: false,
   compressDialogOpen: false,
+  protectDialogOpen: false,
 };
 
 /** Capture a snapshot of the mutable document arrays plus the file identity and
@@ -602,6 +606,7 @@ export const useEditorStore = create<EditorState>()(
       setUrlDialogOpen: (urlDialogOpen) => set({ urlDialogOpen }),
 
       setCompressDialogOpen: (compressDialogOpen) => set({ compressDialogOpen }),
+      setProtectDialogOpen: (protectDialogOpen) => set({ protectDialogOpen }),
 
       setMode: (mode) => set({ mode }),
 

@@ -10,6 +10,7 @@ import { SplitDialog } from "./components/SplitDialog";
 import { MetadataModal } from "./components/MetadataModal";
 import { UrlDialog } from "./components/UrlDialog";
 import { CompressDialog } from "./components/CompressDialog";
+import { ProtectDialog } from "./components/ProtectDialog";
 import { PasswordModal } from "./components/PasswordModal";
 import { FindBar } from "./components/FindBar";
 import { useEditorStore } from "./store/useEditorStore";
@@ -240,6 +241,7 @@ export default function App() {
       <MetadataModal />
       <UrlDialog />
       <CompressDialog />
+      <ProtectDialog />
       <PasswordModal />
 
       {findOpen && <FindBar onClose={() => setFindOpen(false)} />}
