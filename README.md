@@ -16,6 +16,11 @@ Every file you open stays on your machine. pdf-editor runs entirely in the brows
 - CSS-transform zoom: fit-width, fit-page, discrete presets (50 %–400 %), pinch-to-zoom, and `Cmd`+`-`/`+`/`0`
 - Top-bar page-jump widget (type a number, press `Enter`, or use chevrons)
 - Whole-window drag-and-drop to open a file from anywhere
+- **Two-page view** — pages side by side, with an optional cover page (first page alone on the right); page stepping moves a row at a time
+- **Dark theme** — follows the OS setting until you toggle it from the top bar; the page itself stays white
+- **Full screen** (`F`) — just the document; `Esc` brings the chrome back
+- **Hand tool** — drag to pan, or hold `Space` in any tool
+- **Attachments and Layers panels** — appear in the sidebar when the PDF has embedded files (save them to disk) or optional-content layers (show/hide them; a viewing aid, the download keeps the file's own defaults)
 
 ### Editing
 
@@ -55,7 +60,7 @@ Every file you open stays on your machine. pdf-editor runs entirely in the brows
 
 - **Undo/Redo** — snapshot-based history (up to 100 steps); burst-coalesces rapid typing and nudge into a single entry (`Cmd+Z` / `Cmd+Shift+Z`)
 - **Command palette** (`Cmd+K`) — searchable list of every action, grouped by File / Mode / Add / Annotate / Pages / View / Export
-- **Find in page** (`Cmd+F`) — searches across all text overlays; `Enter`/`Shift+Enter` to step through matches
+- **Find in page** (`Cmd+F`) — searches across all text overlays, with match-case (`Alt+C`) and whole-word (`Alt+W`) options; `Enter`/`Shift+Enter` to step through matches
 - **Page organizer** — thumbnail sidebar with drag-and-drop reorder, Alt+Arrow keyboard reorder, per-page delete
 - **Per-page actions** — rotate CCW/CW, draw-to-crop with confirm checkmark, reset transforms, delete page
 - **Full keyboard shortcuts** — `V E T H U S C D` for tool modes; arrow keys to nudge (1 px; 10 px with Shift); `Delete` to remove; `W P` for fit modes

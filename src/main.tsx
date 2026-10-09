@@ -3,8 +3,10 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./styles.css";
 import { injectPreconnect } from "./lib/fonts";
+import { initTheme } from "./store/useViewerStore";
 
 injectPreconnect();
+initTheme();
 
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Root element #root not found");

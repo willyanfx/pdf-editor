@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   FilePlus2,
   Download,
@@ -10,8 +10,12 @@ import {
   Lock,
   Undo2,
   Redo2,
+  Moon,
+  Sun,
 } from "lucide-react";
 import { useEditorStore } from "../store/useEditorStore";
+import { useViewerStore } from "../store/useViewerStore";
+import { buildPageRows, stepPage, visiblePages } from "../lib/pageLayout";
 import { useEditorActions } from "../hooks/useEditorActions";
 
 type DownloadState = "idle" | "exporting" | "done";
@@ -20,6 +24,11 @@ export function TopBar() {
   const file = useEditorStore((s) => s.file);
   const numPages = useEditorStore((s) => s.numPages);
   const selectedPageIndex = useEditorStore((s) => s.selectedPageIndex);
+  const pageOrder = useEditorStore((s) => s.pageOrder);
+  const pageLayout = useViewerStore((s) => s.pageLayout);
+  const coverPage = useViewerStore((s) => s.coverPage);
+  const theme = useViewerStore((s) => s.theme);
+  const toggleTheme = useViewerStore((s) => s.toggleTheme);
   const setSelectedPageIndex = useEditorStore((s) => s.setSelectedPageIndex);
   // Routes through the virtualizer in PdfViewer: a target page may not be mounted,
   // so a DOM scrollIntoView can't reach it.
@@ -34,10 +43,26 @@ export function TopBar() {
   // Draft text for the page-jump input; null means "mirror the live page".
   const [pageDraft, setPageDraft] = useState<string | null>(null);
 
+  const rows = useMemo(
+    () => buildPageRows(visiblePages(numPages, pageOrder), pageLayout, coverPage),
+    [numPages, pageOrder, pageLayout, coverPage],
+  );
+
   function goToPage(index: number) {
     if (index < 0 || index >= numPages) return;
     setSelectedPageIndex(index);
     scrollToPage?.(index);
+  }
+
+  /** The page the previous/next controls lead to: a row away, skipping pages the
+   * organizer removed (two-page view moves two pages at a time). */
+  function adjacentPage(direction: 1 | -1): number | null {
+    return stepPage(rows, selectedPageIndex, direction);
+  }
+
+  function stepToPage(direction: 1 | -1) {
+    const target = adjacentPage(direction);
+    if (target !== null) goToPage(target);
   }
 
   function commitPageDraft() {
@@ -106,8 +131,8 @@ export function TopBar() {
             type="button"
             className="topbar-page-nav"
             aria-label="Previous page"
-            disabled={selectedPageIndex <= 0}
-            onClick={() => goToPage(selectedPageIndex - 1)}
+            disabled={adjacentPage(-1) === null}
+            onClick={() => stepToPage(-1)}
           >
             <ChevronLeft size={15} />
           </button>
@@ -131,11 +156,11 @@ export function TopBar() {
               onKeyDown={(e) => {
                 if (e.key === "ArrowUp") {
                   e.preventDefault();
-                  goToPage(selectedPageIndex - 1);
+                  stepToPage(-1);
                   setPageDraft(null);
                 } else if (e.key === "ArrowDown") {
                   e.preventDefault();
-                  goToPage(selectedPageIndex + 1);
+                  stepToPage(1);
                   setPageDraft(null);
                 } else if (e.key === "Escape") {
                   setPageDraft(null);
@@ -149,8 +174,8 @@ export function TopBar() {
             type="button"
             className="topbar-page-nav"
             aria-label="Next page"
-            disabled={selectedPageIndex >= numPages - 1}
-            onClick={() => goToPage(selectedPageIndex + 1)}
+            disabled={adjacentPage(1) === null}
+            onClick={() => stepToPage(1)}
           >
             <ChevronRight size={15} />
           </button>
@@ -209,6 +234,21 @@ export function TopBar() {
             <Check size={15} className="dl-icon dl-pop" />
             <span>Done</span>
           </>
+        )}
+      </button>
+
+      <button
+        type="button"
+        className="topbar-btn topbar-icon-btn"
+        title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+        aria-label="Dark theme"
+        aria-pressed={theme === "dark"}
+        onClick={toggleTheme}
+      >
+        {theme === "dark" ? (
+          <Sun size={15} aria-hidden="true" />
+        ) : (
+          <Moon size={15} aria-hidden="true" />
         )}
       </button>
     </header>

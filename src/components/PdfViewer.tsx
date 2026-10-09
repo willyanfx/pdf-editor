@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Document, Page } from "react-pdf";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -18,6 +18,7 @@ import { PageActionsBar } from "./PageActionsBar";
 import { SidePanel } from "./SidePanel";
 import { loadOutlineIntoStore } from "../lib/outlineRead";
 import { useEditorStore, makeCoverTextEdit, clampZoom } from "../store/useEditorStore";
+import { useViewerStore } from "../store/useViewerStore";
 import { useToastStore } from "../store/useToastStore";
 import { openFiles } from "../lib/openFiles";
 import { sampleBackgroundColor } from "../lib/textLayer";
@@ -27,10 +28,24 @@ import { makeOnPassword } from "../lib/pdfPassword";
 import { usePageHeights } from "../hooks/usePageHeights";
 import { useScannedPdfPrompt } from "../hooks/useScannedPdfPrompt";
 import { useFormFieldSync } from "../hooks/useFormFieldSync";
+import { useHandTool } from "../hooks/useHandTool";
+import { loadAttachments } from "../lib/attachments";
+import { loadLayers } from "../lib/layers";
+import {
+  buildPageRows,
+  firstPageOfRow,
+  nearestShownPage,
+  rowContentWidth,
+  rowHeight,
+  rowIndexOfPage,
+  visiblePages,
+} from "../lib/pageLayout";
 import { goToLinkedPage, EXTERNAL_LINK_REL, EXTERNAL_LINK_TARGET } from "../lib/pdfLinks";
 
 /** Vertical gap between page shells, reserved inside each virtual slot. */
 const PAGE_GAP = 24;
+/** Horizontal gutter between the two pages of a two-page row. */
+const COLUMN_GAP = 24;
 /** Estimated page height used before real measurements arrive (US Letter). */
 const ESTIMATED_PAGE_HEIGHT = Math.round((VIEWER_WIDTH * 11) / 8.5);
 /** Pages to keep mounted beyond the viewport. Generous so edit/OCR canvases for
@@ -71,6 +86,9 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
   const zoomPreset = useEditorStore((s) => s.zoomPreset);
   const setScrollToPage = useEditorStore((s) => s.setScrollToPage);
   const addToast = useToastStore((s) => s.addToast);
+  const pageLayout = useViewerStore((s) => s.pageLayout);
+  const coverPage = useViewerStore((s) => s.coverPage);
+  const layerVersion = useViewerStore((s) => s.layerVersion);
 
   // Per-page pdf.js page proxies (for text extraction) and canvas refs (for
   // background-color sampling). Stored outside React state to avoid re-renders.
@@ -98,30 +116,155 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
   // The loaded pdf.js document, tagged with its File so a stale proxy from the
   // previous file is never handed to the form sync while the next one loads.
   const [loadedPdf, setLoadedPdf] = useState<{ file: File; pdf: PDFDocumentProxy } | null>(null);
-  useFormFieldSync(loadedPdf && loadedPdf.file === file ? loadedPdf.pdf : null, scrollRef);
+  const currentPdf = loadedPdf && loadedPdf.file === file ? loadedPdf.pdf : null;
+  useFormFieldSync(currentPdf, scrollRef);
 
-  const estimateSize = useCallback(
-    (index: number) => (pageHeights[index] ?? ESTIMATED_PAGE_HEIGHT) + PAGE_GAP,
+  // What the document carries (attachments, layers) feeds the sidebar. Reset
+  // while a new document loads so the previous one's don't linger.
+  useEffect(() => {
+    const viewer = useViewerStore.getState();
+    viewer.setAttachments([]);
+    viewer.setLayers(null);
+    if (!currentPdf) return;
+    let cancelled = false;
+    void loadAttachments(currentPdf).then((list) => {
+      if (!cancelled) useViewerStore.getState().setAttachments(list);
+    });
+    loadLayers(currentPdf)
+      .then((state) => {
+        if (!cancelled) useViewerStore.getState().setLayers(state);
+      })
+      .catch(() => {
+        // Layers are optional; a document we can't read them from just has none.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentPdf]);
+
+  // Hand tool (and Space-to-pan): dragging pans the stage instead of editing.
+  const handActive = useHandTool(scrollRef, file);
+
+  const pageHeightOf = useCallback(
+    (pageIndex: number) => pageHeights[pageIndex] ?? ESTIMATED_PAGE_HEIGHT,
     [pageHeights],
   );
 
+  // The stage scrolls in rows: one page each, or two side by side. Pages the
+  // organizer removed aren't in any row, so neighbours close ranks.
+  const rows = useMemo(
+    () => buildPageRows(visiblePages(numPages, pageOrder), pageLayout, coverPage),
+    [numPages, pageOrder, pageLayout, coverPage],
+  );
+  const columns = pageLayout === "two" ? 2 : 1;
+  // A page turned a quarter-turn is as wide as it is tall, which would spill into
+  // its neighbour across the narrow gutter; in two-page view every column is wide
+  // enough for the widest rotated page, and pages sit centred in their column.
+  const columnWidth = useMemo(() => {
+    if (pageLayout !== "two") return VIEWER_WIDTH;
+    let widest = VIEWER_WIDTH;
+    for (const op of pageOps) {
+      if (Math.abs(op.rotation) % 180 === 90) widest = Math.max(widest, pageHeightOf(op.pageIndex));
+    }
+    return Math.ceil(widest);
+  }, [pageLayout, pageOps, pageHeightOf]);
+  const contentWidth = rowContentWidth(columns, columnWidth, COLUMN_GAP);
+
+  // The virtualizer works in real (on-screen) pixels — the units the scroll
+  // container reports and scrolls in — so row sizes are scaled by zoom, which is
+  // otherwise a CSS transform on the spacer. Pages are positioned at start/zoom
+  // inside that scaled spacer.
+  const estimateSize = useCallback(
+    (rowIndex: number) => (rowHeight(rows[rowIndex] ?? [], pageHeightOf) + PAGE_GAP) * zoom,
+    [rows, pageHeightOf, zoom],
+  );
+
   const virtualizer = useVirtualizer({
-    count: numPages,
+    count: rows.length,
     getScrollElement: () => scrollRef.current,
     estimateSize,
     overscan: OVERSCAN,
   });
 
-  // Re-measure when real heights arrive so offsets settle onto exact values.
-  useEffect(() => {
+  // Re-measure when real heights arrive, the rows regroup or zoom changes so offsets
+  // settle onto exact values (the virtualizer doesn't notice a new estimateSize on
+  // its own). A layout effect, so a zoom step never paints with the old offsets.
+  useLayoutEffect(() => {
     virtualizer.measure();
-  }, [virtualizer, pageHeights]);
+  }, [virtualizer, rows, pageHeights, zoom]);
 
   // Let the top bar's page nav jump to any page, even an unmounted one.
   useEffect(() => {
-    setScrollToPage((pageIndex) => virtualizer.scrollToIndex(pageIndex, { align: "start" }));
+    setScrollToPage((pageIndex) => {
+      let target = pageIndex;
+      if (rowIndexOfPage(rows, pageIndex) < 0) {
+        // A page the organizer removed: go to the closest one still shown, and
+        // move the selection there so it never rests on a page that isn't.
+        const nearest = nearestShownPage(rows, pageIndex);
+        if (nearest === null) return;
+        target = nearest;
+        useEditorStore.getState().setSelectedPageIndex(nearest);
+      }
+      virtualizer.scrollToIndex(rowIndexOfPage(rows, target), { align: "start" });
+    });
     return () => setScrollToPage(null);
-  }, [virtualizer, setScrollToPage]);
+  }, [virtualizer, rows, setScrollToPage]);
+
+  // Two pages side by side overflow the stage at 100% on most screens, so entering
+  // two-page view fits the width when that happens. The zoom it replaced is kept
+  // so leaving two-page view puts it back (unless the user has changed zoom since).
+  const autoFitFrom = useRef<number | null>(null);
+  function fitWhenTwoPagesOverflow() {
+    const el = scrollRef.current;
+    const state = useEditorStore.getState();
+    if (pageLayout !== "two" || !el || state.zoomPreset) return;
+    if (contentWidth * state.zoom + 52 > el.clientWidth) {
+      autoFitFrom.current = state.zoom;
+      state.setZoomPreset("fit-width");
+    }
+  }
+  function restoreZoomAfterAutoFit() {
+    const from = autoFitFrom.current;
+    autoFitFrom.current = null;
+    const state = useEditorStore.getState();
+    if (from !== null && state.zoomPreset === "fit-width") state.setZoom(from);
+  }
+
+  // A document opened while two-page view is the saved preference. Keyed on the
+  // document finishing its load, not on the File: page inserts and duplicates swap
+  // the File of a document that is already open, and must not re-fit.
+  const loaded = numPages > 0;
+  useEffect(() => {
+    autoFitFrom.current = null;
+    if (loaded) fitWhenTwoPagesOverflow();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded]);
+
+  // Switching between single and two-page view regroups the rows, so the same
+  // scroll offset would land on a different page. Keep the selected page in view,
+  // and fit when two pages would overflow the stage.
+  const layoutKey = `${pageLayout}:${coverPage}`;
+  const lastLayoutKey = useRef(layoutKey);
+  // Set while that scroll settles so the page readout doesn't follow the
+  // in-between frames.
+  const anchoring = useRef(false);
+  useLayoutEffect(() => {
+    if (lastLayoutKey.current === layoutKey) return;
+    lastLayoutKey.current = layoutKey;
+    virtualizer.measure();
+    const state = useEditorStore.getState();
+    const row = rowIndexOfPage(rows, state.selectedPageIndex);
+    if (row >= 0) {
+      anchoring.current = true;
+      virtualizer.scrollToIndex(row, { align: "start" });
+      window.setTimeout(() => {
+        anchoring.current = false;
+      }, 250);
+    }
+    if (pageLayout === "two") fitWhenTwoPagesOverflow();
+    else restoreZoomAfterAutoFit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutKey, rows, virtualizer]);
 
   // Ctrl/⌘ + wheel zooms (matches Acrobat / browser PDF viewers / map UIs).
   // Registered non-passive so preventDefault() can suppress the browser's own
@@ -157,13 +300,20 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
   // scroll offset (virtualItems lead the viewport by `overscan`, so we can't just
   // take the first one).
   const scrollOffset = virtualizer.scrollOffset ?? 0;
-  const topVisibleIndex =
-    virtualItems.find((it) => it.start + it.size > scrollOffset)?.index ??
+  // The 1px of slack absorbs scrollTop snapping to device pixels, which can land a
+  // jump just short of the row's exact (fractional) start.
+  const topRowIndex =
+    virtualItems.find((it) => it.start + it.size > scrollOffset + 1)?.index ??
     virtualItems[0]?.index ??
     0;
+  const topVisibleIndex = firstPageOfRow(rows[topRowIndex]) ?? 0;
   useEffect(() => {
-    if (numPages > 0) setSelectedPageIndex(topVisibleIndex);
-  }, [topVisibleIndex, numPages, setSelectedPageIndex]);
+    if (numPages === 0 || anchoring.current) return;
+    // In two-page view the right-hand page can be the selected one; scrolling
+    // within the same row shouldn't snap the selection back to the left page.
+    if (rows[topRowIndex]?.includes(useEditorStore.getState().selectedPageIndex)) return;
+    setSelectedPageIndex(topVisibleIndex);
+  }, [topVisibleIndex, topRowIndex, rows, numPages, setSelectedPageIndex]);
 
   // Auto-fit zoom: when a preset is active, derive `zoom` from the live container
   // size and keep it updated as the window resizes. VIEWER_WIDTH is never touched
@@ -176,6 +326,10 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
 
     function applyFit() {
       if (!el) return;
+      // The observer can fire after the preset was cleared (e.g. leaving two-page
+      // view restores a manual zoom) but before this effect is torn down; a stale
+      // run must not overwrite that zoom.
+      if (!useEditorStore.getState().zoomPreset) return;
       // clientWidth excludes the scrollbar; subtract the wrapper's 24px h-padding
       // (both sides) plus a small gutter so the page never butts the scrollbar.
       const availW = el.clientWidth - 48 - 4;
@@ -183,15 +337,16 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
       // A collapsed/zero-size container would produce a non-positive or infinite
       // fit; skip until it has real dimensions.
       if (availW <= 0) return;
-      const fitWidth = availW / VIEWER_WIDTH;
+      const fitWidth = availW / contentWidth;
       let next = fitWidth;
       if (zoomPreset === "fit-page" && availH > 0) {
-        // Fit the currently-visible page fully in view (width OR height bound).
-        // Read the live top-visible index so a resize after scrolling fits the
-        // page actually on screen, without re-subscribing the observer.
+        // Fit the currently-visible row (one page, or a two-page spread) fully in
+        // view (width OR height bound). Read the live selection so a resize after
+        // scrolling fits what is actually on screen, without re-subscribing the
+        // observer.
         const state = useEditorStore.getState();
-        const idx = state.selectedPageIndex;
-        const pageH = pageHeights[idx] ?? ESTIMATED_PAGE_HEIGHT;
+        const row = rows[rowIndexOfPage(rows, state.selectedPageIndex)];
+        const pageH = row ? rowHeight(row, pageHeightOf) : ESTIMATED_PAGE_HEIGHT;
         if (pageH > 0) next = Math.min(fitWidth, availH / pageH);
       }
       useEditorStore.setState({ zoom: clampZoom(next) });
@@ -203,8 +358,9 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
     return () => ro.disconnect();
     // topVisibleIndex is intentionally omitted: applyFit reads the live index via
     // getState(), so the observer needn't re-subscribe on every scroll. We keep
-    // pageHeights so a late page measurement re-fits fit-page.
-  }, [zoomPreset, pageHeights]);
+    // pageHeights so a late page measurement re-fits fit-page, and rows/contentWidth
+    // so a layout switch re-fits.
+  }, [zoomPreset, pageHeights, rows, contentWidth, pageHeightOf]);
 
   // Whole-page OCR: the toolbar sets ocrRequestPageIndex; we own the page
   // canvases, so we run the recognition here and clear the request when done.
@@ -408,7 +564,7 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
   }
 
   return (
-    <section ref={scrollRef} className={`pdf-wrapper mode-${mode}`}>
+    <section ref={scrollRef} className={`pdf-wrapper mode-${mode}${handActive ? " is-hand" : ""}`}>
       <Document
         // Re-key on each password attempt so react-pdf re-runs the load with the
         // newly stored password (it won't re-invoke onPassword otherwise).
@@ -446,7 +602,7 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
         loading={<p className="muted">Loading PDF…</p>}
         error={<p className="muted">Could not open this PDF.</p>}
       >
-        {pagePanelOpen && <SidePanel />}
+        {pagePanelOpen && <SidePanel pdf={currentPdf} />}
         {/* Zoom sizer: reserves the scaled height so the scroll container scrolls
             the full zoomed document. The inner spacer is scaled from its top
             center — pages render at VIEWER_WIDTH (keeping every stored coordinate
@@ -454,8 +610,8 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
         <div
           className="pdf-zoom-sizer"
           style={{
-            height: virtualizer.getTotalSize() * zoom,
-            width: VIEWER_WIDTH * zoom,
+            height: virtualizer.getTotalSize(),
+            width: contentWidth * zoom,
           }}
         >
           {/* Spacer sized to all pages; only the windowed pages below are mounted,
@@ -463,99 +619,100 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
           <div
             className="pdf-virtual-spacer"
             style={{
-              height: virtualizer.getTotalSize(),
-              width: VIEWER_WIDTH,
+              height: virtualizer.getTotalSize() / zoom,
+              width: contentWidth,
               transform: `translateX(-50%) scale(${zoom})`,
             }}
           >
-            {virtualItems.map((item) => {
-              const index = item.index;
-              // Pages removed in the organizer are dropped from the view too.
-              const deleted = pageOrder.length > 0 && !pageOrder.includes(index);
-              if (deleted) return null;
-              const op = pageOps.find((o) => o.pageIndex === index);
-              const rotation = op?.rotation ? ((op.rotation % 360) + 360) % 360 : 0;
-              // Preview crop by clipping the page-shell to the kept region.
-              const clip = op?.crop
-                ? `inset(${op.crop.top}px ${op.crop.right}px ${op.crop.bottom}px ${op.crop.left}px)`
-                : undefined;
-              return (
-                <div
-                  className="page-shell"
-                  key={item.key}
-                  data-page-index={index}
-                  data-index={index}
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: "50%",
-                    // Reserve the inter-page gap inside the slot the virtualizer
-                    // sized (estimateSize adds PAGE_GAP), so pages don't overlap.
-                    height: item.size - PAGE_GAP,
-                    width: VIEWER_WIDTH,
-                    transform: `translate(-50%, ${item.start}px)`,
-                  }}
-                  onMouseDown={() => {
-                    setSelectedPageIndex(index);
-                    selectEdit(null);
-                  }}
-                >
+            {virtualItems.flatMap((item) =>
+              (rows[item.index] ?? []).map((pageIndex, column) => {
+                if (pageIndex === null) return null;
+                const index = pageIndex;
+                const op = pageOps.find((o) => o.pageIndex === index);
+                const rotation = op?.rotation ? ((op.rotation % 360) + 360) % 360 : 0;
+                // Preview crop by clipping the page-shell to the kept region.
+                const clip = op?.crop
+                  ? `inset(${op.crop.top}px ${op.crop.right}px ${op.crop.bottom}px ${op.crop.left}px)`
+                  : undefined;
+                return (
                   <div
-                    className="page-transform"
+                    className="page-shell"
+                    key={index}
+                    data-page-index={index}
+                    data-index={index}
                     style={{
-                      transform: rotation ? `rotate(${rotation}deg)` : undefined,
-                      clipPath: clip,
+                      position: "absolute",
+                      top: 0,
+                      left: column * (columnWidth + COLUMN_GAP) + (columnWidth - VIEWER_WIDTH) / 2,
+                      // The page's own height; the row's slot also reserves the
+                      // inter-page gap (estimateSize adds PAGE_GAP) and room for a
+                      // taller partner, so rows never overlap.
+                      height: pageHeightOf(index),
+                      width: VIEWER_WIDTH,
+                      transform: `translateY(${item.start / zoom}px)`,
+                    }}
+                    onMouseDown={() => {
+                      setSelectedPageIndex(index);
+                      selectEdit(null);
                     }}
                   >
-                    <Page
-                      pageNumber={index + 1}
-                      width={VIEWER_WIDTH}
-                      renderTextLayer={false}
-                      // Links + fillable form widgets. Only interactive in Select
-                      // mode; see the "Form fields + links" block in styles.css.
-                      renderAnnotationLayer
-                      renderForms
-                      canvasRef={(el) => {
-                        canvasRefs.current.set(index, el);
+                    <div
+                      className="page-transform"
+                      style={{
+                        transform: rotation ? `rotate(${rotation}deg)` : undefined,
+                        clipPath: clip,
                       }}
-                      onLoadSuccess={(page) => {
-                        pagesRef.current.set(index, {
-                          file,
-                          page: page as unknown as PDFPageProxy,
-                        });
-                        force((n) => n + 1);
-                      }}
-                    />
-                    <ExistingTextLayer
-                      pageIndex={index}
-                      page={getPage(index)}
-                      getCanvas={() => canvasRefs.current.get(index) ?? null}
-                    />
-                    <ExistingImageLayer
-                      pageIndex={index}
-                      page={getPage(index)}
-                      getCanvas={() => canvasRefs.current.get(index) ?? null}
-                    />
-                    <OcrLayer
-                      pageIndex={index}
-                      getCanvas={() => canvasRefs.current.get(index) ?? null}
-                    />
-                    <SignatureZoneLayer pageIndex={index} page={getPage(index)} />
-                    <AnnotateLayer pageIndex={index} />
-                    <RedactLayer pageIndex={index} page={getPage(index)} />
-                    <InkLayer pageIndex={index} />
-                    <ShapeLayer pageIndex={index} />
-                    <TextDrawLayer pageIndex={index} />
-                    <EditableLayer pageIndex={index} />
-                    <PageStampsLayer pageIndex={index} page={getPage(index)} />
+                    >
+                      <Page
+                        // Re-keyed when a layer is shown/hidden so pdf.js repaints
+                        // the canvas with the new visibility.
+                        key={layerVersion}
+                        pageNumber={index + 1}
+                        width={VIEWER_WIDTH}
+                        renderTextLayer={false}
+                        // Links + fillable form widgets. Only interactive in Select
+                        // mode; see the "Form fields + links" block in styles.css.
+                        renderAnnotationLayer
+                        renderForms
+                        canvasRef={(el) => {
+                          canvasRefs.current.set(index, el);
+                        }}
+                        onLoadSuccess={(page) => {
+                          pagesRef.current.set(index, {
+                            file,
+                            page: page as unknown as PDFPageProxy,
+                          });
+                          force((n) => n + 1);
+                        }}
+                      />
+                      <ExistingTextLayer
+                        pageIndex={index}
+                        page={getPage(index)}
+                        getCanvas={() => canvasRefs.current.get(index) ?? null}
+                      />
+                      <ExistingImageLayer
+                        pageIndex={index}
+                        page={getPage(index)}
+                        getCanvas={() => canvasRefs.current.get(index) ?? null}
+                      />
+                      <OcrLayer
+                        pageIndex={index}
+                        getCanvas={() => canvasRefs.current.get(index) ?? null}
+                      />
+                      <SignatureZoneLayer pageIndex={index} page={getPage(index)} />
+                      <AnnotateLayer pageIndex={index} />
+                      <RedactLayer pageIndex={index} page={getPage(index)} />
+                      <InkLayer pageIndex={index} />
+                      <ShapeLayer pageIndex={index} />
+                      <TextDrawLayer pageIndex={index} />
+                      <EditableLayer pageIndex={index} />
+                      <PageStampsLayer pageIndex={index} page={getPage(index)} />
+                    </div>
+                    <PageActionsBar pageIndex={index} pageHeight={pageHeightOf(index)} />
                   </div>
-                  <PageActionsBar
-                    pageIndex={index}
-                    pageHeight={pageHeights[index] ?? ESTIMATED_PAGE_HEIGHT}
-                  />
-                </div>
-              );
-            })}
+                );
+              }),
+            )}
           </div>
         </div>
       </Document>
