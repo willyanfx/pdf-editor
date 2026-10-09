@@ -72,7 +72,14 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
 
   // Per-page pdf.js page proxies (for text extraction) and canvas refs (for
   // background-color sampling). Stored outside React state to avoid re-renders.
-  const pagesRef = useRef<Map<number, PDFPageProxy>>(new Map());
+  // Each proxy is tagged with its File: after a page rewrite (insert, duplicate,
+  // replace) swaps the File, the old document is destroyed and its proxies throw
+  // on use, so getPage only hands out proxies from the file now open.
+  const pagesRef = useRef<Map<number, { file: File | null; page: PDFPageProxy }>>(new Map());
+  const getPage = (index: number) => {
+    const entry = pagesRef.current.get(index);
+    return entry && entry.file === file ? entry.page : null;
+  };
   const canvasRefs = useRef<Map<number, HTMLCanvasElement | null>>(new Map());
   const pdfInputRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -510,18 +517,18 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
                         canvasRefs.current.set(index, el);
                       }}
                       onLoadSuccess={(page) => {
-                        pagesRef.current.set(index, page as unknown as PDFPageProxy);
+                        pagesRef.current.set(index, { file, page: page as unknown as PDFPageProxy });
                         force((n) => n + 1);
                       }}
                     />
                     <ExistingTextLayer
                       pageIndex={index}
-                      page={pagesRef.current.get(index) ?? null}
+                      page={getPage(index)}
                       getCanvas={() => canvasRefs.current.get(index) ?? null}
                     />
                     <ExistingImageLayer
                       pageIndex={index}
-                      page={pagesRef.current.get(index) ?? null}
+                      page={getPage(index)}
                       getCanvas={() => canvasRefs.current.get(index) ?? null}
                     />
                     <OcrLayer
@@ -530,13 +537,13 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
                     />
                     <SignatureZoneLayer
                       pageIndex={index}
-                      page={pagesRef.current.get(index) ?? null}
+                      page={getPage(index)}
                     />
                     <AnnotateLayer pageIndex={index} />
                     <InkLayer pageIndex={index} />
                     <TextDrawLayer pageIndex={index} />
                     <EditableLayer pageIndex={index} />
-                    <PageStampsLayer pageIndex={index} page={pagesRef.current.get(index) ?? null} />
+                    <PageStampsLayer pageIndex={index} page={getPage(index)} />
                   </div>
                   <PageActionsBar
                     pageIndex={index}

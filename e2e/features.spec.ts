@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { FEATURES_PDF } from "./global-setup";
+import { PDFDocument } from "pdf-lib";
+import { FEATURES_PDF, FORM_PDF } from "./global-setup";
 
 /**
  * End-to-end checks for the Acrobat-parity features: each drives the real UI,
@@ -8,9 +9,9 @@ import { FEATURES_PDF } from "./global-setup";
  * the whole path from store to export.
  */
 
-async function openFixture(page: Page) {
+async function openFixture(page: Page, fixture = FEATURES_PDF) {
   await page.goto("/");
-  await page.locator('input[type="file"]').setInputFiles(FEATURES_PDF);
+  await page.locator('input[type="file"]').setInputFiles(fixture);
   await expect(page.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
 }
 
@@ -94,4 +95,26 @@ test("unsaved changes can be recovered after a reload", async ({ page }) => {
 
   const texts = await pageTexts(await downloadPdf(page));
   expect(texts[0]).toContain("Page 1 of 3");
+});
+
+test("filled form fields survive page deletion in the download", async ({ page }) => {
+  await openFixture(page, FORM_PDF);
+  const field = page.locator(".annotationLayer input[type='text']").first();
+  await expect(field).toBeVisible({ timeout: 10_000 });
+  await field.fill("Ada Lovelace");
+  await page.locator(".annotationLayer input[type='checkbox']").first().check();
+
+  // Deleting a page takes export's reorder path, which used to drop the form.
+  // Driven through the store module the dev server serves (no page-delete UI
+  // without the sidebar open); the URL is passed in so tsc doesn't resolve it.
+  await page.evaluate(async (storeUrl) => {
+    const mod = await import(/* @vite-ignore */ storeUrl);
+    mod.useEditorStore.getState().deletePage(1);
+  }, "/pdf-editor/src/store/useEditorStore.ts");
+
+  const doc = await PDFDocument.load(await downloadPdf(page));
+  expect(doc.getPageCount()).toBe(1);
+  const form = doc.getForm();
+  expect(form.getTextField("applicant.name").getText()).toBe("Ada Lovelace");
+  expect(form.getCheckBox("agree").isChecked()).toBe(true);
 });

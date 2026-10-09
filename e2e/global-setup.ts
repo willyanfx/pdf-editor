@@ -8,6 +8,7 @@ export const FIXTURE_DIR = join(dirname(fileURLToPath(import.meta.url)), ".fixtu
 export const FIXTURE_PDF = join(FIXTURE_DIR, "smoke.pdf");
 export const FIXTURE_HTML = join(FIXTURE_DIR, "smoke.html");
 export const FEATURES_PDF = join(FIXTURE_DIR, "features.pdf");
+export const FORM_PDF = join(FIXTURE_DIR, "form.pdf");
 
 /** Static HTML (inline styles, no remote assets) for the HTML→PDF conversion test. */
 const FIXTURE_HTML_SOURCE = `<!doctype html>
@@ -38,6 +39,20 @@ export default async function globalSetup() {
   await writeFile(FIXTURE_PDF, bytes);
   await writeFile(FIXTURE_HTML, FIXTURE_HTML_SOURCE);
   await writeFile(FEATURES_PDF, await buildFeaturesPdf());
+  await writeFile(FORM_PDF, await buildFormPdf());
+}
+
+/** Two pages with a fillable text field and checkbox on page 1. */
+async function buildFormPdf(): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const page = doc.addPage([612, 792]);
+  page.drawText("Name:", { x: 72, y: 700, size: 14, font });
+  const form = doc.getForm();
+  form.createTextField("applicant.name").addToPage(page, { x: 130, y: 690, width: 200, height: 24 });
+  form.createCheckBox("agree").addToPage(page, { x: 72, y: 640, width: 18, height: 18 });
+  doc.addPage([612, 792]).drawText("Second page", { x: 72, y: 700, size: 14, font });
+  return doc.save();
 }
 
 /** Three text pages for the feature specs (page numbers, bookmarks, organize). */
