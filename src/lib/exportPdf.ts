@@ -25,6 +25,7 @@ import type {
 } from "../store/useEditorStore";
 import { runsToText } from "../store/useEditorStore";
 import { mapScreenRectToPdf, VIEWER_WIDTH as VIEWER_W } from "./pdfGeometry";
+import { loadPdfLibDocument } from "./pdfLoad";
 import {
   isStandardFont,
   getGoogleFontEntry,
@@ -179,6 +180,12 @@ export type ExportOptions = {
   pageOps?: PageOp[];
   /** Compress the output (object streams; images are downsampled separately). */
   compress?: boolean;
+  /** Password for an encrypted source PDF (user or owner). The export is always
+   * written decrypted; apply `encryptPdf` afterwards to protect it again. */
+  password?: string;
+  /** Called when the source was encrypted and had to be decrypted, i.e. the
+   * output does not carry the original protection. */
+  onDecrypted?: () => void;
   /** Bookmarks to write as the output's outline (replacing the file's own).
    * Omit to leave the outline untouched; see bookmarksForExport(). */
   bookmarks?: Bookmark[];
@@ -242,7 +249,7 @@ export async function exportEditedPdf(
     );
   }
   const originalBytes = await sourceFile.arrayBuffer();
-  const srcDoc = await PDFDocument.load(originalBytes);
+  const srcDoc = await loadPdfLibDocument(originalBytes, options.password, options.onDecrypted);
   const srcCount = srcDoc.getPageCount();
 
   // Default order = every page as-is. An order that differs (reordered or with
