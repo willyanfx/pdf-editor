@@ -7,6 +7,8 @@ import type { CompressOptions } from "../lib/compressPresets";
 import { markDocumentSaved } from "../lib/autosave";
 import { addBookmarkForCurrentPage, showBookmarks } from "../lib/bookmarkActions";
 import { bookmarksForExport } from "../lib/bookmarks";
+import { usePageSelectionStore } from "../store/usePageSelectionStore";
+import { formatPageRanges, inVisibleOrder } from "../lib/pageRemap";
 
 /** Callbacks the morphing Download button uses to drive its idle→spinner→check
  * animation; the export logic itself lives here so the rail, top bar, and
@@ -379,6 +381,118 @@ export function useEditorActions() {
     }
   }
 
+  // --- Page selection (page panel multi-select) ---------------------------
+
+  /** The selected pages in visible order, or the current page when nothing is
+   * selected — every selection action falls back to the page in view. */
+  function targetPages(): number[] {
+    const { pageOrder, selectedPageIndex } = useEditorStore.getState();
+    const selected = inVisibleOrder(pageOrder, usePageSelectionStore.getState().selected);
+    if (selected.length) return selected;
+    return pageOrder.includes(selectedPageIndex) ? [selectedPageIndex] : [];
+  }
+
+  function selectAllPages() {
+    const { pageOrder } = useEditorStore.getState();
+    usePageSelectionStore.getState().setSelection([...pageOrder], pageOrder[0] ?? null);
+  }
+
+  function rotateSelectedPages(delta: number) {
+    const pages = targetPages();
+    if (pages.length) useEditorStore.getState().rotatePages(pages, delta);
+  }
+
+  function deleteSelectedPages() {
+    const pages = targetPages();
+    if (!pages.length) return;
+    if (pages.length >= useEditorStore.getState().pageOrder.length) {
+      useToastStore.getState().addToast("Can't delete every page.", "error");
+      return;
+    }
+    useEditorStore.getState().deletePages(pages);
+    usePageSelectionStore.getState().clearSelection();
+    useToastStore
+      .getState()
+      .addToast(pages.length === 1 ? "Page deleted" : `${pages.length} pages deleted`, "info");
+  }
+
+  async function duplicateSelectedPages() {
+    const pages = targetPages();
+    if (!pages.length) return;
+    const created = await useEditorStore.getState().duplicatePages(pages);
+    if (!created) return;
+    usePageSelectionStore.getState().setSelection(created, created[0]);
+    useToastStore
+      .getState()
+      .addToast(
+        pages.length === 1 ? "Page duplicated" : `${pages.length} pages duplicated`,
+        "success",
+      );
+  }
+
+  /** Insert one blank page right after the last selected (or current) page. */
+  async function insertBlankAfterSelection() {
+    const pages = targetPages();
+    const store = useEditorStore.getState();
+    if (!store.file) return;
+    const after = pages.length ? store.pageOrder.indexOf(pages[pages.length - 1]) + 1 : 0;
+    await store.insertPages([{ kind: "blank", size: "letter" }], after);
+    const created = useEditorStore.getState().pageOrder[after];
+    if (useEditorStore.getState().file !== store.file && created !== undefined) {
+      usePageSelectionStore.getState().setSelection([created], created);
+      useToastStore.getState().addToast("Blank page added", "success");
+    }
+  }
+
+  function openExtractDialog() {
+    if (!useEditorStore.getState().file || !targetPages().length) return;
+    usePageSelectionStore.getState().setExtractDialogOpen(true);
+  }
+
+  function openReplaceDialog() {
+    if (!useEditorStore.getState().file || !targetPages().length) return;
+    usePageSelectionStore.getState().setReplaceDialogOpen(true);
+  }
+
+  /** Download the target pages (visible order, edits baked) as a new PDF, then
+   * optionally remove them from this document. */
+  async function extractSelectedPages(deleteAfter = false) {
+    const pages = targetPages();
+    const { file, edits, pageOps, pageOrder } = useEditorStore.getState();
+    if (!file || !pages.length) return;
+    try {
+      const { exportEditedPdf } = await import("../lib/exportPdf");
+      const bytes = await exportEditedPdf(file, edits, { pageOrder: pages, pageOps });
+      const numbers = pages.map((p) => pageOrder.indexOf(p) + 1);
+      const base = file.name.replace(/\.pdf$/i, "");
+      downloadBytes(bytes, `${base}-pages-${formatPageRanges(numbers)}.pdf`);
+    } catch {
+      useToastStore.getState().addToast("Could not extract those pages.", "error");
+      return;
+    }
+    const removed = deleteAfter && pages.length < pageOrder.length;
+    if (removed) {
+      useEditorStore.getState().deletePages(pages);
+      usePageSelectionStore.getState().clearSelection();
+    }
+    const what = pages.length === 1 ? "Page" : `${pages.length} pages`;
+    useToastStore
+      .getState()
+      .addToast(removed ? `${what} extracted and removed` : `${what} extracted`, "success");
+  }
+
+  /** Replace the target pages with `sourcePages` (0-based) of `source`. */
+  async function replaceSelectedPages(source: File, sourcePages: number[]) {
+    const pages = targetPages();
+    if (!pages.length || !sourcePages.length) return;
+    const created = await useEditorStore.getState().replacePages(pages, source, sourcePages);
+    if (!created) return;
+    usePageSelectionStore.getState().setSelection(created, created[0]);
+    useToastStore
+      .getState()
+      .addToast(pages.length === 1 ? "Page replaced" : `${pages.length} pages replaced`, "success");
+  }
+
   return {
     openPdf,
     pickPdf,
@@ -406,5 +520,15 @@ export function useEditorActions() {
     addPages,
     addBookmark: addBookmarkForCurrentPage,
     showBookmarks,
+    targetPages,
+    selectAllPages,
+    rotateSelectedPages,
+    deleteSelectedPages,
+    duplicateSelectedPages,
+    insertBlankAfterSelection,
+    openExtractDialog,
+    openReplaceDialog,
+    extractSelectedPages,
+    replaceSelectedPages,
   };
 }

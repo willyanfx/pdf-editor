@@ -4,7 +4,6 @@ import {
   bookmarksForExport,
   insertBookmark,
   makeBookmark,
-  mapBookmarkPages,
   moveBookmark,
   moveBookmarkTo,
   removeBookmark,
@@ -12,7 +11,7 @@ import {
   topLevelSlotForPage,
   type Bookmark,
 } from "./bookmarks";
-import { remapIndexAfterInsert } from "./pageInsert";
+import { planDuplicate, planInsert, planReplace, remapPageState } from "./pageRemap";
 import { useEditorStore } from "../store/useEditorStore";
 import { loadOutlineIntoStore, type OutlineSource } from "./outlineRead";
 
@@ -89,11 +88,27 @@ test("resolveBookmarksForOutput prunes deleted pages and promotes children in pl
   expect(out[4].children).toEqual([]); // its only child was on the deleted page
 });
 
-test("mapBookmarkPages with remapIndexAfterInsert shifts pages at/after the insert point", () => {
-  const remapped = mapBookmarkPages(sample(), (i) => remapIndexAfterInsert(i, 2, 3));
-  const pages = (t: Bookmark[]): (number | null)[] =>
-    t.flatMap((b) => [b.pageIndex, ...pages(b.children)]);
-  expect(pages(remapped)).toEqual([0, 1, 5, 6, 7]);
+const bookmarkPages = (t: Bookmark[]): (number | null)[] =>
+  t.flatMap((b) => [b.pageIndex, ...bookmarkPages(b.children)]);
+const remapBookmarksWith = (plan: ReturnType<typeof planInsert>) =>
+  remapPageState({ edits: [], pageOps: [], pageOrder: [0, 1, 2, 3, 4], bookmarks: sample() }, plan)
+    .bookmarks;
+
+test("inserting pages shifts bookmarks at/after the insert point", () => {
+  const plan = planInsert(5, [0, 1, 2, 3, 4], 2, 3);
+  expect(bookmarkPages(remapBookmarksWith(plan))).toEqual([0, 1, 5, 6, 7]);
+});
+
+test("duplicating a page keeps bookmarks on the original, not the copy", () => {
+  const plan = planDuplicate(5, [0, 1, 2, 3, 4], [1]);
+  expect(bookmarkPages(remapBookmarksWith(plan))).toEqual([0, 1, 3, 4, 5]);
+});
+
+test("replacing a page leaves its bookmark without a target", () => {
+  const plan = planReplace(5, [0, 1, 2, 3, 4], [3], [0]);
+  const pages = bookmarkPages(remapBookmarksWith(plan));
+  expect(pages[3]).toBeNull();
+  expect(pages.filter((p) => p !== null)).toEqual([0, 1, 2, 4]);
 });
 
 test("bookmarksForExport only takes over the outline once it's known", () => {

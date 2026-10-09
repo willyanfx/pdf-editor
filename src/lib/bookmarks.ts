@@ -218,15 +218,6 @@ function replaceSiblings(
   );
 }
 
-/** Rewrite every page index (e.g. after pages are inserted before it). */
-export function mapBookmarkPages(tree: Bookmark[], fn: (pageIndex: number) => number): Bookmark[] {
-  return tree.map((b) => ({
-    ...b,
-    pageIndex: b.pageIndex === null ? null : fn(b.pageIndex),
-    children: mapBookmarkPages(b.children, fn),
-  }));
-}
-
 /** A bookmark resolved against the exported page order. */
 export type OutputBookmark = {
   title: string;
