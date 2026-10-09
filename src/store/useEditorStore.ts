@@ -600,7 +600,10 @@ async function rewritePages(
   if (!file) return null;
   try {
     const { loadPdf, buildPlannedPdf } = await import("../lib/pageOrganize");
-    const [baseDoc, extra] = await Promise.all([loadPdf(file), loadExtra?.()]);
+    const [baseDoc, extra] = await Promise.all([
+      loadPdf(file, start.documentPassword ?? undefined),
+      loadExtra?.(),
+    ]);
     const order = start.pageOrder.length ? start.pageOrder : baseDoc.getPageIndices();
     const plan = makePlan(baseDoc.getPageCount(), order, extra?.getPageCount() ?? 0);
     const bytes = await buildPlannedPdf(baseDoc, plan.layout, extra);

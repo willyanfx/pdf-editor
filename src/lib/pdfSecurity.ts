@@ -72,14 +72,16 @@ const yn = (b: boolean) => (b ? "y" : "n");
 /** Build the qpdf argv that encrypts `input` into `output` with AES-256. */
 export function buildEncryptArgs(options: ProtectOptions, input: string, output: string): string[] {
   const { permissions: p } = options;
+  // Passwords go in `--name=value` form: as bare positionals, a password that
+  // starts with "--" would be parsed as an option.
   return [
     input,
     "--encrypt",
-    options.userPassword,
+    `--user-password=${options.userPassword}`,
     // qpdf rejects an open password paired with an empty owner password (the
     // empty one would unlock the file), so default the owner to the open password.
-    options.ownerPassword || options.userPassword,
-    "256",
+    `--owner-password=${options.ownerPassword || options.userPassword}`,
+    "--bits=256",
     `--print=${p.print}`,
     `--extract=${yn(p.copy)}`,
     `--modify-other=${yn(p.edit)}`,
@@ -160,7 +162,12 @@ async function runQpdf(
   } catch (err) {
     // Emscripten surfaces a non-zero exit as a thrown ExitStatus.
     const code = (err as { status?: unknown } | null)?.status;
-    if (typeof code !== "number") throw err;
+    if (typeof code !== "number") {
+      // A real abort (e.g. out of memory) leaves the wasm instance unusable;
+      // drop it so the next job starts from a fresh one.
+      qpdfPromise = null;
+      throw err;
+    }
     status = code;
   }
   let out: Uint8Array | null = null;

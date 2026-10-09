@@ -10,12 +10,14 @@ import {
   PDFString,
   type PDFPage,
 } from "pdf-lib";
+import { loadPdfLibDocument } from "./pdfLoad";
 import type { LayoutEntry } from "./pageRemap";
 import { pruneRemovedPages, removeUnreachableObjects } from "./pageReorder";
 
-/** Load a File as an editable pdf-lib document. */
-export async function loadPdf(file: File): Promise<PDFDocument> {
-  return PDFDocument.load(await file.arrayBuffer());
+/** Load a File as an editable pdf-lib document (decrypting it with `password`
+ * when it is encrypted). */
+export async function loadPdf(file: File, password?: string): Promise<PDFDocument> {
+  return loadPdfLibDocument(await file.arrayBuffer(), password);
 }
 
 /**

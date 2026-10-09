@@ -221,7 +221,17 @@ export function useEditorActions() {
       : fallback;
   }
 
-  async function downloadPdf(hooks: DownloadHooks = {}, opts: { flattenForms?: boolean } = {}) {
+  /**
+   * The one export path for PDF downloads. `protect` encrypts the finished bytes
+   * (Protect PDF); `suffix` names the file. An encrypted source is always written
+   * decrypted — by default the user is told so, since the output has lost its
+   * original password/permissions unless `protect` sets them again.
+   */
+  async function downloadPdf(
+    hooks: DownloadHooks = {},
+    opts: { flattenForms?: boolean; protect?: ProtectOptions; suffix?: string } = {},
+  ) {
+    const { protect, suffix = "edited", ...exportOpts } = opts;
     const { file, edits, revision } = useEditorStore.getState();
     if (!file) return;
     // Pending redaction marks: explain once (per document) what the download
@@ -232,27 +242,44 @@ export function useEditorActions() {
     try {
       // exportRedactedPdf = exportEditedPdf + the redaction pass (a no-op
       // without marks). exportEditedPdf alone refuses pending marks.
+      let decrypted = false;
       const { exportRedactedPdf } = await import("../lib/redact");
-      const { bytes, warnings } = await exportRedactedPdf(file, edits, {
+      const { bytes: plain, warnings } = await exportRedactedPdf(file, edits, {
         ...exportOptions(),
-        ...opts,
+        ...exportOpts,
+        onDecrypted: () => (decrypted = true),
       });
       for (const w of warnings) useToastStore.getState().addToast(w, "info");
-      downloadBytes(bytes, file.name.replace(/\.pdf$/i, "") + ".edited.pdf");
+      const bytes = protect
+        ? await (await import("../lib/pdfSecurity")).encryptPdf(plain, protect)
+        : plain;
+      downloadBytes(bytes, file.name.replace(/\.pdf$/i, "") + `.${suffix}.pdf`);
       markDocumentSaved(revision);
       useToastStore
         .getState()
         .addToast(
-          useEditorStore.getState().documentPassword !== null
-            ? "PDF exported without its password protection — use Protect PDF to add it back"
-            : "PDF exported",
+          protect
+            ? "Protected PDF exported"
+            : suffix === "unlocked"
+              ? "Unprotected PDF exported"
+              : decrypted
+                ? "PDF exported without its password protection — use Protect PDF to add it back"
+                : "PDF exported",
           "success",
         );
       hooks.onSuccess?.();
     } catch (err) {
       useToastStore
         .getState()
-        .addToast(exportFailureMessage(err, "Could not export this PDF."), "error");
+        .addToast(
+          exportFailureMessage(
+            err,
+            protect || suffix === "unlocked"
+              ? "Could not protect this PDF."
+              : "Could not export this PDF.",
+          ),
+          "error",
+        );
       hooks.onError?.();
     }
   }
@@ -262,35 +289,11 @@ export function useEditorActions() {
    * null exports with every form of protection removed (for an encrypted source
    * this is the "remove security" path).
    */
-  async function protectPdf(hooks: DownloadHooks = {}, options: ProtectOptions | null = null) {
-    const { file, edits, revision } = useEditorStore.getState();
-    if (!file) return;
-    if (!(await confirmRedactions())) return;
-
-    hooks.onStart?.();
-    try {
-      // Same redaction-aware export as Download; encryption is applied last, to
-      // the finished bytes.
-      const [{ exportRedactedPdf }, { encryptPdf }] = await Promise.all([
-        import("../lib/redact"),
-        import("../lib/pdfSecurity"),
-      ]);
-      const { bytes: plain, warnings } = await exportRedactedPdf(file, edits, exportOptions());
-      for (const w of warnings) useToastStore.getState().addToast(w, "info");
-      const bytes = options ? await encryptPdf(plain, options) : plain;
-      const base = file.name.replace(/\.pdf$/i, "");
-      downloadBytes(bytes, `${base}.${options ? "protected" : "unlocked"}.pdf`);
-      markDocumentSaved(revision);
-      useToastStore
-        .getState()
-        .addToast(options ? "Protected PDF exported" : "Unprotected PDF exported", "success");
-      hooks.onSuccess?.();
-    } catch (err) {
-      useToastStore
-        .getState()
-        .addToast(exportFailureMessage(err, "Could not protect this PDF."), "error");
-      hooks.onError?.();
-    }
+  function protectPdf(hooks: DownloadHooks = {}, options: ProtectOptions | null = null) {
+    return downloadPdf(
+      hooks,
+      options ? { protect: options, suffix: "protected" } : { suffix: "unlocked" },
+    );
   }
 
   /** Download with every form field drawn into the page (no longer fillable). */
@@ -376,17 +379,25 @@ export function useEditorActions() {
       // pages are what gets compressed (null when there are no marks).
       const options = exportOptions();
       const pass = createRedactionPass(file, edits, options.pageOrder);
+      let decrypted = false;
       const bytes = await compressEditedPdf(
         file,
         blankRedactedTextEdits(edits),
-        { ...options, redactionsHandled: true },
+        { ...options, redactionsHandled: true, onDecrypted: () => (decrypted = true) },
         compressOptions,
         pass?.run,
       );
       for (const w of pass?.warnings ?? []) useToastStore.getState().addToast(w, "info");
       downloadBytes(bytes, file.name.replace(/\.pdf$/i, "") + ".compressed.pdf");
       markDocumentSaved(revision);
-      useToastStore.getState().addToast("Compressed PDF exported", "success");
+      useToastStore
+        .getState()
+        .addToast(
+          decrypted
+            ? "Compressed PDF exported without its password protection"
+            : "Compressed PDF exported",
+          "success",
+        );
       hooks.onSuccess?.();
     } catch (err) {
       useToastStore

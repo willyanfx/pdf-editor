@@ -90,4 +90,11 @@ test("permission restrictions require a distinct permissions password", async ({
   await openFixture(page, path);
   await expect(page.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("dialog", { name: "Unlock PDF" })).toHaveCount(0);
+
+  // Downloading that file strips the restrictions — even with no password
+  // having been typed — and says so.
+  const redownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: /^download/i }).click();
+  await redownload;
+  await expect(page.getByText(/without its password protection/)).toBeVisible();
 });

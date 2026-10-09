@@ -25,7 +25,7 @@ import type {
 } from "../store/useEditorStore";
 import { runsToText } from "../store/useEditorStore";
 import { mapScreenRectToPdf, VIEWER_WIDTH as VIEWER_W } from "./pdfGeometry";
-import { isEncryptedPdfError } from "./pdfSecurity";
+import { loadPdfLibDocument } from "./pdfLoad";
 import {
   isStandardFont,
   getGoogleFontEntry,
@@ -183,6 +183,9 @@ export type ExportOptions = {
   /** Password for an encrypted source PDF (user or owner). The export is always
    * written decrypted; apply `encryptPdf` afterwards to protect it again. */
   password?: string;
+  /** Called when the source was encrypted and had to be decrypted, i.e. the
+   * output does not carry the original protection. */
+  onDecrypted?: () => void;
   /** Bookmarks to write as the output's outline (replacing the file's own).
    * Omit to leave the outline untouched; see bookmarksForExport(). */
   bookmarks?: Bookmark[];
@@ -197,21 +200,6 @@ export type ExportOptions = {
    * export would silently leak the content the user asked to remove. */
   redactionsHandled?: boolean;
 };
-
-/**
- * Load the source PDF for editing. pdf-lib refuses encrypted input outright
- * (and `ignoreEncryption` would hand back undecrypted streams), so an encrypted
- * file is first run through qpdf to strip the encryption.
- */
-async function loadSourceDocument(bytes: ArrayBuffer, password?: string): Promise<PDFDocument> {
-  try {
-    return await PDFDocument.load(bytes);
-  } catch (err) {
-    if (!isEncryptedPdfError(err)) throw err;
-    const { decryptPdf } = await import("./pdfSecurity");
-    return PDFDocument.load(await decryptPdf(new Uint8Array(bytes), password));
-  }
-}
 
 import { COMPRESS_PRESETS } from "./compressPresets";
 import type { CompressOptions } from "./compressPresets";
@@ -248,7 +236,7 @@ export async function exportEditedPdf(
     );
   }
   const originalBytes = await sourceFile.arrayBuffer();
-  const srcDoc = await loadSourceDocument(originalBytes, options.password);
+  const srcDoc = await loadPdfLibDocument(originalBytes, options.password, options.onDecrypted);
   const srcCount = srcDoc.getPageCount();
 
   // Default order = every page as-is. An order that differs (reordered or with

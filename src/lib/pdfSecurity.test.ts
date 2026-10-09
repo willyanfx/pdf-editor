@@ -3,6 +3,7 @@ import { test, expect, vi } from "vite-plus/test";
 import { PDFDocument } from "pdf-lib";
 import { exportEditedPdf } from "./exportPdf";
 import { isPdfEncrypted } from "./pdfMetadata";
+import { loadPdfLibDocument } from "./pdfLoad";
 import {
   ALL_PERMISSIONS,
   buildEncryptArgs,
@@ -59,7 +60,7 @@ test("restrictions need a distinct permissions password", () => {
 
 test("buildEncryptArgs defaults the owner password to the open password", () => {
   const args = buildEncryptArgs(open({ userPassword: "pw" }), "/in.pdf", "/out.pdf");
-  expect(args.slice(2, 4)).toEqual(["pw", "pw"]);
+  expect(args.slice(2, 4)).toEqual(["--user-password=pw", "--owner-password=pw"]);
 });
 
 test("buildEncryptArgs maps permissions to qpdf flags", () => {
@@ -72,7 +73,13 @@ test("buildEncryptArgs maps permissions to qpdf flags", () => {
     "/in.pdf",
     "/out.pdf",
   );
-  expect(args.slice(0, 5)).toEqual(["/in.pdf", "--encrypt", "u", "o", "256"]);
+  expect(args.slice(0, 5)).toEqual([
+    "/in.pdf",
+    "--encrypt",
+    "--user-password=u",
+    "--owner-password=o",
+    "--bits=256",
+  ]);
   expect(args).toContain("--print=low");
   expect(args).toContain("--extract=n");
   expect(args).toContain("--modify-other=y");
@@ -132,4 +139,21 @@ test("isPdfEncrypted detects AES-256 files that ignoreEncryption can't parse", a
   const encrypted = await encryptPdf(plain, open({ userPassword: "pw" }));
   expect(await isPdfEncrypted(new File([plain.slice()], "a.pdf"))).toBe(false);
   expect(await isPdfEncrypted(new File([encrypted.slice()], "b.pdf"))).toBe(true);
+});
+
+test("passwords that look like options still round-trip", async () => {
+  for (const pw of ["--oops", "pä$$ wörd✓", "a b", '"q"']) {
+    const encrypted = await encryptPdf(await samplePdf(), open({ userPassword: pw }));
+    expect((await PDFDocument.load(await decryptPdf(encrypted, pw))).getPageCount()).toBe(2);
+  }
+});
+
+test("loadPdfLibDocument decrypts encrypted input and reports it", async () => {
+  const plain = await samplePdf();
+  const encrypted = await encryptPdf(plain, open({ userPassword: "pw" }));
+  const onDecrypted = vi.fn();
+  expect((await loadPdfLibDocument(encrypted, "pw", onDecrypted)).getPageCount()).toBe(2);
+  expect(onDecrypted).toHaveBeenCalledTimes(1);
+  await loadPdfLibDocument(plain, undefined, onDecrypted);
+  expect(onDecrypted).toHaveBeenCalledTimes(1);
 });

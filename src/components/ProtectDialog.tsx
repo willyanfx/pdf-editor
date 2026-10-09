@@ -42,11 +42,10 @@ export function ProtectDialog() {
   const onClose = () => useEditorStore.getState().setProtectDialogOpen(false);
   const trapRef = useFocusTrap<HTMLDivElement>(open, onClose);
 
-  // Start each session from a clean slate — passwords shouldn't linger in
-  // component state between openings — and learn whether the source is
+  // Reset on every open AND close — the component stays mounted while closed, and
+  // passwords shouldn't linger in its state — and learn whether the source is
   // encrypted so "remove protection" is only offered when it applies.
   useEffect(() => {
-    if (!open || !file) return;
     setMode("protect");
     setUserPassword("");
     setOwnerPassword("");
@@ -54,6 +53,7 @@ export function ProtectDialog() {
     setPermissions(ALL_PERMISSIONS);
     setState("idle");
     setEncrypted(false);
+    if (!open || !file) return;
     let cancelled = false;
     void isPdfEncrypted(file).then((yes) => {
       if (!cancelled) setEncrypted(yes);
