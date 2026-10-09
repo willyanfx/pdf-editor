@@ -4,9 +4,11 @@ import App from "./App";
 import "./styles.css";
 import { injectPreconnect } from "./lib/fonts";
 import { installStaleChunkReload } from "./lib/staleChunkReload";
+import { initTheme } from "./store/useViewerStore";
 
 installStaleChunkReload();
 injectPreconnect();
+initTheme();
 
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Root element #root not found");

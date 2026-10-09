@@ -34,6 +34,7 @@ import {
   type FormValue,
   type FormValues,
 } from "../lib/formFields";
+import { buildFindRegExp, type FindOptions } from "../lib/findText";
 import { useToastStore } from "./useToastStore";
 
 export type { InsertSource };
@@ -143,6 +144,30 @@ export type ImageEdit = {
   coverRect?: { x: number; y: number; width: number; height: number };
 };
 
+/** Review state a reviewer can put on a comment (Acrobat's "Review" model). */
+export type ReviewStatus = "none" | "accepted" | "rejected" | "cancelled" | "completed";
+
+/** A reply in a comment's thread. */
+export type CommentReply = {
+  id: string;
+  author: string;
+  text: string;
+  createdAt: number; // epoch ms
+};
+
+/** Comment metadata shared by every annotation type, so any mark can carry a
+ * note, a review status and a thread of replies. Everything is optional: edits
+ * made before comments existed (and autosave snapshots of them) lack all of it. */
+export type CommentFields = {
+  /** The note attached to the mark (a sticky note's body, or a popup note). */
+  text?: string;
+  author?: string;
+  createdAt?: number; // epoch ms
+  modifiedAt?: number; // epoch ms
+  status?: ReviewStatus;
+  replies?: CommentReply[];
+};
+
 /** Highlight / underline / strikeout — a rectangular text-markup annotation. */
 export type MarkupEdit = {
   id: string;
@@ -153,7 +178,7 @@ export type MarkupEdit = {
   width: number;
   height: number;
   color: string; // hex
-};
+} & CommentFields;
 
 /** A sticky-note comment: a pin with attached text shown on hover/click. */
 export type CommentEdit = {
@@ -166,7 +191,7 @@ export type CommentEdit = {
   height: number;
   text: string;
   color: string; // hex pin color
-};
+} & CommentFields;
 
 /** Freehand ink: a polyline in screen-px points relative to the page. */
 export type InkEdit = {
@@ -181,7 +206,52 @@ export type InkEdit = {
   points: { x: number; y: number }[];
   color: string; // hex
   strokeWidth: number;
-};
+} & CommentFields;
+
+/** A plain outlined box. The "Add Box" button makes it black and thin; the
+ * rectangle drawing tool sets color/strokeWidth. */
+export type RectangleEdit = {
+  id: string;
+  type: "rectangle";
+  pageIndex: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color?: string; // hex; default black
+  strokeWidth?: number; // screen px; default 1
+} & CommentFields;
+
+/** Line, arrow (head at the second point), oval, polygon and cloud. Line, arrow
+ * and polygon carry `points` (relative to x, y, like ink); oval and cloud are
+ * defined by the bounding box alone. */
+export type ShapeEdit = {
+  id: string;
+  type: "line" | "arrow" | "oval" | "polygon" | "cloud";
+  pageIndex: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  points?: { x: number; y: number }[];
+  color: string; // hex
+  strokeWidth: number;
+} & CommentFields;
+
+/** A rubber stamp (Approved, Draft, ...): a bordered label. `stamp` is the
+ * standard PDF stamp name, so it survives a native / XFDF round trip. */
+export type StampEdit = {
+  id: string;
+  type: "stamp";
+  pageIndex: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  stamp: string;
+  label: string;
+  color: string; // hex
+} & CommentFields;
 
 /** A redaction mark. Unlike a cover rectangle it is not drawn over the page:
  * on download the marked area is permanently removed (page rasterized, content
@@ -200,18 +270,12 @@ export type RedactEdit = {
 export type PdfEdit =
   | TextEdit
   | ImageEdit
-  | {
-      id: string;
-      type: "rectangle";
-      pageIndex: number;
-      x: number;
-      y: number;
-      width: number;
-      height: number;
-    }
+  | RectangleEdit
   | MarkupEdit
   | CommentEdit
   | InkEdit
+  | ShapeEdit
+  | StampEdit
   | RedactEdit;
 
 /** Per-page geometry mutation, kept separate from overlay edits so page
@@ -228,16 +292,26 @@ export type PageOp = {
 /** Select vs. Edit-Text vs. OCR. In edit-text mode, clicking existing PDF text
  * turns it into an editable box. In ocr mode, dragging a rectangle runs OCR on
  * that region and turns recognized text into editable boxes. In addText mode,
- * dragging (or clicking) places a new empty text box where the user draws it. */
+ * dragging (or clicking) places a new empty text box where the user draws it. In
+ * hand mode, dragging pans the page stage and nothing on the pages is touched. */
 export type EditorMode =
   | "select"
+  | "hand"
   | "editText"
   | "ocr"
   | "addText"
   | "highlight"
   | "underline"
+  | "strikeout"
   | "comment"
   | "ink"
+  | "line"
+  | "arrow"
+  | "rectangle"
+  | "oval"
+  | "polygon"
+  | "cloud"
+  | "stamp"
   | "signZones"
   | "redact";
 
@@ -314,6 +388,8 @@ type EditorState = {
   /** Find-in-page: the active query and the ordered ids of matching text edits. */
   searchQuery: string;
   searchMatchIds: string[];
+  searchCaseSensitive: boolean;
+  searchWholeWord: boolean;
 
   /** The password used to decrypt the open PDF, once supplied. Held so direct
    * pdfjs.getDocument() paths (OCR, CSV, page-height, scanned-detection) can
@@ -424,6 +500,8 @@ type EditorState = {
   addEdits: (edits: PdfEdit[]) => void;
   /** Delete several edits as ONE undo step. */
   deleteEdits: (ids: string[]) => void;
+  /** Add new edits and replace existing ones (matched by id) as ONE undo step. */
+  applyEditChanges: (added: PdfEdit[], updated: PdfEdit[]) => void;
 
   /** History stacks — NOT in initialState so setFile does not reset them. */
   _past: HistoryEntry[];
@@ -446,6 +524,8 @@ type EditorState = {
   /** Remove a page from the export and drop its edits/transforms. */
   deletePage: (pageIndex: number) => void;
   setSearchQuery: (query: string) => void;
+  /** Toggle find-in-page's match-case / whole-word options; re-runs the search. */
+  setSearchOptions: (options: Partial<FindOptions>) => void;
   setSignatureModalOpen: (open: boolean) => void;
   setSignaturePlacement: (placement: SignaturePlacement | null) => void;
   setDocumentPassword: (password: string | null) => void;
@@ -533,6 +613,8 @@ const initialState = {
   pendingFocus: null as { editId: string; caretOffset: number } | null,
   searchQuery: "",
   searchMatchIds: [] as string[],
+  searchCaseSensitive: false,
+  searchWholeWord: false,
   documentPassword: null as string | null,
   passwordPrompt: null as { wrong: boolean } | null,
   passwordAttempt: 0,
@@ -818,17 +900,19 @@ export const useEditorStore = create<EditorState>()(
         }),
 
       setSearchQuery: (searchQuery) =>
+        set((state) => ({
+          searchQuery,
+          searchMatchIds: findTextEditIds(state.edits, searchQuery, searchOptionsOf(state)),
+        })),
+
+      setSearchOptions: (options) =>
         set((state) => {
-          const q = searchQuery.trim().toLowerCase();
-          const matchIds = q
-            ? state.edits
-                .filter(
-                  (e): e is TextEdit =>
-                    e.type === "text" && runsToText(e.runs).toLowerCase().includes(q),
-                )
-                .map((e) => e.id)
-            : [];
-          return { searchQuery, searchMatchIds: matchIds };
+          const next = { ...searchOptionsOf(state), ...options };
+          return {
+            searchCaseSensitive: next.caseSensitive,
+            searchWholeWord: next.wholeWord,
+            searchMatchIds: findTextEditIds(state.edits, state.searchQuery, next),
+          };
         }),
 
       setSignatureModalOpen: (signatureModalOpen) => set({ signatureModalOpen }),
@@ -979,6 +1063,19 @@ export const useEditorStore = create<EditorState>()(
           return { ...hist, edits: [...state.edits, ...newEdits], selectedEditId: null };
         }),
 
+      applyEditChanges: (added, updated) =>
+        set((state) => {
+          if (added.length === 0 && updated.length === 0) return {};
+          lastCoalesce = null;
+          const replacement = new Map(updated.map((e) => [e.id, e]));
+          const hist = pushHistory(state, snapshot(state));
+          return {
+            ...hist,
+            edits: [...state.edits.map((e) => replacement.get(e.id) ?? e), ...added],
+            selectedEditId: null,
+          };
+        }),
+
       deleteEdits: (ids) =>
         set((state) => {
           if (ids.length === 0) return {};
@@ -1127,6 +1224,23 @@ export function isDocumentDirty(
 /** Flatten a runs array to a plain string. */
 export function runsToText(runs: TextRun[]): string {
   return runs.map((r) => r.text).join("");
+}
+
+/** The find-in-page options held in the store, in `FindOptions` shape. */
+function searchOptionsOf(state: {
+  searchCaseSensitive: boolean;
+  searchWholeWord: boolean;
+}): FindOptions {
+  return { caseSensitive: state.searchCaseSensitive, wholeWord: state.searchWholeWord };
+}
+
+/** Ids of the text edits whose text matches `query` under `options`, in edit order. */
+function findTextEditIds(edits: PdfEdit[], query: string, options: FindOptions): string[] {
+  const re = buildFindRegExp(query, options);
+  if (!re) return [];
+  return edits
+    .filter((e): e is TextEdit => e.type === "text" && re.test(runsToText(e.runs)))
+    .map((e) => e.id);
 }
 
 /** Wrap a plain string as a single run, optionally carrying style overrides. */

@@ -182,7 +182,13 @@ export function remapPageState(
   }
   for (const edit of state.edits) {
     for (const to of clones.get(edit.pageIndex) ?? []) {
-      edits.push({ ...structuredClone(edit), id: newId(), pageIndex: to });
+      const copy = { ...structuredClone(edit), id: newId(), pageIndex: to };
+      // A copied comment thread needs its own reply ids: they name the replies
+      // when comments are exported (XFDF / native), and must stay unique.
+      if ("replies" in copy && copy.replies) {
+        copy.replies = copy.replies.map((r) => ({ ...r, id: newId() }));
+      }
+      edits.push(copy);
     }
   }
   for (const op of state.pageOps) {

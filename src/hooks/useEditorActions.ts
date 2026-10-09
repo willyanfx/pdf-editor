@@ -4,6 +4,7 @@ import { addImageFromFile, openFiles, openConvertedFile, openPdfFromUrl } from "
 import { CONVERTIBLE_ACCEPT } from "../lib/convertToPdf";
 import type { InsertSource } from "../lib/pageInsert";
 import type { CompressOptions } from "../lib/compressPresets";
+import { downloadText } from "../lib/download";
 import type { ProtectOptions } from "../lib/pdfSecurity";
 import { markDocumentSaved } from "../lib/autosave";
 import { addBookmarkForCurrentPage, showBookmarks } from "../lib/bookmarkActions";
@@ -14,6 +15,9 @@ import { usePageStampsUi } from "../store/usePageStampsUi";
 import { defaultFormValues } from "../lib/formFields";
 import { confirmRedactions, redactedSourceFile } from "../lib/redactActions";
 import { blankRedactedTextEdits, excludeRedactedTextEdits } from "../lib/redactGeometry";
+import { newMarkMeta, useCommentsUiStore } from "../store/useCommentsUiStore";
+import { exportCommentsXfdf, importCommentsXfdf, showComments } from "../lib/commentActions";
+import type { AnnotationMode } from "../lib/annotationExport";
 import { useExportToolsUi } from "../store/useExportToolsUi";
 import type { ImageFormat } from "../lib/pageImages";
 import type { SanitizeOptions } from "../lib/sanitize";
@@ -53,17 +57,6 @@ async function downloadFiles(files: { name: string; data: Uint8Array }[], zipNam
   }
   const { buildZip } = await import("../lib/zip");
   downloadBlob(new Blob([buildZip(files).slice()], { type: "application/zip" }), zipName);
-}
-
-/** Trigger a browser download of a text blob (e.g. CSV) under the given filename. */
-function downloadText(text: string, filename: string, mime: string) {
-  const blob = new Blob([text], { type: `${mime};charset=utf-8` });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
 }
 
 /** Open a transient file picker; resolve with the chosen file(s). */
@@ -158,6 +151,7 @@ export function useEditorActions() {
       y: 120,
       width: 180,
       height: 80,
+      ...newMarkMeta(),
     });
   }
 
@@ -221,6 +215,7 @@ export function useEditorActions() {
   function exportOptions(pages?: number[]) {
     const state = useEditorStore.getState();
     const { pageOrder, pageOps, numPages, pageStamps, formValues, documentPassword } = state;
+    const annotations = useCommentsUiStore.getState().exportMode;
     const order =
       pages ?? (pageOrder.length ? pageOrder : Array.from({ length: numPages }, (_, i) => i));
     return {
@@ -231,6 +226,7 @@ export function useEditorActions() {
       formValues,
       // Lets an encrypted source be decrypted for editing (the viewer already holds it).
       password: documentPassword ?? undefined,
+      annotations,
     };
   }
 
@@ -249,7 +245,12 @@ export function useEditorActions() {
    */
   async function downloadPdf(
     hooks: DownloadHooks = {},
-    opts: { flattenForms?: boolean; protect?: ProtectOptions; suffix?: string } = {},
+    opts: {
+      flattenForms?: boolean;
+      annotations?: AnnotationMode;
+      protect?: ProtectOptions;
+      suffix?: string;
+    } = {},
   ) {
     const { protect, suffix = "edited", ...exportOpts } = opts;
     const { file, edits, revision } = useEditorStore.getState();
@@ -319,6 +320,24 @@ export function useEditorActions() {
   /** Download with every form field drawn into the page (no longer fillable). */
   function downloadPdfFlattened(hooks: DownloadHooks = {}) {
     return downloadPdf(hooks, { flattenForms: true });
+  }
+
+  /** Download with comments kept as native, editable PDF comments. */
+  function downloadPdfWithComments(hooks: DownloadHooks = {}) {
+    return downloadPdf(hooks, { annotations: "native" });
+  }
+
+  /** Download with comments and markup baked into the page. */
+  function downloadPdfCommentsFlattened(hooks: DownloadHooks = {}) {
+    return downloadPdf(hooks, { annotations: "flatten" });
+  }
+
+  /** Pick an .xfdf file and import its comments. */
+  function importXfdf() {
+    if (!useEditorStore.getState().file) return;
+    void pickFiles(".xfdf,application/vnd.adobe.xfdf,application/xml,text/xml").then((files) => {
+      if (files[0]) void importCommentsXfdf(files[0]);
+    });
   }
 
   /** Put every fillable field back to the document's default value (undoable). */
@@ -902,6 +921,11 @@ export function useEditorActions() {
     openWatermark,
     downloadPdf,
     downloadPdfFlattened,
+    downloadPdfWithComments,
+    downloadPdfCommentsFlattened,
+    showComments,
+    importXfdf,
+    exportXfdf: exportCommentsXfdf,
     resetForm,
     downloadDocx,
     downloadCsv,

@@ -16,6 +16,16 @@ import {
   Underline,
   MessageSquare,
   PenTool,
+  Strikethrough,
+  MessagesSquare,
+  Minus,
+  MoveUpRight,
+  Circle,
+  Pentagon,
+  Cloud,
+  FileUp,
+  FileDown,
+  MessageSquareDashed,
   Signature,
   FileInput,
   Combine,
@@ -49,10 +59,21 @@ import {
   EyeOff,
   SearchCheck,
   SquareDashed,
+  Hand,
+  Columns2,
+  BookOpen,
+  Moon,
+  Paperclip,
+  Layers,
 } from "lucide-react";
 import { useEditorStore } from "../store/useEditorStore";
 import { useEditorActions } from "../hooks/useEditorActions";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useCommentsUiStore } from "../store/useCommentsUiStore";
+import { STAMP_PRESETS, isAnnotation } from "../lib/annotations";
+import { useViewerStore } from "../store/useViewerStore";
+import { toggleFullscreen } from "../lib/fullscreen";
+import { showAttachments, showLayers } from "../lib/sidebarActions";
 
 type Props = {
   onClose: () => void;
@@ -86,6 +107,10 @@ export function CommandPalette({ onClose }: Props) {
   const hasHeaderFooter = useEditorStore((s) => !!s.pageStamps.headerFooter);
   const hasWatermark = useEditorStore((s) => !!s.pageStamps.watermark);
   const hasForm = useEditorStore((s) => (s.formFields?.length ?? 0) > 0);
+  const hasComments = useEditorStore((s) => s.edits.some(isAnnotation));
+  const hasAttachments = useViewerStore((s) => s.attachments.length > 0);
+  const hasLayers = useViewerStore((s) => s.layers !== null);
+  const twoPage = useViewerStore((s) => s.pageLayout === "two");
   const actions = useEditorActions();
 
   const [query, setQuery] = useState("");
@@ -162,6 +187,15 @@ export function CommandPalette({ onClose }: Props) {
         shortcut: "V",
         disabled: noFile,
         run: () => runAndClose(() => actions.setMode("select")),
+      },
+      {
+        id: "mode-hand",
+        group: "Mode",
+        label: "Hand Tool (drag to pan)",
+        icon: <Hand size={16} />,
+        shortcut: "Space",
+        disabled: noFile,
+        run: () => runAndClose(() => actions.setMode("hand")),
       },
       {
         id: "mode-edit",
@@ -247,6 +281,72 @@ export function CommandPalette({ onClose }: Props) {
         shortcut: "C",
         disabled: noFile,
         run: () => runAndClose(() => actions.setMode("comment")),
+      },
+      {
+        id: "ann-strikeout",
+        group: "Annotate",
+        label: "Strikeout",
+        icon: <Strikethrough size={16} />,
+        shortcut: "S",
+        disabled: noFile,
+        run: () => runAndClose(() => actions.setMode("strikeout")),
+      },
+      ...(
+        [
+          ["line", "Line", <Minus size={16} key="l" />],
+          ["arrow", "Arrow", <MoveUpRight size={16} key="a" />],
+          ["rectangle", "Rectangle", <Square size={16} key="r" />],
+          ["oval", "Oval", <Circle size={16} key="o" />],
+          ["polygon", "Polygon", <Pentagon size={16} key="p" />],
+          ["cloud", "Cloud", <Cloud size={16} key="c" />],
+        ] as const
+      ).map(
+        ([mode, label, icon]): PaletteAction => ({
+          id: `ann-${mode}`,
+          group: "Annotate",
+          label: `Draw ${label.toLowerCase()}`,
+          icon,
+          disabled: noFile,
+          run: () => runAndClose(() => actions.setMode(mode)),
+        }),
+      ),
+      ...STAMP_PRESETS.map(
+        (p): PaletteAction => ({
+          id: `ann-stamp-${p.id}`,
+          group: "Annotate",
+          label: `Stamp: ${p.label.charAt(0)}${p.label.slice(1).toLowerCase()}`,
+          icon: <Stamp size={16} />,
+          disabled: noFile,
+          run: () =>
+            runAndClose(() => {
+              useCommentsUiStore.getState().setStampId(p.id);
+              actions.setMode("stamp");
+            }),
+        }),
+      ),
+      {
+        id: "ann-panel",
+        group: "Annotate",
+        label: "Show comments panel",
+        icon: <MessagesSquare size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(() => actions.showComments()),
+      },
+      {
+        id: "ann-import-xfdf",
+        group: "Annotate",
+        label: "Import comments (XFDF)…",
+        icon: <FileUp size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(actions.importXfdf),
+      },
+      {
+        id: "ann-export-xfdf",
+        group: "Annotate",
+        label: "Export comments (XFDF)",
+        icon: <FileDown size={16} />,
+        disabled: noFile || !hasComments,
+        run: () => runAndClose(() => void actions.exportXfdf()),
       },
       {
         id: "ann-ink",
@@ -463,6 +563,62 @@ export function CommandPalette({ onClose }: Props) {
         run: () => runAndClose(() => useEditorStore.getState().resetZoom()),
       },
       {
+        id: "view-two-page",
+        group: "View",
+        label: "Toggle Two-Page View",
+        icon: <Columns2 size={16} />,
+        disabled: noFile,
+        run: () =>
+          runAndClose(() => {
+            const { pageLayout, setPageLayout } = useViewerStore.getState();
+            setPageLayout(pageLayout === "two" ? "single" : "two");
+          }),
+      },
+      {
+        id: "view-cover-page",
+        group: "View",
+        label: "Toggle Cover Page in Two-Page View",
+        icon: <BookOpen size={16} />,
+        disabled: noFile || !twoPage,
+        run: () =>
+          runAndClose(() => {
+            const { coverPage, setCoverPage } = useViewerStore.getState();
+            setCoverPage(!coverPage);
+          }),
+      },
+      {
+        id: "view-full-screen",
+        group: "View",
+        label: "Toggle Full Screen",
+        icon: <Maximize size={16} />,
+        shortcut: "F",
+        disabled: noFile,
+        run: () => runAndClose(() => void toggleFullscreen()),
+      },
+      {
+        id: "view-dark-theme",
+        group: "View",
+        label: "Toggle Dark Theme",
+        icon: <Moon size={16} />,
+        run: () => runAndClose(() => useViewerStore.getState().toggleTheme()),
+      },
+      {
+        id: "view-attachments",
+        group: "View",
+        label: "Show Attachments",
+        icon: <Paperclip size={16} />,
+        disabled: noFile || !hasAttachments,
+        run: () => runAndClose(showAttachments),
+      },
+      {
+        id: "view-layers",
+        group: "View",
+        label: "Show Layers",
+        icon: <Layers size={16} />,
+        disabled: noFile || !hasLayers,
+        run: () => runAndClose(showLayers),
+      },
+      {
         id: "extract",
         group: "Export",
         label: "Extract Text (OCR page)",
@@ -493,6 +649,22 @@ export function CommandPalette({ onClose }: Props) {
         icon: <Stamp size={16} />,
         disabled: noFile || !hasForm,
         run: () => runAndClose(() => void actions.downloadPdfFlattened()),
+      },
+      {
+        id: "download-comments-native",
+        group: "Export",
+        label: "Download with editable comments",
+        icon: <MessageSquare size={16} />,
+        disabled: noFile || !hasComments,
+        run: () => runAndClose(() => void actions.downloadPdfWithComments()),
+      },
+      {
+        id: "download-comments-flattened",
+        group: "Export",
+        label: "Download with comments flattened",
+        icon: <MessageSquareDashed size={16} />,
+        disabled: noFile || !hasComments,
+        run: () => runAndClose(() => void actions.downloadPdfCommentsFlattened()),
       },
       {
         id: "form-reset",
@@ -562,7 +734,7 @@ export function CommandPalette({ onClose }: Props) {
     // actions is recreated each render but its handlers read the store at call
     // time, so the static list is fine to memoize on the reactive inputs only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [noFile, ocrBusy, hasHeaderFooter, hasWatermark, hasForm],
+    [noFile, ocrBusy, hasHeaderFooter, hasWatermark, hasForm, hasAttachments, hasLayers, twoPage],
   );
 
   const filtered = useMemo(() => {

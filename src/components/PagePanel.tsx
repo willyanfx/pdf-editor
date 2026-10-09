@@ -3,6 +3,7 @@ import { Thumbnail } from "react-pdf";
 import { Trash2, GripVertical, Plus } from "lucide-react";
 import { useEditorStore } from "../store/useEditorStore";
 import { useToastStore } from "../store/useToastStore";
+import { useViewerStore } from "../store/useViewerStore";
 import { isConvertible } from "../lib/convertToPdf";
 import type { InsertSource } from "../lib/pageInsert";
 import { InsertMenu } from "./InsertMenu";
@@ -36,6 +37,8 @@ export function PagePanel(_props: Props) {
   const deletePage = useEditorStore((s) => s.deletePage);
   const scrollToPage = useEditorStore((s) => s.scrollToPage);
   const selectedPageIndex = useEditorStore((s) => s.selectedPageIndex);
+  // Bumped when a layer is shown/hidden; thumbnails repaint under the new key.
+  const layerVersion = useViewerStore((s) => s.layerVersion);
   const selected = usePageSelectionStore((s) => s.selected);
   const selectedSet = new Set(selected);
 
@@ -259,6 +262,7 @@ export function PagePanel(_props: Props) {
             >
               <GripVertical size={13} className="page-thumb-grip" aria-hidden="true" />
               <Thumbnail
+                key={layerVersion}
                 pageNumber={origIndex + 1}
                 width={110}
                 loading={<div className="page-thumb-skeleton" />}

@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { useEditorStore } from "../store/useEditorStore";
+import { newMarkMeta } from "../store/useCommentsUiStore";
 
 type Props = {
   pageIndex: number;
@@ -74,6 +75,7 @@ export function InkLayer({ pageIndex }: Props) {
       points: pts.map((p) => ({ x: p.x - (minX - pad), y: p.y - (minY - pad) })),
       color: INK_COLOR,
       strokeWidth: INK_WIDTH,
+      ...newMarkMeta(),
     });
   }
 

@@ -6,6 +6,8 @@ import { useEditorStore, makeTextEdit, textToRuns } from "../store/useEditorStor
 import { useToastStore } from "../store/useToastStore";
 import { fileToDataUrl } from "../lib/file";
 import { isTextEditRedacted, redactMarks } from "../lib/redactGeometry";
+import { scalePoints } from "../lib/annotations";
+import { RectanglePreview, ShapeSvg, StampPreview } from "./AnnotationShape";
 import { TextFormatToolbar } from "./TextFormatToolbar";
 import { RichTextEditor } from "./RichTextEditor";
 
@@ -123,11 +125,18 @@ export function EditBox({ edit }: Props) {
         updateEdit(edit.id, { x: data.x, y: data.y });
       }}
       onResizeStop={(_event, _dir, ref, _delta, position) => {
+        const width = Number.parseFloat(ref.style.width);
+        const height = Number.parseFloat(ref.style.height);
         updateEdit(edit.id, {
-          width: Number.parseFloat(ref.style.width),
-          height: Number.parseFloat(ref.style.height),
+          width,
+          height,
           x: position.x,
           y: position.y,
+          // Strokes and polygons are stored as points relative to the box, so
+          // resizing the box must resize them too (the export draws the points).
+          ...("points" in edit && edit.points
+            ? { points: scalePoints(edit.points, edit, { width, height }) }
+            : {}),
         });
       }}
       className={
@@ -192,7 +201,15 @@ export function EditBox({ edit }: Props) {
         </>
       )}
 
-      {edit.type === "rectangle" && <div className="rectangle-preview" />}
+      {edit.type === "rectangle" && <RectanglePreview edit={edit} />}
+
+      {(edit.type === "line" ||
+        edit.type === "arrow" ||
+        edit.type === "oval" ||
+        edit.type === "polygon" ||
+        edit.type === "cloud") && <ShapeSvg edit={edit} />}
+
+      {edit.type === "stamp" && <StampPreview edit={edit} />}
 
       {edit.type === "redact" && (
         <div
