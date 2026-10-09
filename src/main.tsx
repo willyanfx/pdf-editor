@@ -3,7 +3,9 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./styles.css";
 import { injectPreconnect } from "./lib/fonts";
+import { installStaleChunkReload } from "./lib/staleChunkReload";
 
+installStaleChunkReload();
 injectPreconnect();
 
 const rootElement = document.getElementById("root");
