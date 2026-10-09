@@ -7,6 +7,7 @@ import { PDFDocument, StandardFonts } from "pdf-lib";
 export const FIXTURE_DIR = join(dirname(fileURLToPath(import.meta.url)), ".fixtures");
 export const FIXTURE_PDF = join(FIXTURE_DIR, "smoke.pdf");
 export const FIXTURE_HTML = join(FIXTURE_DIR, "smoke.html");
+export const FEATURES_PDF = join(FIXTURE_DIR, "features.pdf");
 
 /** Static HTML (inline styles, no remote assets) for the HTML→PDF conversion test. */
 const FIXTURE_HTML_SOURCE = `<!doctype html>
@@ -36,4 +37,16 @@ export default async function globalSetup() {
   await mkdir(FIXTURE_DIR, { recursive: true });
   await writeFile(FIXTURE_PDF, bytes);
   await writeFile(FIXTURE_HTML, FIXTURE_HTML_SOURCE);
+  await writeFile(FEATURES_PDF, await buildFeaturesPdf());
+}
+
+/** Three text pages for the feature specs (page numbers, bookmarks, organize). */
+async function buildFeaturesPdf(): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  for (const label of ["Alpha page", "Bravo page", "Charlie page"]) {
+    const page = doc.addPage([612, 792]);
+    page.drawText(label, { x: 72, y: 700, size: 18, font });
+  }
+  return doc.save();
 }
