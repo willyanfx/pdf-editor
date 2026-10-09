@@ -3266,6 +3266,7 @@ p.page-sel-error {
   flex-direction: column;
   width: min(1240px, 96vw);
   max-height: 92vh;
+  overflow-y: auto;
   padding: 16px;
   background: var(--surface);
   border: 1px solid var(--border);

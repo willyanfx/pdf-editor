@@ -48,8 +48,13 @@ function PagePane({
     if (!canvas || !image) return;
     canvas.width = image.width;
     canvas.height = image.height;
-    const pixels = new Uint8ClampedArray(image.data);
-    canvas.getContext("2d")?.putImageData(new ImageData(pixels, image.width, image.height), 0, 0);
+    canvas
+      .getContext("2d")
+      ?.putImageData(
+        new ImageData(image.data as Uint8ClampedArray<ArrayBuffer>, image.width, image.height),
+        0,
+        0,
+      );
   }, [image]);
 
   return (
@@ -187,13 +192,24 @@ export function CompareDialog() {
     const openState = useEditorStore.getState();
     const passwordFor = (f: File) =>
       f === openState.file ? (openState.documentPassword ?? undefined) : undefined;
+    // This run's documents: tracked locally so a stale run (dialog closed and
+    // reopened mid-load) can never destroy or overwrite a newer run's, and a
+    // load that succeeds while its sibling fails still gets cleaned up.
+    const own: CompareDoc[] = [];
     try {
-      const [a, b] = await Promise.all([
+      const settled = await Promise.allSettled([
         openCompareDoc(original, passwordFor(original)),
         openCompareDoc(revised, passwordFor(revised)),
       ]);
+      for (const r of settled) if (r.status === "fulfilled") own.push(r.value);
+      const failed = settled.find((r) => r.status === "rejected");
+      if (failed) throw failed.reason;
+      if (controller.signal.aborted) {
+        own.forEach((d) => d.destroy());
+        return;
+      }
+      const [a, b] = own;
       docs.current = { a, b };
-      if (controller.signal.aborted) return release();
       const result = await compareDocuments(
         a,
         b,
@@ -205,17 +221,18 @@ export function CompareDialog() {
       setSelected(firstChanged?.pageIndex ?? 0);
       setPhase("done");
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
-      release();
+      const stale = controller.signal.aborted;
+      if (!stale) release();
+      own.forEach((d) => d.destroy());
+      if (stale || (err instanceof DOMException && err.name === "AbortError")) return;
       setError(err instanceof CompareLoadError ? err.message : "Could not compare those PDFs.");
       setPhase("setup");
-      useToastStore.getState().addToast("Could not compare those PDFs.", "error");
     }
   };
 
   // Load the full-detail view (bitmaps + highlights) for the selected page.
   useEffect(() => {
-    if (phase !== "done" || !docs.current) return;
+    if (!open || phase !== "done" || !docs.current) return;
     const cached = detailCache.current.get(selected);
     if (cached) {
       setDetail(cached);
@@ -223,6 +240,8 @@ export function CompareDialog() {
       return;
     }
     let cancelled = false;
+    // Drop the previous page's bitmaps so they aren't shown under this page's header.
+    setDetail(null);
     setDetailLoading(true);
     void comparePage(docs.current.a, docs.current.b, selected, true)
       .then((c) => {
@@ -244,7 +263,7 @@ export function CompareDialog() {
     return () => {
       cancelled = true;
     };
-  }, [phase, selected]);
+  }, [open, phase, selected]);
 
   const changedIndexes = useMemo(
     () => summary?.pages.filter((p) => p.status !== "identical").map((p) => p.pageIndex) ?? [],

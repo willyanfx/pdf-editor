@@ -6,12 +6,15 @@
  */
 import type { ScreenRect } from "./pdfGeometry";
 import type { ScreenTextItem } from "./textLayer";
+import { blockCharBoundaries, type MeasureText } from "./redactGeometry";
+
+export type { MeasureText };
 
 // --- Text -----------------------------------------------------------------
 
 /** One whitespace-delimited word of a page, with where it sits on the page. */
 export type WordToken = {
-  /** NFKC-normalised, so "ﬁ" ligatures and compatibility forms compare equal. */
+  /** Ligature-folded, so "ﬁnal" and "final" compare equal. */
   text: string;
   /** Index into the page's text blocks, and the char range within that block. */
   block: number;
@@ -21,13 +24,29 @@ export type WordToken = {
   lineStart: boolean;
 };
 
+const LIGATURES: Record<string, string> = {
+  ﬀ: "ff",
+  ﬁ: "fi",
+  ﬂ: "fl",
+  ﬃ: "ffi",
+  ﬄ: "ffl",
+  ﬅ: "st",
+  ﬆ: "st",
+};
+
+/** Expand typographic ligatures (a font choice, not a content change). Stops
+ * short of full NFKC, which would also treat "x²" and "x2" as the same word. */
+function foldLigatures(word: string): string {
+  return word.replace(/[ﬀ-ﬆ]/g, (c) => LIGATURES[c]);
+}
+
 export function tokenizeBlocks(blocks: ScreenTextItem[]): WordToken[] {
   const out: WordToken[] = [];
   blocks.forEach((block, bi) => {
     let first = true;
     for (const m of block.str.matchAll(/\S+/g)) {
       out.push({
-        text: m[0].normalize("NFKC"),
+        text: foldLigatures(m[0]),
         block: bi,
         start: m.index,
         end: m.index + m[0].length,
@@ -141,40 +160,7 @@ export type PageTextDiff = {
   inline: InlineWord[];
 };
 
-/** Width of `text` as typeset for `block` (any consistent unit). The default
- * treats every character as equal; comparePdf injects canvas `measureText`, which
- * keeps highlights on the right word when letters vary in width ("i" vs "m"). */
-export type MeasureText = (text: string, block: ScreenTextItem) => number;
 const byLength: MeasureText = (text) => text.length;
-
-/** x position of each character boundary (length n + 1) of a block. Each pdf.js
- * run keeps its measured extent; inside a run, positions follow glyph widths. */
-function charBoundaries(block: ScreenTextItem, measure: MeasureText): number[] {
-  const spread = (text: string, x: number, width: number): number[] => {
-    const total = measure(text, block) || text.length || 1;
-    return Array.from(
-      { length: text.length },
-      (_, k) => x + (width * measure(text.slice(0, k), block)) / total,
-    );
-  };
-  const subs = block.subItems;
-  const runs = block.runs;
-  const whole = () => [...spread(block.str, block.x, block.width), block.x + block.width];
-  if (!subs || !runs || subs.length !== runs.length) return whole();
-  const out: number[] = [];
-  let cursor = block.x;
-  for (let i = 0; i < runs.length; i++) {
-    const text = runs[i].text;
-    const sub = subs[i];
-    const lead = text.length - sub.str.length;
-    if (lead < 0 || !text.endsWith(sub.str)) return whole();
-    for (let k = 0; k < lead; k++) out.push(cursor); // inserted gap space
-    out.push(...spread(sub.str, sub.x, sub.width));
-    cursor = sub.x + sub.width;
-  }
-  out.push(cursor);
-  return out.length === block.str.length + 1 ? out : whole();
-}
 
 /** Rects for the token range [from, to) — one per run of words sharing a block,
  * so a changed phrase is a single highlight rather than a box per word. */
@@ -184,6 +170,7 @@ function rectsForTokens(
   from: number,
   to: number,
   measure: MeasureText,
+  cache: Map<number, number[]>,
 ): ScreenRect[] {
   const PAD = 1;
   const rects: ScreenRect[] = [];
@@ -193,7 +180,8 @@ function rectsForTokens(
     let j = i;
     while (j + 1 < to && tokens[j + 1].block === bi) j++;
     const block = blocks[bi];
-    const b = charBoundaries(block, measure);
+    let b = cache.get(bi);
+    if (!b) cache.set(bi, (b = blockCharBoundaries(block, measure)));
     const x0 = b[Math.min(tokens[i].start, b.length - 1)];
     const x1 = b[Math.min(tokens[j].end, b.length - 1)];
     rects.push({
@@ -212,6 +200,8 @@ export function diffPageText(
   blocksB: ScreenTextItem[],
   measure: MeasureText = byLength,
 ): PageTextDiff {
+  const cacheA = new Map<number, number[]>();
+  const cacheB = new Map<number, number[]>();
   const ta = tokenizeBlocks(blocksA);
   const tb = tokenizeBlocks(blocksB);
   const segments = diffSequences(
@@ -229,13 +219,13 @@ export function diffPageText(
   for (const s of segments) {
     if (s.kind === "delete") {
       removedWords += s.aEnd - s.aStart;
-      removedRects.push(...rectsForTokens(ta, blocksA, s.aStart, s.aEnd, measure));
+      removedRects.push(...rectsForTokens(ta, blocksA, s.aStart, s.aEnd, measure, cacheA));
       for (let k = s.aStart; k < s.aEnd; k++) {
         inline.push({ kind: "delete", text: ta[k].text, lineStart: ta[k].lineStart });
       }
     } else if (s.kind === "insert") {
       addedWords += s.bEnd - s.bStart;
-      addedRects.push(...rectsForTokens(tb, blocksB, s.bStart, s.bEnd, measure));
+      addedRects.push(...rectsForTokens(tb, blocksB, s.bStart, s.bEnd, measure, cacheB));
       for (let k = s.bStart; k < s.bEnd; k++) {
         inline.push({ kind: "insert", text: tb[k].text, lineStart: tb[k].lineStart });
       }

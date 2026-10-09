@@ -96,6 +96,14 @@ describe("tokenizeBlocks", () => {
   });
 });
 
+describe("tokenizeBlocks normalisation", () => {
+  it("folds ligatures but keeps superscripts distinct from plain digits", () => {
+    const [a, b] = [tokenizeBlocks([block("x²")])[0], tokenizeBlocks([block("x2")])[0]];
+    expect(a.text).not.toBe(b.text);
+    expect(tokenizeBlocks([block("ﬂow ﬃx")]).map((t) => t.text)).toEqual(["flow", "ffix"]);
+  });
+});
+
 describe("diffPageText", () => {
   it("counts changed words and places highlights on the right side", () => {
     const a = [block("Total due: 100 USD"), block("Thanks", 20)];

@@ -139,8 +139,10 @@ export async function comparePage(
       pageB ? extractScreenTextItems(pageB, VIEWER_WIDTH) : Promise.resolve([]),
     ]);
     const text = diffPageText(blocksA, blocksB, measureText);
-    const original = pageA ? await renderPage(pageA) : null;
-    const revised = pageB ? await renderPage(pageB) : null;
+    const [original, revised] = await Promise.all([
+      pageA ? renderPage(pageA) : null,
+      pageB ? renderPage(pageB) : null,
+    ]);
     const blank: RgbaImage = { width: 0, height: 0, data: new Uint8ClampedArray(0) };
     const pixels = diffPixels(original ?? blank, revised ?? blank);
 

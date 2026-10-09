@@ -77,11 +77,25 @@ export function blankRedactedTextEdits(edits: PdfEdit[]): PdfEdit[] {
   );
 }
 
-/** Evenly spaced boundaries across [x, x + width] for `n` characters. */
-function proportionalBoundaries(x: number, width: number, n: number): number[] {
-  const out: number[] = [];
-  for (let i = 0; i <= n; i++) out.push(x + (width * i) / Math.max(1, n));
-  return out;
+/** Width of `text` as typeset for `block`, in any consistent unit. */
+export type MeasureText = (text: string, block: ScreenTextItem) => number;
+
+/** Positions of the `text.length` character starts across [x, x + width]:
+ * evenly spaced, or weighted by `measure` when given (so narrow letters take
+ * less room than wide ones). */
+function spreadChars(
+  block: ScreenTextItem,
+  text: string,
+  x: number,
+  width: number,
+  measure?: MeasureText,
+): number[] {
+  const n = text.length;
+  const total = measure ? measure(text, block) || n || 1 : Math.max(1, n);
+  return Array.from(
+    { length: n },
+    (_, k) => x + (width * (measure ? measure(text.slice(0, k), block) : k)) / total,
+  );
 }
 
 /**
@@ -91,32 +105,32 @@ function proportionalBoundaries(x: number, width: number, n: number): number[] {
  * Uses the block's sub-runs (each with its own x/width from pdf.js) and falls
  * back to a proportional spread when the block has no run geometry. The
  * grouping in textLayer inserts a single space between runs that are visibly
- * apart; that space is mapped onto the gap between the runs.
+ * apart; that space is mapped onto the gap between the runs. Within a run (or
+ * the whole block) characters are spread evenly unless `measure` supplies real
+ * glyph widths.
  */
-export function blockCharBoundaries(block: ScreenTextItem): number[] {
+export function blockCharBoundaries(block: ScreenTextItem, measure?: MeasureText): number[] {
   const n = block.str.length;
   const subs = block.subItems;
   const runs = block.runs;
-  if (!subs || !runs || subs.length !== runs.length) {
-    return proportionalBoundaries(block.x, block.width, n);
-  }
+  const whole = () => [
+    ...spreadChars(block, block.str, block.x, block.width, measure),
+    block.x + block.width,
+  ];
+  if (!subs || !runs || subs.length !== runs.length) return whole();
   const out: number[] = [];
   let cursor = block.x;
   for (let i = 0; i < runs.length; i++) {
     const text = runs[i].text;
     const sub = subs[i];
     const lead = text.length - sub.str.length;
-    if (lead < 0 || !text.endsWith(sub.str)) {
-      return proportionalBoundaries(block.x, block.width, n);
-    }
+    if (lead < 0 || !text.endsWith(sub.str)) return whole();
     for (let k = 0; k < lead; k++) out.push(cursor);
-    const m = sub.str.length;
-    for (let k = 0; k < m; k++) out.push(sub.x + (sub.width * k) / m);
+    out.push(...spreadChars(block, sub.str, sub.x, sub.width, measure));
     cursor = sub.x + sub.width;
   }
   out.push(cursor);
-  if (out.length !== n + 1) return proportionalBoundaries(block.x, block.width, n);
-  return out;
+  return out.length === n + 1 ? out : whole();
 }
 
 /** A mark covering characters [start, end) of a block, full line height, padded. */
