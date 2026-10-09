@@ -4,6 +4,7 @@ import { addImageFromFile, openFiles, openConvertedFile, openPdfFromUrl } from "
 import { CONVERTIBLE_ACCEPT } from "../lib/convertToPdf";
 import type { InsertSource } from "../lib/pageInsert";
 import type { CompressOptions } from "../lib/compressPresets";
+import type { ProtectOptions } from "../lib/pdfSecurity";
 import { markDocumentSaved } from "../lib/autosave";
 import { addBookmarkForCurrentPage, showBookmarks } from "../lib/bookmarkActions";
 import { bookmarksForExport } from "../lib/bookmarks";
@@ -199,7 +200,7 @@ export function useEditorActions() {
    * just `pages` (original indices, in output order) when given. */
   function exportOptions(pages?: number[]) {
     const state = useEditorStore.getState();
-    const { pageOrder, pageOps, numPages, pageStamps, formValues } = state;
+    const { pageOrder, pageOps, numPages, pageStamps, formValues, documentPassword } = state;
     const order =
       pages ?? (pageOrder.length ? pageOrder : Array.from({ length: numPages }, (_, i) => i));
     return {
@@ -208,10 +209,29 @@ export function useEditorActions() {
       bookmarks: bookmarksForExport(state, order),
       pageStamps,
       formValues,
+      // Lets an encrypted source be decrypted for editing (the viewer already holds it).
+      password: documentPassword ?? undefined,
     };
   }
 
-  async function downloadPdf(hooks: DownloadHooks = {}, opts: { flattenForms?: boolean } = {}) {
+  /** Toast text for a failed export, calling out a bad password specifically. */
+  function exportFailureMessage(err: unknown, fallback: string) {
+    return (err as { name?: string } | null)?.name === "PdfPasswordError"
+      ? "Couldn't decrypt this PDF — its password is missing or incorrect."
+      : fallback;
+  }
+
+  /**
+   * The one export path for PDF downloads. `protect` encrypts the finished bytes
+   * (Protect PDF); `suffix` names the file. An encrypted source is always written
+   * decrypted — by default the user is told so, since the output has lost its
+   * original password/permissions unless `protect` sets them again.
+   */
+  async function downloadPdf(
+    hooks: DownloadHooks = {},
+    opts: { flattenForms?: boolean; protect?: ProtectOptions; suffix?: string } = {},
+  ) {
+    const { protect, suffix = "edited", ...exportOpts } = opts;
     const { file, edits, revision } = useEditorStore.getState();
     if (!file) return;
     // Pending redaction marks: explain once (per document) what the download
@@ -222,20 +242,58 @@ export function useEditorActions() {
     try {
       // exportRedactedPdf = exportEditedPdf + the redaction pass (a no-op
       // without marks). exportEditedPdf alone refuses pending marks.
+      let decrypted = false;
       const { exportRedactedPdf } = await import("../lib/redact");
-      const { bytes, warnings } = await exportRedactedPdf(file, edits, {
+      const { bytes: plain, warnings } = await exportRedactedPdf(file, edits, {
         ...exportOptions(),
-        ...opts,
+        ...exportOpts,
+        onDecrypted: () => (decrypted = true),
       });
       for (const w of warnings) useToastStore.getState().addToast(w, "info");
-      downloadBytes(bytes, file.name.replace(/\.pdf$/i, "") + ".edited.pdf");
+      const bytes = protect
+        ? await (await import("../lib/pdfSecurity")).encryptPdf(plain, protect)
+        : plain;
+      downloadBytes(bytes, file.name.replace(/\.pdf$/i, "") + `.${suffix}.pdf`);
       markDocumentSaved(revision);
-      useToastStore.getState().addToast("PDF exported", "success");
+      useToastStore
+        .getState()
+        .addToast(
+          protect
+            ? "Protected PDF exported"
+            : suffix === "unlocked"
+              ? "Unprotected PDF exported"
+              : decrypted
+                ? "PDF exported without its password protection — use Protect PDF to add it back"
+                : "PDF exported",
+          "success",
+        );
       hooks.onSuccess?.();
-    } catch {
-      useToastStore.getState().addToast("Could not export this PDF.", "error");
+    } catch (err) {
+      useToastStore
+        .getState()
+        .addToast(
+          exportFailureMessage(
+            err,
+            protect || suffix === "unlocked"
+              ? "Could not protect this PDF."
+              : "Could not export this PDF.",
+          ),
+          "error",
+        );
       hooks.onError?.();
     }
+  }
+
+  /**
+   * Export with a password and/or permission restrictions applied. `options`
+   * null exports with every form of protection removed (for an encrypted source
+   * this is the "remove security" path).
+   */
+  function protectPdf(hooks: DownloadHooks = {}, options: ProtectOptions | null = null) {
+    return downloadPdf(
+      hooks,
+      options ? { protect: options, suffix: "protected" } : { suffix: "unlocked" },
+    );
   }
 
   /** Download with every form field drawn into the page (no longer fillable). */
@@ -321,20 +379,30 @@ export function useEditorActions() {
       // pages are what gets compressed (null when there are no marks).
       const options = exportOptions();
       const pass = createRedactionPass(file, edits, options.pageOrder);
+      let decrypted = false;
       const bytes = await compressEditedPdf(
         file,
         blankRedactedTextEdits(edits),
-        { ...options, redactionsHandled: true },
+        { ...options, redactionsHandled: true, onDecrypted: () => (decrypted = true) },
         compressOptions,
         pass?.run,
       );
       for (const w of pass?.warnings ?? []) useToastStore.getState().addToast(w, "info");
       downloadBytes(bytes, file.name.replace(/\.pdf$/i, "") + ".compressed.pdf");
       markDocumentSaved(revision);
-      useToastStore.getState().addToast("Compressed PDF exported", "success");
+      useToastStore
+        .getState()
+        .addToast(
+          decrypted
+            ? "Compressed PDF exported without its password protection"
+            : "Compressed PDF exported",
+          "success",
+        );
       hooks.onSuccess?.();
-    } catch {
-      useToastStore.getState().addToast("Could not compress this PDF.", "error");
+    } catch (err) {
+      useToastStore
+        .getState()
+        .addToast(exportFailureMessage(err, "Could not compress this PDF."), "error");
       hooks.onError?.();
     }
   }
@@ -402,6 +470,12 @@ export function useEditorActions() {
   function openCompressDialog() {
     if (!useEditorStore.getState().file) return;
     useEditorStore.getState().setCompressDialogOpen(true);
+  }
+
+  /** Open the password / permissions dialog. */
+  function openProtectDialog() {
+    if (!useEditorStore.getState().file) return;
+    useEditorStore.getState().setProtectDialogOpen(true);
   }
 
   /** Open the header & footer dialog; `presetId` (see HEADER_FOOTER_PRESETS,
@@ -613,6 +687,7 @@ export function useEditorActions() {
     openSplit,
     openMetadata,
     openCompressDialog,
+    openProtectDialog,
     openHeaderFooter,
     openWatermark,
     downloadPdf,
@@ -621,6 +696,7 @@ export function useEditorActions() {
     downloadDocx,
     downloadCsv,
     compressPdf,
+    protectPdf,
     mergePdfs,
     splitPdf,
     addPages,

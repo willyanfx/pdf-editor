@@ -64,6 +64,7 @@ export function MetadataModal() {
         ["Pages", String(meta.pageCount)],
         ["Page size", summarizePageSizes(meta.pageSizes)],
         ["Form fields", meta.fieldCount ? String(meta.fieldCount) : "None"],
+        ["Security", meta.encrypted ? "Password-protected" : "None"],
         ["File", `${file?.name ?? ""} (${formatBytes(meta.fileSize)})`],
       ]
     : [];
