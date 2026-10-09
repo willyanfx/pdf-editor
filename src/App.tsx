@@ -12,8 +12,10 @@ import { UrlDialog } from "./components/UrlDialog";
 import { CompressDialog } from "./components/CompressDialog";
 import { PasswordModal } from "./components/PasswordModal";
 import { FindBar } from "./components/FindBar";
-import { useEditorStore } from "./store/useEditorStore";
+import { RecoveryBanner } from "./components/RecoveryBanner";
+import { isDocumentDirty, useEditorStore } from "./store/useEditorStore";
 import { openFiles } from "./lib/openFiles";
+import { checkForRecovery, startAutosave } from "./lib/autosave";
 
 export default function App() {
   // Whole-window drag-and-drop: drop a PDF anytime to open/replace it, or drop
@@ -181,13 +183,18 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Warn before leaving if the open document has unsaved edits. Edits live only
-  // in memory (no backend), so a reload/close would silently discard them.
+  // Autosave to IndexedDB while the document is dirty, and offer to recover last
+  // session's unsaved work if the tab was closed or crashed.
+  useEffect(() => {
+    void checkForRecovery();
+    return startAutosave();
+  }, []);
+
+  // Warn before leaving if the open document has changed since it was opened or
+  // last downloaded (autosave is a safety net, not a substitute for exporting).
   useEffect(() => {
     function onBeforeUnload(e: BeforeUnloadEvent) {
-      const { file, edits, pageOps } = useEditorStore.getState();
-      const dirty = !!file && (edits.length > 0 || pageOps.length > 0);
-      if (dirty) {
+      if (isDocumentDirty()) {
         e.preventDefault();
         // Legacy requirement for some browsers to show the prompt.
         e.returnValue = "";
@@ -241,6 +248,7 @@ export default function App() {
       <UrlDialog />
       <CompressDialog />
       <PasswordModal />
+      <RecoveryBanner />
 
       {findOpen && <FindBar onClose={() => setFindOpen(false)} />}
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}

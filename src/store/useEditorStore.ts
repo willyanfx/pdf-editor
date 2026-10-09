@@ -9,6 +9,10 @@ export type { InsertSource };
 export type { OcrEngine };
 
 /** A history snapshot of the three mutable document arrays. */
+/** The undoable document state, as captured by snapshot(). Exposed so autosave
+ * can persist/restore it without knowing which fields it contains. */
+export type DocumentSnapshot = HistoryEntry;
+
 /** A history snapshot. `file`/`numPages` are captured so insert/merge (which
  * swap the underlying File and grow the page count) fully revert on undo; for
  * ordinary edits they're unchanged, so restoring them is a no-op. */
@@ -284,6 +288,15 @@ type EditorState = {
   compressDialogOpen: boolean;
   setCompressDialogOpen: (open: boolean) => void;
 
+  /** Bumped by every document mutation (history push, undo/redo, snapshot
+   * restore). Reset to 0 by setFile. Drives autosave and the dirty flag. */
+  revision: number;
+  /** The `revision` at open or at the last successful download. The document is
+   * dirty when revision !== savedRevision (see isDocumentDirty). */
+  savedRevision: number;
+  /** Record that the document is saved as of `revision` (default: right now). */
+  markSaved: (revision?: number) => void;
+
   /** History stacks — NOT in initialState so setFile does not reset them. */
   _past: HistoryEntry[];
   _future: HistoryEntry[];
@@ -383,6 +396,8 @@ const initialState = {
   metadataModalOpen: false,
   urlDialogOpen: false,
   compressDialogOpen: false,
+  revision: 0,
+  savedRevision: 0,
 };
 
 /** Capture a snapshot of the mutable document arrays plus the file identity and
@@ -406,13 +421,14 @@ function snapshot(state: {
   };
 }
 
-/** Push an entry onto _past, capping at 100 entries, and clear _future. */
+/** Push an entry onto _past, capping at 100 entries, and clear _future. Also
+ * bumps `revision` so every history-recorded change marks the document dirty. */
 function pushHistory(
-  state: { _past: HistoryEntry[]; _future: HistoryEntry[] },
+  state: { _past: HistoryEntry[]; _future: HistoryEntry[]; revision: number },
   entry: HistoryEntry,
-): { _past: HistoryEntry[]; _future: HistoryEntry[] } {
+): { _past: HistoryEntry[]; _future: HistoryEntry[]; revision: number } {
   const past = state._past.length >= 100 ? state._past.slice(1) : state._past;
-  return { _past: [...past, entry], _future: [] };
+  return { _past: [...past, entry], _future: [], revision: state.revision + 1 };
 }
 
 export const useEditorStore = create<EditorState>()(
@@ -456,6 +472,7 @@ export const useEditorStore = create<EditorState>()(
             file: entry.file,
             numPages: entry.numPages,
             selectedEditId: null,
+            revision: state.revision + 1,
             _past: state._past.slice(0, -1),
             _future: [current, ...state._future],
           };
@@ -474,6 +491,7 @@ export const useEditorStore = create<EditorState>()(
             file: entry.file,
             numPages: entry.numPages,
             selectedEditId: null,
+            revision: state.revision + 1,
             _past: [...state._past, current],
             _future: state._future.slice(1),
           };
@@ -506,7 +524,9 @@ export const useEditorStore = create<EditorState>()(
             edit.id === id ? ({ ...edit, ...patch } as PdfEdit) : edit,
           );
           // Coalescing keeps the existing burst's snapshot; otherwise capture one.
-          return coalesce ? { edits } : { ...pushHistory(state, snapshot(state)), edits };
+          return coalesce
+            ? { edits, revision: state.revision + 1 }
+            : { ...pushHistory(state, snapshot(state)), edits };
         });
       },
 
@@ -520,6 +540,8 @@ export const useEditorStore = create<EditorState>()(
             selectedEditId: state.selectedEditId === id ? null : state.selectedEditId,
           };
         }),
+
+      markSaved: (revision) => set((state) => ({ savedRevision: revision ?? state.revision })),
 
       selectEdit: (id) => set({ selectedEditId: id }),
 
@@ -719,6 +741,31 @@ export const useEditorStore = create<EditorState>()(
     },
   ),
 );
+
+/** What autosave persists: exactly what snapshot() captures for undo. */
+export function getDocumentSnapshot(): DocumentSnapshot {
+  return snapshot(useEditorStore.getState());
+}
+
+/** Apply a snapshot (e.g. from crash recovery). No history entry; clears selection. */
+export function restoreDocumentSnapshot(entry: DocumentSnapshot): void {
+  lastCoalesce = null;
+  // Spread the entry so any field a feature adds to snapshot()/HistoryEntry is
+  // applied automatically (entry keys mirror state keys, as in undo()).
+  useEditorStore.setState((state) => ({
+    ...entry,
+    selectedEditId: null,
+    revision: state.revision + 1,
+  }));
+}
+
+/** True when a document is open and has changed since it was opened or last
+ * downloaded. Cheap: compares two counters. */
+export function isDocumentDirty(
+  state: Pick<EditorState, "file" | "revision" | "savedRevision"> = useEditorStore.getState(),
+): boolean {
+  return state.file !== null && state.revision !== state.savedRevision;
+}
 
 /** Flatten a runs array to a plain string. */
 export function runsToText(runs: TextRun[]): string {
