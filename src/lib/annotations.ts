@@ -295,3 +295,32 @@ export function cloudSvgPath(width: number, height: number, scallop = 22): strin
 export function statusOf(edit: AnnotationEdit): ReviewStatus {
   return edit.status ?? "none";
 }
+
+// ── Dates ──────────────────────────────────────────────────────────────────
+
+/** XFDF / PDF date: D:YYYYMMDDHHmmSS+00'00' (UTC). */
+export function formatPdfDate(ms: number): string {
+  const d = new Date(ms);
+  const p = (n: number, w = 2) => String(n).padStart(w, "0");
+  return `D:${p(d.getUTCFullYear(), 4)}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}${p(
+    d.getUTCHours(),
+  )}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}+00'00'`;
+}
+
+/** Parse a PDF date string (D:YYYYMMDDHHmmSSOHH'mm'), tolerating truncation. */
+export function parsePdfDate(s: string | undefined): number | undefined {
+  if (!s) return undefined;
+  const m = /^D?:?(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?(Z|[+-]\d{2}'?(?:\d{2}'?)?)?/.exec(
+    s.trim(),
+  );
+  // Without the "D:" marker (or with ISO separators) it is not a PDF date.
+  if (!m || (!/^D?:/.test(s.trim()) && /\D/.test(s.trim()))) {
+    const t = Date.parse(s);
+    return Number.isNaN(t) ? undefined : t;
+  }
+  const [, y, mo = "01", d = "01", h = "00", mi = "00", se = "00", tz = "Z"] = m;
+  let offset = 0;
+  const tzm = /^([+-])(\d{2})'?(\d{2})?/.exec(tz);
+  if (tzm) offset = (tzm[1] === "-" ? -1 : 1) * (+tzm[2] * 60 + +(tzm[3] ?? 0)) * 60_000;
+  return Date.UTC(+y, +mo - 1, +d, +h, +mi, +se) - offset;
+}

@@ -3,6 +3,7 @@ import { useEditorStore } from "../store/useEditorStore";
 import { useBookmarksUiStore } from "../store/useBookmarksUiStore";
 import { useCommentsUiStore } from "../store/useCommentsUiStore";
 import { useToastStore } from "../store/useToastStore";
+import { downloadText } from "./download";
 import { isAnnotation } from "./annotations";
 import type { XfdfPageSize } from "./xfdf";
 
@@ -24,16 +25,6 @@ export function showComments(editId?: string): void {
 async function readPageSizes(file: File): Promise<XfdfPageSize[]> {
   const doc = await PDFDocument.load(await file.arrayBuffer(), { ignoreEncryption: true });
   return doc.getPages().map((p) => ({ width: p.getWidth(), height: p.getHeight() }));
-}
-
-function downloadText(text: string, filename: string, mime: string) {
-  const blob = new Blob([text], { type: `${mime};charset=utf-8` });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
 }
 
 /** Download every comment and markup as an .xfdf file. */

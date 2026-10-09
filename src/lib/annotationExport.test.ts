@@ -336,7 +336,7 @@ test("native: author, contents, dates and opacity are written", async () => {
     (hl.lookup(PDFName.of(key)) as PDFHexString | PDFString).decodeText();
   expect(text("Contents")).toBe("Résumé — “quoted”");
   expect(text("T")).toBe("Ada");
-  expect(text("CreationDate")).toBe("D:20260102030405Z");
+  expect(text("CreationDate")).toBe("D:20260102030405+00'00'");
   expect(hl.get(PDFName.of("CA"))?.toString()).toBe("0.4");
 });
 

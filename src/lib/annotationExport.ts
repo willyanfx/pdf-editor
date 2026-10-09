@@ -16,6 +16,7 @@ import {
 } from "pdf-lib";
 import {
   absolutePoints,
+  formatPdfDate,
   arrowBarbs,
   arrowHeadLength,
   cloudOutline,
@@ -451,12 +452,12 @@ export async function writeNativeAnnotation(
     F: PDFNumber.of(native.flags ?? FLAG_PRINT),
     C: context.obj(native.color),
     NM: PDFHexString.fromText(edit.id),
-    M: PDFString.of(pdfDateString(modified)),
+    M: PDFString.of(formatPdfDate(modified)),
     P: page.ref,
     AP: context.obj({ N: appearanceStream(ctx, appearance) }),
     ...native.entries,
   };
-  if (edit.createdAt) common.CreationDate = PDFString.of(pdfDateString(edit.createdAt));
+  if (edit.createdAt) common.CreationDate = PDFString.of(formatPdfDate(edit.createdAt));
   if (native.opacity !== undefined) common.CA = PDFNumber.of(native.opacity);
   if (edit.text?.trim()) common.Contents = PDFHexString.fromText(edit.text);
   if (edit.author) common.T = PDFHexString.fromText(edit.author);
@@ -468,7 +469,9 @@ export async function writeNativeAnnotation(
   // parent (/IRT, /RT /R). They get an empty appearance so no viewer draws
   // a stray icon for them; the parent's marker stays the only visible mark.
   const [rx1, ry1] = appearance.rect;
-  const emptyAp = appearanceStream(ctx, { rect: [rx1, ry1, rx1 + 1, ry1 + 1], content: "" });
+  let emptyAp: PDFRef | undefined;
+  const emptyAppearance = () =>
+    (emptyAp ??= appearanceStream(ctx, { rect: [rx1, ry1, rx1 + 1, ry1 + 1], content: "" }));
   const replyBase = (id: string, author: string | undefined, at: number) => {
     const d: Record<string, PDFObject> = {
       Type: PDFName.of("Annot"),
@@ -476,13 +479,13 @@ export async function writeNativeAnnotation(
       Rect: context.obj([rx1, ry1, rx1 + 1, ry1 + 1]),
       F: PDFNumber.of(FLAG_PRINT | FLAG_NO_ZOOM | FLAG_NO_ROTATE),
       NM: PDFHexString.fromText(id),
-      M: PDFString.of(pdfDateString(at)),
-      CreationDate: PDFString.of(pdfDateString(at)),
+      M: PDFString.of(formatPdfDate(at)),
+      CreationDate: PDFString.of(formatPdfDate(at)),
       P: page.ref,
       IRT: parentRef,
       RT: PDFName.of("R"),
       Name: PDFName.of("Comment"),
-      AP: context.obj({ N: emptyAp }),
+      AP: context.obj({ N: emptyAppearance() }),
     };
     if (author) d.T = PDFHexString.fromText(author);
     return d;
@@ -512,15 +515,6 @@ const STATE_NAME = {
 function geometryOf(page: PDFPage): Geometry {
   const pageWidth = page.getWidth();
   return { pageWidth, pageHeight: page.getHeight(), scale: pageWidth / VIEWER_WIDTH };
-}
-
-/** PDF date string: D:YYYYMMDDHHmmSSZ (UTC). */
-export function pdfDateString(ms: number): string {
-  const d = new Date(ms);
-  const p = (n: number, w = 2) => String(n).padStart(w, "0");
-  return `D:${p(d.getUTCFullYear(), 4)}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}${p(
-    d.getUTCHours(),
-  )}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z`;
 }
 
 /** Types whose flatten path is the shared appearance builder. The older types

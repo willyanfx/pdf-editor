@@ -67,6 +67,8 @@ test("parsePdfDate handles zones, truncation and garbage", () => {
   expect(parsePdfDate("D:20260517130509Z")).toBe(Date.UTC(2026, 4, 17, 13, 5, 9));
   expect(parsePdfDate(undefined)).toBeUndefined();
   expect(parsePdfDate("not a date")).toBeUndefined();
+  // ISO strings are not PDF dates: they must not collapse to Jan 1.
+  expect(parsePdfDate("2026-05-17T13:05:09Z")).toBe(Date.UTC(2026, 4, 17, 13, 5, 9));
 });
 
 // ── XFDF round trip ────────────────────────────────────────────────────────

@@ -4,6 +4,7 @@ import { addImageFromFile, openFiles, openConvertedFile, openPdfFromUrl } from "
 import { CONVERTIBLE_ACCEPT } from "../lib/convertToPdf";
 import type { InsertSource } from "../lib/pageInsert";
 import type { CompressOptions } from "../lib/compressPresets";
+import { downloadText } from "../lib/download";
 import { markDocumentSaved } from "../lib/autosave";
 import { addBookmarkForCurrentPage, showBookmarks } from "../lib/bookmarkActions";
 import { bookmarksForExport } from "../lib/bookmarks";
@@ -29,17 +30,6 @@ type DownloadHooks = {
 /** Trigger a browser download of arbitrary PDF bytes under the given filename. */
 function downloadBytes(bytes: Uint8Array, filename: string) {
   const blob = new Blob([bytes.slice()], { type: "application/pdf" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
-/** Trigger a browser download of a text blob (e.g. CSV) under the given filename. */
-function downloadText(text: string, filename: string, mime: string) {
-  const blob = new Blob([text], { type: `${mime};charset=utf-8` });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;

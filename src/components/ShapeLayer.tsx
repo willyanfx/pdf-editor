@@ -160,9 +160,8 @@ export function ShapeLayer({ pageIndex }: Props) {
   function onPointerUp(e: React.PointerEvent) {
     const start = startRef.current;
     startRef.current = null;
-    const current = drag;
     setDrag(null);
-    if (!start || !current || mode === "polygon") return;
+    if (!start || mode === "polygon") return;
     const end =
       e.shiftKey && (mode === "line" || mode === "arrow") ? snap45(start, pointIn(e)) : pointIn(e);
     const dx = end.x - start.x;
