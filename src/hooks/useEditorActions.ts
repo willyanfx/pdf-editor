@@ -4,6 +4,7 @@ import { addImageFromFile, openFiles, openConvertedFile, openPdfFromUrl } from "
 import { CONVERTIBLE_ACCEPT } from "../lib/convertToPdf";
 import type { InsertSource } from "../lib/pageInsert";
 import type { CompressOptions } from "../lib/compressPresets";
+import { markDocumentSaved } from "../lib/autosave";
 
 /** Callbacks the morphing Download button uses to drive its idle→spinner→check
  * animation; the export logic itself lives here so the rail, top bar, and
@@ -196,7 +197,7 @@ export function useEditorActions() {
   }
 
   async function downloadPdf(hooks: DownloadHooks = {}) {
-    const { file, edits } = useEditorStore.getState();
+    const { file, edits, revision } = useEditorStore.getState();
     if (!file) return;
 
     hooks.onStart?.();
@@ -204,6 +205,7 @@ export function useEditorActions() {
       const { exportEditedPdf } = await import("../lib/exportPdf");
       const bytes = await exportEditedPdf(file, edits, exportOptions());
       downloadBytes(bytes, file.name.replace(/\.pdf$/i, "") + ".edited.pdf");
+      markDocumentSaved(revision);
       useToastStore.getState().addToast("PDF exported", "success");
       hooks.onSuccess?.();
     } catch {
@@ -261,7 +263,7 @@ export function useEditorActions() {
   }
 
   async function compressPdf(hooks: DownloadHooks = {}, compressOptions?: CompressOptions) {
-    const { file, edits } = useEditorStore.getState();
+    const { file, edits, revision } = useEditorStore.getState();
     if (!file) return;
 
     hooks.onStart?.();
@@ -269,6 +271,7 @@ export function useEditorActions() {
       const { compressEditedPdf } = await import("../lib/exportPdf");
       const bytes = await compressEditedPdf(file, edits, exportOptions(), compressOptions);
       downloadBytes(bytes, file.name.replace(/\.pdf$/i, "") + ".compressed.pdf");
+      markDocumentSaved(revision);
       useToastStore.getState().addToast("Compressed PDF exported", "success");
       hooks.onSuccess?.();
     } catch {

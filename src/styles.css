@@ -2443,3 +2443,43 @@ button {
   outline: 2px solid oklch(55% 0.16 250 / 0.85);
   outline-offset: -2px;
 }
+
+/* Autosave recovery banner --------------------------------------------- */
+
+.recovery-banner {
+  position: fixed;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(640px, calc(100vw - 32px));
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--fg);
+  border-radius: var(--r-md);
+  background: var(--surface-glass);
+  backdrop-filter: blur(16px);
+  color: var(--fg);
+  font-size: 13px;
+  line-height: 1.35;
+  animation: toast-in 0.22s var(--t-mid) both;
+}
+
+.recovery-icon {
+  flex: 0 0 auto;
+  color: var(--fg-muted);
+}
+
+.recovery-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.recovery-btn {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+}
