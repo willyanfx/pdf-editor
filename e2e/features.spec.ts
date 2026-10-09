@@ -118,3 +118,38 @@ test("filled form fields survive page deletion in the download", async ({ page }
   expect(form.getTextField("applicant.name").getText()).toBe("Ada Lovelace");
   expect(form.getCheckBox("agree").isChecked()).toBe(true);
 });
+
+test("redacted text is gone from the download; unmarked text stays searchable", async ({
+  page,
+}) => {
+  await openFixture(page);
+  // Redact mode, then drag across page 1's "Alpha page" line (drawn at
+  // x=72pt, baseline 700pt on a 612×792 page → ~94–230px, ~96–121px at 800px).
+  await page.locator("body").click();
+  await page.keyboard.press("r");
+  const shell = page.locator('.page-shell[data-page-index="0"]');
+  const box = (await shell.boundingBox())!;
+  const k = box.width / 800;
+  await page.mouse.move(box.x + 60 * k, box.y + 80 * k);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 340 * k, box.y + 135 * k, { steps: 8 });
+  await page.mouse.up();
+  await expect
+    .poll(() => page.evaluate(() => document.querySelectorAll(".edit-box").length))
+    .toBeGreaterThan(0);
+
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    (async () => {
+      await page.getByTitle("Download edited PDF").click();
+      await page.getByRole("button", { name: "Apply redactions" }).click();
+    })(),
+  ]);
+  const bytes = new Uint8Array(await readFile(await download.path()));
+  const texts = await pageTexts(bytes);
+  expect(texts[0]).not.toContain("Alpha");
+  expect(texts[1]).toContain("Bravo page");
+  expect(texts[2]).toContain("Charlie page");
+  // No trace of the redacted string anywhere in the raw file either.
+  expect(Buffer.from(bytes).toString("latin1")).not.toContain("Alpha");
+});
