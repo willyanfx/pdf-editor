@@ -12,6 +12,8 @@ import { UrlDialog } from "./components/UrlDialog";
 import { CompressDialog } from "./components/CompressDialog";
 import { PasswordModal } from "./components/PasswordModal";
 import { FindBar } from "./components/FindBar";
+import { RedactSearchDialog } from "./components/RedactSearchDialog";
+import { RedactConfirmDialog } from "./components/RedactConfirmDialog";
 import { useEditorStore } from "./store/useEditorStore";
 import { openFiles } from "./lib/openFiles";
 
@@ -142,6 +144,11 @@ export default function App() {
           store.setMode("ink");
           return;
         }
+        if (k === "r") {
+          e.preventDefault();
+          store.setMode("redact");
+          return;
+        }
         if (k === "w") {
           e.preventDefault();
           store.setZoomPreset("fit-width");
@@ -241,6 +248,8 @@ export default function App() {
       <UrlDialog />
       <CompressDialog />
       <PasswordModal />
+      <RedactSearchDialog />
+      <RedactConfirmDialog />
 
       {findOpen && <FindBar onClose={() => setFindOpen(false)} />}
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}

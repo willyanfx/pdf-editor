@@ -9,6 +9,7 @@ import { ExistingImageLayer } from "./ExistingImageLayer";
 import { OcrLayer } from "./OcrLayer";
 import { SignatureZoneLayer } from "./SignatureZoneLayer";
 import { AnnotateLayer } from "./AnnotateLayer";
+import { RedactLayer } from "./RedactLayer";
 import { InkLayer } from "./InkLayer";
 import { TextDrawLayer } from "./TextDrawLayer";
 import { PageActionsBar } from "./PageActionsBar";
@@ -514,6 +515,7 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
                       page={pagesRef.current.get(index) ?? null}
                     />
                     <AnnotateLayer pageIndex={index} />
+                    <RedactLayer pageIndex={index} page={pagesRef.current.get(index) ?? null} />
                     <InkLayer pageIndex={index} />
                     <TextDrawLayer pageIndex={index} />
                     <EditableLayer pageIndex={index} />

@@ -141,6 +141,20 @@ export type InkEdit = {
   strokeWidth: number;
 };
 
+/** A redaction mark. Unlike a cover rectangle it is not drawn over the page:
+ * on download the marked area is permanently removed (page rasterized, content
+ * under the mark blacked out, text/annotations/form fields dropped). See
+ * lib/redact.ts. Rendered as a red outline (Acrobat convention) until then. */
+export type RedactEdit = {
+  id: string;
+  type: "redact";
+  pageIndex: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 export type PdfEdit =
   | TextEdit
   | ImageEdit
@@ -155,7 +169,8 @@ export type PdfEdit =
     }
   | MarkupEdit
   | CommentEdit
-  | InkEdit;
+  | InkEdit
+  | RedactEdit;
 
 /** Per-page geometry mutation, kept separate from overlay edits so page
  * transforms survive independently. Insets/dimensions are in screen px at
@@ -181,7 +196,8 @@ export type EditorMode =
   | "underline"
   | "comment"
   | "ink"
-  | "signZones";
+  | "signZones"
+  | "redact";
 
 /** Where a signature image should be dropped, set by clicking an auto-detected
  * signature zone before opening the SignatureModal. Null = default placement. */
@@ -284,6 +300,28 @@ type EditorState = {
   compressDialogOpen: boolean;
   setCompressDialogOpen: (open: boolean) => void;
 
+  /** Redaction UI state. The marks themselves are ordinary `redact` edits (so
+   * they're undoable and autosaved); these flags are transient per-document UI. */
+  /** Show redaction marks as solid black (what the download will look like)
+   * instead of the red outlines used while marking. */
+  redactPreviewSolid: boolean;
+  /** Whether the "Search & redact" dialog is open. */
+  redactSearchOpen: boolean;
+  /** True once the user has acknowledged, for this document, that downloading
+   * permanently removes the content under redaction marks. */
+  redactConfirmed: boolean;
+  /** A pending download waiting on that acknowledgement: `resolve(true)` lets the
+   * download proceed, `resolve(false)` cancels it. Null when nothing is pending. */
+  redactConfirm: { count: number; resolve: (ok: boolean) => void } | null;
+  setRedactPreviewSolid: (solid: boolean) => void;
+  setRedactSearchOpen: (open: boolean) => void;
+  setRedactConfirmed: (confirmed: boolean) => void;
+  setRedactConfirm: (pending: { count: number; resolve: (ok: boolean) => void } | null) => void;
+  /** Add several edits as ONE undo step (e.g. all marks from a search). */
+  addEdits: (edits: PdfEdit[]) => void;
+  /** Delete several edits as ONE undo step. */
+  deleteEdits: (ids: string[]) => void;
+
   /** History stacks — NOT in initialState so setFile does not reset them. */
   _past: HistoryEntry[];
   _future: HistoryEntry[];
@@ -383,6 +421,10 @@ const initialState = {
   metadataModalOpen: false,
   urlDialogOpen: false,
   compressDialogOpen: false,
+  redactPreviewSolid: false,
+  redactSearchOpen: false,
+  redactConfirmed: false,
+  redactConfirm: null as { count: number; resolve: (ok: boolean) => void } | null,
 };
 
 /** Capture a snapshot of the mutable document arrays plus the file identity and
@@ -602,6 +644,33 @@ export const useEditorStore = create<EditorState>()(
       setUrlDialogOpen: (urlDialogOpen) => set({ urlDialogOpen }),
 
       setCompressDialogOpen: (compressDialogOpen) => set({ compressDialogOpen }),
+
+      setRedactPreviewSolid: (redactPreviewSolid) => set({ redactPreviewSolid }),
+      setRedactSearchOpen: (redactSearchOpen) => set({ redactSearchOpen }),
+      setRedactConfirmed: (redactConfirmed) => set({ redactConfirmed }),
+      setRedactConfirm: (redactConfirm) => set({ redactConfirm }),
+
+      addEdits: (newEdits) =>
+        set((state) => {
+          if (newEdits.length === 0) return {};
+          lastCoalesce = null;
+          const hist = pushHistory(state, snapshot(state));
+          return { ...hist, edits: [...state.edits, ...newEdits], selectedEditId: null };
+        }),
+
+      deleteEdits: (ids) =>
+        set((state) => {
+          if (ids.length === 0) return {};
+          lastCoalesce = null;
+          const drop = new Set(ids);
+          const hist = pushHistory(state, snapshot(state));
+          return {
+            ...hist,
+            edits: state.edits.filter((edit) => !drop.has(edit.id)),
+            selectedEditId:
+              state.selectedEditId && drop.has(state.selectedEditId) ? null : state.selectedEditId,
+          };
+        }),
 
       setMode: (mode) => set({ mode }),
 

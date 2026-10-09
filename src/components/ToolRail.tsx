@@ -19,6 +19,7 @@ import { useEditorStore, type EditorMode } from "../store/useEditorStore";
 import { useEditorActions } from "../hooks/useEditorActions";
 import { RailButton } from "./RailButton";
 import { OcrMenu } from "./OcrMenu";
+import { RedactMenu } from "./RedactMenu";
 
 type Props = {
   onOpenPalette: () => void;
@@ -83,6 +84,8 @@ export function ToolRail({ onOpenPalette, onTogglePages, pagesActive }: Props) {
       {modeBtn("underline", <Underline size={18} />, "Underline (U)")}
       {modeBtn("comment", <MessageSquare size={18} />, "Comment (C)")}
       {modeBtn("ink", <PenTool size={18} />, "Draw (D)")}
+      {/* Redaction: marking tool, search dialog, preview toggle in a popover. */}
+      <RedactMenu />
 
       <span className="rail-divider" />
 

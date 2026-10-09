@@ -4,6 +4,8 @@ import { addImageFromFile, openFiles, openConvertedFile, openPdfFromUrl } from "
 import { CONVERTIBLE_ACCEPT } from "../lib/convertToPdf";
 import type { InsertSource } from "../lib/pageInsert";
 import type { CompressOptions } from "../lib/compressPresets";
+import { confirmRedactions, redactedSourceFile } from "../lib/redactActions";
+import { blankRedactedTextEdits, excludeRedactedTextEdits } from "../lib/redactGeometry";
 
 /** Callbacks the morphing Download button uses to drive its idle→spinner→check
  * animation; the export logic itself lives here so the rail, top bar, and
@@ -198,11 +200,17 @@ export function useEditorActions() {
   async function downloadPdf(hooks: DownloadHooks = {}) {
     const { file, edits } = useEditorStore.getState();
     if (!file) return;
+    // Pending redaction marks: explain once (per document) what the download
+    // will contain and let the user back out before any work starts.
+    if (!(await confirmRedactions())) return;
 
     hooks.onStart?.();
     try {
-      const { exportEditedPdf } = await import("../lib/exportPdf");
-      const bytes = await exportEditedPdf(file, edits, exportOptions());
+      // exportRedactedPdf = exportEditedPdf + the redaction pass (a no-op
+      // without marks). exportEditedPdf alone refuses pending marks.
+      const { exportRedactedPdf } = await import("../lib/redact");
+      const { bytes, warnings } = await exportRedactedPdf(file, edits, exportOptions());
+      for (const w of warnings) useToastStore.getState().addToast(w, "info");
       downloadBytes(bytes, file.name.replace(/\.pdf$/i, "") + ".edited.pdf");
       useToastStore.getState().addToast("PDF exported", "success");
       hooks.onSuccess?.();
@@ -221,7 +229,12 @@ export function useEditorActions() {
     try {
       const { exportDocx } = await import("../lib/exportDocx");
       const order = pageOrder.length ? pageOrder : Array.from({ length: numPages }, (_, i) => i);
-      const ok = await exportDocx(edits, file.name.replace(/\.pdf$/i, "") + ".docx", order);
+      // Text boxes touched by a redaction mark are left out entirely.
+      const ok = await exportDocx(
+        excludeRedactedTextEdits(edits),
+        file.name.replace(/\.pdf$/i, "") + ".docx",
+        order,
+      );
       if (ok) {
         useToastStore.getState().addToast("DOCX exported", "success");
         hooks.onSuccess?.();
@@ -237,13 +250,14 @@ export function useEditorActions() {
 
   /** Export the PDF's native (selectable) text as a CSV (Page, Line, Text). */
   async function downloadCsv(hooks: DownloadHooks = {}) {
-    const { file } = useEditorStore.getState();
+    const { file, edits } = useEditorStore.getState();
     if (!file) return;
 
     hooks.onStart?.();
     try {
       const { buildCsv } = await import("../lib/exportCsv");
-      const csv = await buildCsv(file);
+      // With redaction marks pending, read the text of the redacted document.
+      const csv = await buildCsv(await redactedSourceFile(file, edits));
       if (!csv) {
         useToastStore
           .getState()
@@ -263,11 +277,24 @@ export function useEditorActions() {
   async function compressPdf(hooks: DownloadHooks = {}, compressOptions?: CompressOptions) {
     const { file, edits } = useEditorStore.getState();
     if (!file) return;
+    if (!(await confirmRedactions())) return;
 
     hooks.onStart?.();
     try {
       const { compressEditedPdf } = await import("../lib/exportPdf");
-      const bytes = await compressEditedPdf(file, edits, exportOptions(), compressOptions);
+      const { createRedactionPass } = await import("../lib/redact");
+      // Redaction runs on the baked bytes BEFORE compression, so the flattened
+      // pages are what gets compressed (null when there are no marks).
+      const options = exportOptions();
+      const pass = createRedactionPass(file, edits, options.pageOrder);
+      const bytes = await compressEditedPdf(
+        file,
+        blankRedactedTextEdits(edits),
+        { ...options, redactionsHandled: true },
+        compressOptions,
+        pass?.run,
+      );
+      for (const w of pass?.warnings ?? []) useToastStore.getState().addToast(w, "info");
       downloadBytes(bytes, file.name.replace(/\.pdf$/i, "") + ".compressed.pdf");
       useToastStore.getState().addToast("Compressed PDF exported", "success");
       hooks.onSuccess?.();
@@ -280,14 +307,17 @@ export function useEditorActions() {
   /** Pick 2+ PDFs (plus the open one, if any) and download the merged result. */
   function mergePdfs() {
     void pickFiles("application/pdf", true).then(async (picked) => {
-      const open = useEditorStore.getState().file;
+      const { file: open, edits } = useEditorStore.getState();
       const files = open ? [open, ...picked] : picked;
       if (files.length < 2) {
         useToastStore.getState().addToast("Pick at least two PDFs to merge.", "error");
         return;
       }
+      if (open && !(await confirmRedactions())) return;
       try {
         const { mergePdfs: merge } = await import("../lib/mergeSplitPdf");
+        // The open document contributes its redacted form when marks are pending.
+        if (open) files[0] = await redactedSourceFile(open, edits);
         const bytes = await merge(files);
         downloadBytes(bytes, "merged.pdf");
         useToastStore.getState().addToast(`Merged ${files.length} PDFs`, "success");
@@ -346,8 +376,9 @@ export function useEditorActions() {
   async function splitPdf(
     options: { mode: "ranges"; spec: string } | { mode: "interval"; chunkSize: number },
   ) {
-    const { file, numPages } = useEditorStore.getState();
+    const { file, numPages, edits } = useEditorStore.getState();
     if (!file) return;
+    if (!(await confirmRedactions())) return;
     try {
       const {
         splitPdf: split,
@@ -360,7 +391,8 @@ export function useEditorActions() {
           : options.spec.trim().length > 0
             ? parsePageRanges(options.spec, numPages)
             : undefined; // empty ranges spec → one file per page (split's default)
-      const parts = await split(file, groups);
+      // Split the redacted document when marks are pending (original otherwise).
+      const parts = await split(await redactedSourceFile(file, edits), groups);
       if (!parts.length) {
         useToastStore.getState().addToast("No pages matched that range.", "error");
         return;
@@ -373,9 +405,35 @@ export function useEditorActions() {
     }
   }
 
+  // --- Redaction ----------------------------------------------------------
+
+  /** Open the "Search & redact" dialog. */
+  function openRedactSearch() {
+    if (!useEditorStore.getState().file) return;
+    useEditorStore.getState().setRedactSearchOpen(true);
+  }
+
+  /** Toggle the solid-black preview of redaction marks. */
+  function toggleRedactPreview() {
+    const store = useEditorStore.getState();
+    store.setRedactPreviewSolid(!store.redactPreviewSolid);
+  }
+
+  /** Remove every pending redaction mark (one undo step). */
+  function clearRedactions() {
+    const store = useEditorStore.getState();
+    const ids = store.edits.filter((e) => e.type === "redact").map((e) => e.id);
+    if (ids.length === 0) return;
+    store.deleteEdits(ids);
+    useToastStore.getState().addToast("Redaction marks removed", "info");
+  }
+
   return {
     openPdf,
     pickPdf,
+    openRedactSearch,
+    toggleRedactPreview,
+    clearRedactions,
     openUrlDialog,
     openFromUrl,
     pickImage,
