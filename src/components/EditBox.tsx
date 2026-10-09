@@ -5,6 +5,7 @@ import type { PdfEdit } from "../store/useEditorStore";
 import { useEditorStore, makeTextEdit, textToRuns } from "../store/useEditorStore";
 import { useToastStore } from "../store/useToastStore";
 import { fileToDataUrl } from "../lib/file";
+import { isTextEditRedacted, redactMarks } from "../lib/redactGeometry";
 import { TextFormatToolbar } from "./TextFormatToolbar";
 import { RichTextEditor } from "./RichTextEditor";
 
@@ -25,6 +26,12 @@ export function EditBox({ edit }: Props) {
   const ocrBusy = useEditorStore((s) => s.ocrBusy);
   const selected = useEditorStore((s) => s.selectedEditId === edit.id);
   const zoom = useEditorStore((s) => s.zoom);
+  const redactPreviewSolid = useEditorStore((s) => s.redactPreviewSolid);
+  // A text box touched by a redaction mark is blanked on download (only its
+  // cover is kept) — flag it so the on-screen preview is honest about that.
+  const redactAffected = useEditorStore(
+    (s) => edit.type === "text" && isTextEditRedacted(edit, redactMarks(s.edits, edit.pageIndex)),
+  );
   // The editor registers a selection-range getter here so the toolbar can apply
   // formatting to just the selected characters.
   const getSelectionRange = useRef<SelectionRangeGetter | null>(null);
@@ -123,7 +130,12 @@ export function EditBox({ edit }: Props) {
           y: position.y,
         });
       }}
-      className={selected ? "edit-box selected" : "edit-box"}
+      className={
+        (selected ? "edit-box selected" : "edit-box") + (redactAffected ? " redact-affected" : "")
+      }
+      title={
+        redactAffected ? "A redaction mark touches this text: it is removed on download" : undefined
+      }
     >
       {edit.type === "text" && (
         <>
@@ -181,6 +193,13 @@ export function EditBox({ edit }: Props) {
       )}
 
       {edit.type === "rectangle" && <div className="rectangle-preview" />}
+
+      {edit.type === "redact" && (
+        <div
+          className={redactPreviewSolid ? "redact-preview solid" : "redact-preview"}
+          title="Redaction mark: the content under it is removed when you download"
+        />
+      )}
 
       {edit.type === "highlight" && (
         <div className="markup-preview highlight" style={{ background: edit.color }} />

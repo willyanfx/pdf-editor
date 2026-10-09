@@ -188,6 +188,10 @@ export type ExportOptions = {
   formValues?: FormValues;
   /** Draw form fields into the page content and remove the form. */
   flattenForms?: boolean;
+  /** Set by lib/redact.ts, which applies `redact` edits as a post-pass. Without
+   * it, exporting edits that contain redaction marks throws — a cover-only
+   * export would silently leak the content the user asked to remove. */
+  redactionsHandled?: boolean;
 };
 
 import { COMPRESS_PRESETS } from "./compressPresets";
@@ -216,6 +220,14 @@ export async function exportEditedPdf(
   edits: PdfEdit[],
   options: ExportOptions = {},
 ): Promise<Uint8Array> {
+  // Redaction marks are not drawn here: they're applied by lib/redact.ts
+  // (exportRedactedPdf / createRedactionPass) after everything else is baked.
+  // Fail closed so no download path can forget that pass.
+  if (!options.redactionsHandled && edits.some((e) => e.type === "redact")) {
+    throw new Error(
+      "exportEditedPdf: pending redaction marks must be applied via exportRedactedPdf (lib/redact.ts)",
+    );
+  }
   const originalBytes = await sourceFile.arrayBuffer();
   const srcDoc = await PDFDocument.load(originalBytes);
   const srcCount = srcDoc.getPageCount();
@@ -592,8 +604,11 @@ export async function compressEditedPdf(
   edits: PdfEdit[],
   options: ExportOptions = {},
   compressOptions: CompressOptions = COMPRESS_PRESETS.ebook,
+  /** Optional pass over the baked bytes before compression (redaction). */
+  postExport?: (bytes: Uint8Array) => Promise<Uint8Array>,
 ): Promise<Uint8Array> {
-  const edited = await exportEditedPdf(sourceFile, edits, { ...options, compress: true });
+  let edited = await exportEditedPdf(sourceFile, edits, { ...options, compress: true });
+  if (postExport) edited = await postExport(edited);
   try {
     if (compressOptions.mode === "rasterize") {
       const downsampled = await downsampleImages(

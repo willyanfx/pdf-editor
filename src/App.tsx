@@ -16,6 +16,8 @@ import { ExtractPagesDialog, ReplacePagesDialog } from "./components/PageSelecti
 import { FindBar } from "./components/FindBar";
 import { RecoveryBanner } from "./components/RecoveryBanner";
 import { isDocumentDirty, useEditorStore } from "./store/useEditorStore";
+import { RedactSearchDialog } from "./components/RedactSearchDialog";
+import { RedactConfirmDialog } from "./components/RedactConfirmDialog";
 import { openFiles } from "./lib/openFiles";
 import { checkForRecovery, startAutosave } from "./lib/autosave";
 import { addBookmarkForCurrentPage } from "./lib/bookmarkActions";
@@ -157,6 +159,11 @@ export default function App() {
           store.setMode("ink");
           return;
         }
+        if (k === "r") {
+          e.preventDefault();
+          store.setMode("redact");
+          return;
+        }
         if (k === "w") {
           e.preventDefault();
           store.setZoomPreset("fit-width");
@@ -274,6 +281,8 @@ export default function App() {
       <RecoveryBanner />
       <ExtractPagesDialog />
       <ReplacePagesDialog />
+      <RedactSearchDialog />
+      <RedactConfirmDialog />
 
       {findOpen && <FindBar onClose={() => setFindOpen(false)} />}
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}

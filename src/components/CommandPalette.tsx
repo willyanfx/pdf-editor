@@ -41,6 +41,9 @@ import {
   Droplets,
   Stamp,
   Eraser,
+  EyeOff,
+  SearchCheck,
+  SquareDashed,
 } from "lucide-react";
 import { useEditorStore } from "../store/useEditorStore";
 import { useEditorActions } from "../hooks/useEditorActions";
@@ -52,7 +55,7 @@ type Props = {
 
 type PaletteAction = {
   id: string;
-  group: "File" | "Mode" | "Add" | "Annotate" | "Pages" | "View" | "Export";
+  group: "File" | "Mode" | "Add" | "Annotate" | "Redact" | "Pages" | "View" | "Export";
   label: string;
   icon: ReactNode;
   shortcut?: string;
@@ -65,6 +68,7 @@ const GROUP_ORDER: PaletteAction["group"][] = [
   "Mode",
   "Add",
   "Annotate",
+  "Redact",
   "Pages",
   "View",
   "Export",
@@ -240,6 +244,31 @@ export function CommandPalette({ onClose }: Props) {
         shortcut: "D",
         disabled: noFile,
         run: () => runAndClose(() => actions.setMode("ink")),
+      },
+      {
+        id: "redact-mark",
+        group: "Redact",
+        label: "Redact: mark text or an area",
+        icon: <EyeOff size={16} />,
+        shortcut: "R",
+        disabled: noFile,
+        run: () => runAndClose(() => actions.setMode("redact")),
+      },
+      {
+        id: "redact-search",
+        group: "Redact",
+        label: "Search & redact…",
+        icon: <SearchCheck size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(actions.openRedactSearch),
+      },
+      {
+        id: "redact-preview",
+        group: "Redact",
+        label: "Redact: toggle solid-black preview",
+        icon: <SquareDashed size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(actions.toggleRedactPreview),
       },
       {
         id: "page-add",

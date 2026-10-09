@@ -3042,3 +3042,215 @@ p.page-sel-error {
 .react-pdf__Page__annotations :is(input, textarea, select) {
   line-height: normal;
 }
+
+/* Redaction ------------------------------------------------------------ */
+
+/* Drag overlay active in redact mode (sits with the other drag layers). */
+.redact-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  cursor: crosshair;
+  touch-action: none;
+}
+.redact-drag-preview {
+  position: absolute;
+  pointer-events: none;
+  border: 1.5px solid var(--error);
+  background: oklch(60% 0.22 25 / 0.12);
+}
+.redact-drag-preview.faint {
+  border-style: dashed;
+  background: transparent;
+}
+
+/* A pending mark: red outline (Acrobat convention) or, with the preview
+   toggle, the solid black it becomes on download. */
+.redact-preview {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-sizing: border-box;
+  border: 1.5px solid var(--error);
+  background: oklch(60% 0.22 25 / 0.1);
+}
+.redact-preview.solid {
+  border-color: #000;
+  background: #000;
+}
+.edit-box:has(> .redact-preview) {
+  border-color: transparent;
+}
+
+/* A text box a mark touches is blanked on download — hatch it so the preview
+   doesn't promise text that won't be there. */
+.edit-box.redact-affected {
+  border: 1.5px dashed var(--error);
+  background: repeating-linear-gradient(
+    45deg,
+    transparent 0 6px,
+    oklch(60% 0.22 25 / 0.08) 6px 12px
+  );
+}
+
+/* Rail popover additions (shares .ocr-menu-popover / .ocr-scope-btn). */
+.redact-menu {
+  width: 264px;
+}
+.redact-kbd {
+  margin-left: auto;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font: 11px var(--font-mono);
+  color: var(--fg-muted);
+}
+.redact-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 2px;
+  font-size: 13px;
+  color: var(--fg);
+  cursor: pointer;
+}
+.redact-check input {
+  margin: 0;
+  accent-color: var(--fg);
+}
+.redact-status {
+  margin: 0 0 6px;
+}
+
+/* Search & redact dialog. */
+.redact-search {
+  width: min(640px, 94vw);
+}
+.redact-search-form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.redact-search-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.redact-search-row .sig-type-input {
+  flex: 1;
+  min-width: 0;
+}
+.redact-patterns {
+  margin: 6px 0 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 12px;
+}
+.redact-patterns legend {
+  padding: 0;
+  margin-bottom: 2px;
+}
+.redact-results-wrap {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.redact-results-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.redact-results-bar span {
+  flex: 1;
+}
+.redact-results-bar button {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--fg);
+  font-size: 12px;
+  cursor: pointer;
+}
+.redact-results-bar button:hover {
+  background: var(--bg-subtle);
+}
+.redact-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.redact-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: var(--r-sm);
+  font-size: 13px;
+}
+.redact-result:hover {
+  background: var(--bg-subtle);
+}
+.redact-result label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.redact-result input {
+  margin: 0;
+  flex: none;
+  accent-color: var(--fg);
+}
+.redact-result-snippet {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+}
+.redact-result-snippet mark {
+  padding: 0 2px;
+  border-radius: 2px;
+  background: oklch(60% 0.22 25 / 0.18);
+  color: var(--fg);
+  font-weight: 600;
+}
+.redact-result-page {
+  flex: none;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--fg-muted);
+  font: 11px var(--font-mono);
+  cursor: pointer;
+}
+.redact-result-page:hover {
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+.redact-result-tag {
+  flex: none;
+  font-size: 11px;
+  color: var(--fg-muted);
+  font-style: italic;
+}
+.redact-confirm-body p {
+  margin: 0 0 10px;
+}
+.redact-confirm-body p:last-child {
+  margin-bottom: 0;
+}
