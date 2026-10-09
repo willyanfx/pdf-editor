@@ -9,6 +9,7 @@ import { addBookmarkForCurrentPage, showBookmarks } from "../lib/bookmarkActions
 import { bookmarksForExport } from "../lib/bookmarks";
 import { usePageSelectionStore } from "../store/usePageSelectionStore";
 import { formatPageRanges, inVisibleOrder } from "../lib/pageRemap";
+import { usePageStampsUi } from "../store/usePageStampsUi";
 
 /** Callbacks the morphing Download button uses to drive its idle→spinner→check
  * animation; the export logic itself lives here so the rail, top bar, and
@@ -193,11 +194,12 @@ export function useEditorActions() {
 
   /** Build export options from the current page order / transforms. */
   function exportOptions() {
-    const { pageOrder, pageOps, numPages } = useEditorStore.getState();
+    const { pageOrder, pageOps, numPages, pageStamps } = useEditorStore.getState();
     return {
       pageOrder: pageOrder.length ? pageOrder : Array.from({ length: numPages }, (_, i) => i),
       pageOps,
       bookmarks: bookmarksForExport(useEditorStore.getState()),
+      pageStamps,
     };
   }
 
@@ -345,6 +347,19 @@ export function useEditorActions() {
   function openCompressDialog() {
     if (!useEditorStore.getState().file) return;
     useEditorStore.getState().setCompressDialogOpen(true);
+  }
+
+  /** Open the header & footer dialog; `presetId` (see HEADER_FOOTER_PRESETS,
+   * e.g. "page-of" or "bates") pre-fills a slot. */
+  function openHeaderFooter(presetId?: string) {
+    if (!useEditorStore.getState().file) return;
+    usePageStampsUi.getState().openHeaderFooter(presetId);
+  }
+
+  /** Open the watermark dialog. */
+  function openWatermark() {
+    if (!useEditorStore.getState().file) return;
+    usePageStampsUi.getState().openWatermark();
   }
 
   /**
@@ -511,6 +526,8 @@ export function useEditorActions() {
     openSplit,
     openMetadata,
     openCompressDialog,
+    openHeaderFooter,
+    openWatermark,
     downloadPdf,
     downloadDocx,
     downloadCsv,

@@ -35,6 +35,11 @@ import {
   RotateCcw,
   FileOutput,
   Replace,
+  PanelTop,
+  Hash,
+  Fingerprint,
+  Droplets,
+  Eraser,
 } from "lucide-react";
 import { useEditorStore } from "../store/useEditorStore";
 import { useEditorActions } from "../hooks/useEditorActions";
@@ -68,6 +73,8 @@ const GROUP_ORDER: PaletteAction["group"][] = [
 export function CommandPalette({ onClose }: Props) {
   const file = useEditorStore((s) => s.file);
   const ocrBusy = useEditorStore((s) => s.ocrBusy);
+  const hasHeaderFooter = useEditorStore((s) => !!s.pageStamps.headerFooter);
+  const hasWatermark = useEditorStore((s) => !!s.pageStamps.watermark);
   const actions = useEditorActions();
 
   const [query, setQuery] = useState("");
@@ -338,6 +345,54 @@ export function CommandPalette({ onClose }: Props) {
         run: () => runAndClose(actions.deleteSelectedPages),
       },
       {
+        id: "stamp-header-footer",
+        group: "Pages",
+        label: "Header & footer…",
+        icon: <PanelTop size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(() => actions.openHeaderFooter()),
+      },
+      {
+        id: "stamp-page-numbers",
+        group: "Pages",
+        label: "Add page numbers…",
+        icon: <Hash size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(() => actions.openHeaderFooter("page-of")),
+      },
+      {
+        id: "stamp-bates",
+        group: "Pages",
+        label: "Bates numbering…",
+        icon: <Fingerprint size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(() => actions.openHeaderFooter("bates")),
+      },
+      {
+        id: "stamp-watermark",
+        group: "Pages",
+        label: "Watermark…",
+        icon: <Droplets size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(actions.openWatermark),
+      },
+      {
+        id: "stamp-remove-header-footer",
+        group: "Pages",
+        label: "Remove header & footer",
+        icon: <Eraser size={16} />,
+        disabled: noFile || !hasHeaderFooter,
+        run: () => runAndClose(() => useEditorStore.getState().setHeaderFooter(null)),
+      },
+      {
+        id: "stamp-remove-watermark",
+        group: "Pages",
+        label: "Remove watermark",
+        icon: <Eraser size={16} />,
+        disabled: noFile || !hasWatermark,
+        run: () => runAndClose(() => useEditorStore.getState().setWatermark(null)),
+      },
+      {
         id: "fit-width",
         group: "View",
         label: "Zoom: Fit Width",
@@ -416,7 +471,7 @@ export function CommandPalette({ onClose }: Props) {
     // actions is recreated each render but its handlers read the store at call
     // time, so the static list is fine to memoize on the reactive inputs only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [noFile, ocrBusy],
+    [noFile, ocrBusy, hasHeaderFooter, hasWatermark],
   );
 
   const filtered = useMemo(() => {

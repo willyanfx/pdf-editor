@@ -182,10 +182,14 @@ export type ExportOptions = {
   /** Bookmarks to write as the output's outline (replacing the file's own).
    * Omit to leave the outline untouched; see bookmarksForExport(). */
   bookmarks?: Bookmark[];
+  /** Document-level header/footer + watermark, stamped on top of every output page. */
+  pageStamps?: PageStamps;
 };
 
 import { COMPRESS_PRESETS } from "./compressPresets";
 import type { CompressOptions } from "./compressPresets";
+import { applyPageStamps } from "./pageStamps";
+import type { PageStamps } from "./pageStampsModel";
 // Re-exported so existing callers can keep importing from exportPdf; UI code
 // should import from compressPresets directly to stay off the heavy chunk.
 export type { CompressPreset, CompressOptions } from "./compressPresets";
@@ -435,6 +439,7 @@ export async function exportEditedPdf(
   }
 
   if (options.bookmarks) writeOutline(pdfDoc, options.bookmarks, origToOut);
+  await applyPageStamps(pdfDoc, options.pageStamps, { fileName: sourceFile.name });
 
   return pdfDoc.save(options.compress ? { useObjectStreams: true } : undefined);
 }

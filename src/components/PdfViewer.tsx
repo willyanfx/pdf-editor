@@ -11,6 +11,7 @@ import { SignatureZoneLayer } from "./SignatureZoneLayer";
 import { AnnotateLayer } from "./AnnotateLayer";
 import { InkLayer } from "./InkLayer";
 import { TextDrawLayer } from "./TextDrawLayer";
+import { PageStampsLayer } from "./PageStampsLayer";
 import { PageActionsBar } from "./PageActionsBar";
 import { SidePanel } from "./SidePanel";
 import { loadOutlineIntoStore } from "../lib/outlineRead";
@@ -519,6 +520,7 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
                     <InkLayer pageIndex={index} />
                     <TextDrawLayer pageIndex={index} />
                     <EditableLayer pageIndex={index} />
+                    <PageStampsLayer pageIndex={index} page={pagesRef.current.get(index) ?? null} />
                   </div>
                   <PageActionsBar
                     pageIndex={index}

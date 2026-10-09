@@ -22,6 +22,12 @@ import {
   removePagesFromState,
   type PagePlan,
 } from "../lib/pageRemap";
+import {
+  EMPTY_PAGE_STAMPS,
+  type HeaderFooterSettings,
+  type PageStamps,
+  type WatermarkSettings,
+} from "../lib/pageStampsModel";
 import { useToastStore } from "./useToastStore";
 
 export type { InsertSource };
@@ -45,6 +51,7 @@ type HistoryEntry = {
   file: File | null;
   numPages: number;
   bookmarks: Bookmark[];
+  pageStamps: PageStamps;
 };
 
 /** Module-level coalesce tracker for updateEdit bursts (typing, arrow nudge). */
@@ -345,6 +352,12 @@ type EditorState = {
   moveBookmark: (id: string, move: BookmarkMove) => void;
   /** Drag-and-drop move relative to another bookmark. */
   moveBookmarkTo: (id: string, targetId: string, place: BookmarkDropPlace) => void;
+  /** Document-level header/footer and watermark (each null when not applied). */
+  pageStamps: PageStamps;
+  /** Apply (or, with null, remove) the header/footer. One undo step. */
+  setHeaderFooter: (settings: HeaderFooterSettings | null) => void;
+  /** Apply (or, with null, remove) the watermark. One undo step. */
+  setWatermark: (settings: WatermarkSettings | null) => void;
 
   /** History stacks — NOT in initialState so setFile does not reset them. */
   _past: HistoryEntry[];
@@ -466,6 +479,7 @@ const initialState = {
   savedRevision: 0,
   bookmarks: [] as Bookmark[],
   outlineStatus: "pending" as "pending" | "ready" | "failed",
+  pageStamps: EMPTY_PAGE_STAMPS as PageStamps,
 };
 
 /** Capture a snapshot of the mutable document arrays plus the file identity and
@@ -478,6 +492,7 @@ function snapshot(state: {
   file: File | null;
   numPages: number;
   bookmarks: Bookmark[];
+  pageStamps: PageStamps;
 }): HistoryEntry {
   return {
     ...structuredClone({
@@ -485,6 +500,7 @@ function snapshot(state: {
       pageOps: state.pageOps,
       pageOrder: state.pageOrder,
       bookmarks: state.bookmarks,
+      pageStamps: state.pageStamps,
     }),
     file: state.file,
     numPages: state.numPages,
@@ -592,6 +608,7 @@ export const useEditorStore = create<EditorState>()(
             file: entry.file,
             numPages: entry.numPages,
             bookmarks: entry.bookmarks,
+            pageStamps: entry.pageStamps,
             selectedEditId: null,
             revision: state.revision + 1,
             _past: state._past.slice(0, -1),
@@ -612,6 +629,7 @@ export const useEditorStore = create<EditorState>()(
             file: entry.file,
             numPages: entry.numPages,
             bookmarks: entry.bookmarks,
+            pageStamps: entry.pageStamps,
             selectedEditId: null,
             revision: state.revision + 1,
             _past: [...state._past, current],
@@ -746,6 +764,24 @@ export const useEditorStore = create<EditorState>()(
       setUrlDialogOpen: (urlDialogOpen) => set({ urlDialogOpen }),
 
       setCompressDialogOpen: (compressDialogOpen) => set({ compressDialogOpen }),
+
+      setHeaderFooter: (headerFooter) =>
+        set((state) => {
+          lastCoalesce = null;
+          return {
+            ...pushHistory(state, snapshot(state)),
+            pageStamps: { ...state.pageStamps, headerFooter },
+          };
+        }),
+
+      setWatermark: (watermark) =>
+        set((state) => {
+          lastCoalesce = null;
+          return {
+            ...pushHistory(state, snapshot(state)),
+            pageStamps: { ...state.pageStamps, watermark },
+          };
+        }),
 
       applyLoadedBookmarks: (file, bookmarks) =>
         set((state) => {
