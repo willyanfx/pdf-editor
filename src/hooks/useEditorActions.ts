@@ -13,6 +13,12 @@ import { usePageStampsUi } from "../store/usePageStampsUi";
 import { defaultFormValues } from "../lib/formFields";
 import { confirmRedactions, redactedSourceFile } from "../lib/redactActions";
 import { blankRedactedTextEdits, excludeRedactedTextEdits } from "../lib/redactGeometry";
+import { useExportToolsUi } from "../store/useExportToolsUi";
+import type { ImageFormat } from "../lib/pageImages";
+import type { SanitizeOptions } from "../lib/sanitize";
+
+/** Which pages an image export covers. "selected" falls back to the current page. */
+export type PageScope = "all" | "current" | "selected";
 
 /** Callbacks the morphing Download button uses to drive its idle→spinner→check
  * animation; the export logic itself lives here so the rail, top bar, and
@@ -25,13 +31,27 @@ type DownloadHooks = {
 
 /** Trigger a browser download of arbitrary PDF bytes under the given filename. */
 function downloadBytes(bytes: Uint8Array, filename: string) {
-  const blob = new Blob([bytes.slice()], { type: "application/pdf" });
+  downloadBlob(new Blob([bytes.slice()], { type: "application/pdf" }), filename);
+}
+
+/** Trigger a browser download of a blob under the given filename. */
+function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+/** Download one file directly, or several bundled into a single .zip. */
+async function downloadFiles(files: { name: string; data: Uint8Array }[], zipName: string) {
+  if (files.length === 1) {
+    downloadBlob(new Blob([files[0].data.slice()]), files[0].name);
+    return;
+  }
+  const { buildZip } = await import("../lib/zip");
+  downloadBlob(new Blob([buildZip(files).slice()], { type: "application/zip" }), zipName);
 }
 
 /** Trigger a browser download of a text blob (e.g. CSV) under the given filename. */
@@ -569,6 +589,182 @@ export function useEditorActions() {
       .addToast(pages.length === 1 ? "Page replaced" : `${pages.length} pages replaced`, "success");
   }
 
+  // --- Images & hidden information ---------------------------------------
+
+  /** Original page indices an image export covers, in visible order. */
+  function pagesForScope(scope: PageScope): number[] {
+    const { pageOrder, numPages, selectedPageIndex } = useEditorStore.getState();
+    const all = pageOrder.length ? pageOrder : Array.from({ length: numPages }, (_, i) => i);
+    if (scope === "all") return all;
+    if (scope === "selected") return targetPages();
+    return all.includes(selectedPageIndex) ? [selectedPageIndex] : [];
+  }
+
+  /** Visible (1-based) page number of an original page index. */
+  function visiblePageNumber(pageIndex: number): number {
+    const { pageOrder } = useEditorStore.getState();
+    const at = pageOrder.indexOf(pageIndex);
+    return at >= 0 ? at + 1 : pageIndex + 1;
+  }
+
+  function openExportPageImages() {
+    if (useEditorStore.getState().file) useExportToolsUi.getState().open("pageImages");
+  }
+
+  function openSaveEmbeddedImages() {
+    if (useEditorStore.getState().file) useExportToolsUi.getState().open("embeddedImages");
+  }
+
+  function openRemoveHiddenInfo() {
+    if (useEditorStore.getState().file) useExportToolsUi.getState().open("sanitize");
+  }
+
+  /**
+   * Render pages (with edits, rotation, crop and redactions applied) to PNG or
+   * JPEG. One page downloads as an image, several as a .zip. Resolves true on success.
+   */
+  async function exportPagesAsImages(options: {
+    format: ImageFormat;
+    dpi: number;
+    quality: number;
+    scope: PageScope;
+  }): Promise<boolean> {
+    const { file, edits } = useEditorStore.getState();
+    const pages = pagesForScope(options.scope);
+    if (!file || pages.length === 0) return false;
+    // The images show the redacted pages, so the same confirmation applies.
+    if (!(await confirmRedactions())) return false;
+
+    try {
+      const { exportRedactedPdf } = await import("../lib/redact");
+      const { renderPdfPages, pageImageName } = await import("../lib/pageImages");
+      const { bytes, warnings } = await exportRedactedPdf(file, edits, exportOptions(pages));
+      for (const w of warnings) useToastStore.getState().addToast(w, "info");
+
+      const { pages: rendered, clamped } = await renderPdfPages(bytes, options);
+      const base = file.name.replace(/\.pdf$/i, "");
+      const numbers = pages.map(visiblePageNumber);
+      const digits = String(Math.max(...numbers)).length;
+      const files = await Promise.all(
+        rendered.map(async (r, i) => ({
+          name: pageImageName(base, numbers[i], digits, options.format),
+          data: new Uint8Array(await r.blob.arrayBuffer()),
+        })),
+      );
+      await downloadFiles(files, `${base}-pages-${options.format === "png" ? "png" : "jpg"}.zip`);
+      useToastStore
+        .getState()
+        .addToast(
+          clamped
+            ? "Exported at a reduced resolution — the page is too large for that DPI."
+            : files.length === 1
+              ? "Page exported as an image"
+              : `${files.length} pages exported as images`,
+          clamped ? "info" : "success",
+        );
+      return true;
+    } catch {
+      useToastStore.getState().addToast("Could not export pages as images.", "error");
+      return false;
+    }
+  }
+
+  /**
+   * Save the images embedded in the document's pages. JPEGs are written
+   * untouched; other formats become PNG. Resolves true when something was saved.
+   */
+  async function saveEmbeddedImages(options: {
+    scope: PageScope;
+    minSize: number;
+  }): Promise<boolean> {
+    const { file, edits } = useEditorStore.getState();
+    const pages = pagesForScope(options.scope);
+    if (!file || pages.length === 0) return false;
+    if (!(await confirmRedactions())) return false;
+
+    try {
+      const { extractEmbeddedImages } = await import("../lib/extractImages");
+      // Pending redactions are applied to the source first, so images under a
+      // mark can't be saved out.
+      const source = await redactedSourceFile(file, edits);
+      const { images, skipped } = await extractEmbeddedImages(
+        new Uint8Array(await source.arrayBuffer()),
+        { pages, minSize: options.minSize },
+      );
+      if (images.length === 0) {
+        useToastStore
+          .getState()
+          .addToast(
+            skipped
+              ? `No images could be saved (${skipped} in an unsupported format).`
+              : "No embedded images found.",
+            "info",
+          );
+        return false;
+      }
+      const base = file.name.replace(/\.pdf$/i, "");
+      const digits = String(Math.max(...pages.map(visiblePageNumber))).length;
+      await downloadFiles(
+        images.map((img) => ({
+          name: `${base}-page-${String(visiblePageNumber(img.pageIndex)).padStart(digits, "0")}-image-${img.indexOnPage}.${img.ext}`,
+          data: img.bytes,
+        })),
+        `${base}-images.zip`,
+      );
+      const saved = images.length === 1 ? "1 image saved" : `${images.length} images saved`;
+      useToastStore
+        .getState()
+        .addToast(skipped ? `${saved} (${skipped} unsupported skipped)` : saved, "success");
+      return true;
+    } catch {
+      useToastStore.getState().addToast("Could not save the images from this PDF.", "error");
+      return false;
+    }
+  }
+
+  /**
+   * Download a cleaned copy of the document: edits baked in, then the chosen
+   * hidden information stripped. `flattenForms` also turns form fields (and
+   * the values typed into them) into plain page content.
+   */
+  async function removeHiddenInfo(
+    options: SanitizeOptions & { flattenForms: boolean },
+  ): Promise<boolean> {
+    const { file, edits } = useEditorStore.getState();
+    if (!file) return false;
+    if (!(await confirmRedactions())) return false;
+
+    try {
+      const { exportRedactedPdf } = await import("../lib/redact");
+      const { sanitizePdf, describeRemoved } = await import("../lib/sanitize");
+      const { bytes: baked, warnings } = await exportRedactedPdf(file, edits, {
+        ...exportOptions(),
+        flattenForms: options.flattenForms,
+      });
+      for (const w of warnings) useToastStore.getState().addToast(w, "info");
+
+      const { bytes, removed } = await sanitizePdf(baked, options);
+      downloadBytes(bytes, file.name.replace(/\.pdf$/i, "") + ".clean.pdf");
+
+      const summary = describeRemoved(removed);
+      useToastStore
+        .getState()
+        .addToast(summary ? `Removed ${summary}` : "Nothing hidden to remove", "success");
+      if (removed.hiddenLayers > 0) {
+        useToastStore
+          .getState()
+          .addToast(
+            `${removed.hiddenLayers} hidden layer${removed.hiddenLayers === 1 ? "" : "s"} left in place — removing them automatically could reveal their content.`,
+            "info",
+          );
+      }
+      return true;
+    } catch {
+      useToastStore.getState().addToast("Could not remove hidden information.", "error");
+      return false;
+    }
+  }
+
   // --- Redaction ----------------------------------------------------------
 
   /** Open the "Search & redact" dialog. */
@@ -636,5 +832,11 @@ export function useEditorActions() {
     openReplaceDialog,
     extractSelectedPages,
     replaceSelectedPages,
+    openExportPageImages,
+    openSaveEmbeddedImages,
+    openRemoveHiddenInfo,
+    exportPagesAsImages,
+    saveEmbeddedImages,
+    removeHiddenInfo,
   };
 }

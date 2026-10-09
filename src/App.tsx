@@ -10,6 +10,7 @@ import { SplitDialog } from "./components/SplitDialog";
 import { MetadataModal } from "./components/MetadataModal";
 import { UrlDialog } from "./components/UrlDialog";
 import { CompressDialog } from "./components/CompressDialog";
+import { ExportToolsDialogs } from "./components/ExportToolsDialogs";
 import { PageStampsDialogs } from "./components/PageStampsDialogs";
 import { PasswordModal } from "./components/PasswordModal";
 import { ExtractPagesDialog, ReplacePagesDialog } from "./components/PageSelectionDialogs";
@@ -280,6 +281,7 @@ export default function App() {
       <MetadataModal />
       <UrlDialog />
       <CompressDialog />
+      <ExportToolsDialogs />
       <PageStampsDialogs />
       <PasswordModal />
       <RecoveryBanner />
