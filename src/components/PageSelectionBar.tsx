@@ -1,5 +1,15 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { Copy, FileOutput, FilePlus, Replace, RotateCcw, RotateCw, Trash2, X } from "lucide-react";
+import {
+  Copy,
+  FileOutput,
+  FilePlus,
+  ImageDown,
+  Replace,
+  RotateCcw,
+  RotateCw,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useEditorStore } from "../store/useEditorStore";
 import { usePageSelectionStore } from "../store/usePageSelectionStore";
 import { useEditorActions } from "../hooks/useEditorActions";
@@ -79,6 +89,9 @@ export function PageSelectionBar() {
         )}
         {button(`Extract ${noun}…`, <FileOutput size={14} aria-hidden="true" />, () =>
           actions.openExtractDialog(),
+        )}
+        {button(`Export ${noun} as images…`, <ImageDown size={14} aria-hidden="true" />, () =>
+          actions.openExportPageImages(),
         )}
         {button(`Replace ${noun}…`, <Replace size={14} aria-hidden="true" />, () =>
           actions.openReplaceDialog(),
