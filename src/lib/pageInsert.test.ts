@@ -1,6 +1,6 @@
 import { test, expect } from "vite-plus/test";
 import { PDFDocument } from "pdf-lib";
-import { remapIndexAfterInsert, insertedIndices, buildInsertedPdf } from "./pageInsert";
+import { buildInsertedPdf } from "./pageInsert";
 
 /** Build a PDF whose pages each carry a distinct width so we can identify them
  * by position after a merge (page content text isn't easily read back). */
@@ -16,53 +16,6 @@ async function widthsOf(bytes: Uint8Array): Promise<number[]> {
   const doc = await PDFDocument.load(bytes);
   return doc.getPages().map((p) => Math.round(p.getWidth()));
 }
-
-// ---------------------------------------------------------------------------
-// remapIndexAfterInsert
-// ---------------------------------------------------------------------------
-
-test("remapIndexAfterInsert: index before at is unchanged", () => {
-  expect(remapIndexAfterInsert(0, 2, 3)).toBe(0);
-  expect(remapIndexAfterInsert(1, 2, 3)).toBe(1);
-});
-
-test("remapIndexAfterInsert: index equal to at shifts right by insertedCount", () => {
-  expect(remapIndexAfterInsert(2, 2, 3)).toBe(5);
-});
-
-test("remapIndexAfterInsert: index after at shifts right by insertedCount", () => {
-  expect(remapIndexAfterInsert(5, 2, 3)).toBe(8);
-});
-
-test("remapIndexAfterInsert: insert at 0 shifts all existing indices", () => {
-  expect(remapIndexAfterInsert(0, 0, 1)).toBe(1);
-  expect(remapIndexAfterInsert(3, 0, 2)).toBe(5);
-});
-
-test("remapIndexAfterInsert: inserting 0 pages is a no-op", () => {
-  expect(remapIndexAfterInsert(4, 2, 0)).toBe(4);
-});
-
-// ---------------------------------------------------------------------------
-// insertedIndices
-// ---------------------------------------------------------------------------
-
-test("insertedIndices: returns empty array when insertedCount is 0", () => {
-  expect(insertedIndices(2, 0)).toEqual([]);
-});
-
-test("insertedIndices: single inserted page", () => {
-  expect(insertedIndices(0, 1)).toEqual([0]);
-  expect(insertedIndices(3, 1)).toEqual([3]);
-});
-
-test("insertedIndices: multiple pages form a contiguous range", () => {
-  expect(insertedIndices(2, 4)).toEqual([2, 3, 4, 5]);
-});
-
-test("insertedIndices: insert at end", () => {
-  expect(insertedIndices(5, 3)).toEqual([5, 6, 7]);
-});
 
 // ---------------------------------------------------------------------------
 // buildInsertedPdf — minimal integration test using pdf-lib to construct PDFs

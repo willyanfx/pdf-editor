@@ -2444,6 +2444,817 @@ button {
   outline-offset: -2px;
 }
 
+/* Autosave recovery banner --------------------------------------------- */
+
+.recovery-banner {
+  position: fixed;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(640px, calc(100vw - 32px));
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--fg);
+  border-radius: var(--r-md);
+  background: var(--surface-glass);
+  backdrop-filter: blur(16px);
+  color: var(--fg);
+  font-size: 13px;
+  line-height: 1.35;
+  animation: toast-in 0.22s var(--t-mid) both;
+}
+
+.recovery-icon {
+  flex: 0 0 auto;
+  color: var(--fg-muted);
+}
+
+.recovery-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.recovery-btn {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+}
+
+/* Sidebar tabs + Bookmarks panel ---------------------------------------- */
+/* The sidebar hosts the page organizer and the bookmarks tree behind a
+   "Pages | Bookmarks" switch; the page panel is re-seated inside it. */
+.side-panel {
+  position: fixed;
+  top: 52px;
+  left: 52px;
+  bottom: 40px;
+  width: 208px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+.side-panel-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.side-panel-tab {
+  flex: 1;
+  padding: 6px 4px 7px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--t-fast);
+}
+.side-panel-tab:hover {
+  color: var(--fg);
+}
+.side-panel-tab.active {
+  color: var(--fg);
+  border-bottom-color: var(--fg);
+}
+.side-panel-tab:focus-visible {
+  outline: 2px solid oklch(55% 0.16 250 / 0.85);
+  outline-offset: -2px;
+}
+.side-panel-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.side-panel-body[hidden] {
+  display: none;
+}
+.side-panel .page-panel {
+  position: static;
+  flex: 1;
+  width: auto;
+  min-height: 0;
+  border-right: 0;
+}
+.side-panel .page-panel-title {
+  display: none;
+}
+
+.bm-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.bm-header,
+.bm-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px;
+}
+.bm-header {
+  border-bottom: 1px solid var(--border);
+}
+.bm-actions {
+  justify-content: space-between;
+  border-top: 1px solid var(--border);
+}
+.bm-header-spacer {
+  flex: 1;
+}
+.bm-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background var(--t-fast);
+}
+.bm-add:hover:not(:disabled) {
+  background: var(--bg-subtle);
+}
+.bm-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  transition: background var(--t-fast);
+}
+.bm-icon-btn:hover:not(:disabled) {
+  background: var(--bg-subtle);
+}
+.bm-delete:hover:not(:disabled) {
+  background: var(--error);
+  color: white;
+}
+.bm-add:disabled,
+.bm-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.bm-add:focus-visible,
+.bm-icon-btn:focus-visible {
+  outline: 2px solid oklch(55% 0.16 250 / 0.85);
+  outline-offset: 1px;
+}
+.bm-empty {
+  margin: 0;
+  padding: 14px 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--fg-muted);
+}
+.bm-tree {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+}
+.bm-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding-right: 6px;
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  color: var(--fg);
+  cursor: pointer;
+  user-select: none;
+}
+.bm-row:hover {
+  background: var(--bg-subtle);
+}
+.bm-row.selected {
+  background: oklch(55% 0.14 250 / 0.12);
+}
+.bm-row:focus-visible {
+  outline: 2px solid oklch(55% 0.16 250 / 0.85);
+  outline-offset: -2px;
+}
+.bm-row.no-target .bm-title {
+  color: var(--fg-muted);
+}
+.bm-row.no-target {
+  cursor: default;
+}
+.bm-row.dragging {
+  opacity: 0.5;
+}
+.bm-row.drop-inside {
+  box-shadow: inset 0 0 0 2px oklch(55% 0.16 250 / 0.85);
+}
+.bm-row.drop-before::before,
+.bm-row.drop-after::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  height: 2px;
+  border-radius: 2px;
+  background: oklch(55% 0.16 250 / 0.95);
+  pointer-events: none;
+}
+.bm-row.drop-before::before {
+  top: -1px;
+}
+.bm-row.drop-after::after {
+  bottom: -1px;
+}
+.bm-twisty {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--fg-muted);
+  transition: transform var(--t-fast);
+}
+.bm-twisty.open {
+  transform: rotate(90deg);
+}
+.bm-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bm-row.no-target:not(:has(.bm-page)) .bm-title {
+  font-style: italic;
+}
+.bm-page {
+  flex: none;
+  font-size: 11px;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+.bm-rename {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 0 5px;
+  border: 1px solid oklch(55% 0.16 250 / 0.85);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  outline: none;
+}
+
+/* Page organizing: multi-select, selection toolbar, extract/replace dialogs -- */
+.page-thumb.selected {
+  background: oklch(60% 0.12 250 / 0.14);
+  border-color: oklch(55% 0.14 250 / 0.55);
+}
+.page-sel-bar {
+  padding: 6px 8px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.page-sel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
+.page-sel-actions {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2px;
+}
+.page-sel-actions button,
+.page-sel-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  transition: background var(--t-fast);
+}
+.page-sel-clear {
+  width: 22px;
+  height: 22px;
+}
+.page-sel-actions button:hover:not(:disabled),
+.page-sel-clear:hover {
+  background: oklch(60% 0.02 250 / 0.14);
+}
+.page-sel-actions button.danger:hover:not(:disabled) {
+  background: var(--error);
+  color: white;
+}
+.page-sel-actions button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.page-sel-actions button:focus-visible,
+.page-sel-clear:focus-visible {
+  outline: 2px solid oklch(55% 0.16 250 / 0.85);
+  outline-offset: -2px;
+}
+.page-sel-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.page-sel-check input {
+  margin-top: 2px;
+}
+.page-sel-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.page-sel-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+.page-sel-note {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.page-sel-error {
+  font-size: 12px;
+  color: var(--error);
+}
+.page-sel-warn {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+p.page-sel-note,
+p.page-sel-error {
+  margin: 6px 0 0;
+}
+
+/* Page stamps: header/footer, page & Bates numbers, watermark ------------ */
+
+/* Live preview layer inside .page-transform, covering the kept (cropped)
+   region. Above the page and hit layers, below the editable boxes, and never
+   interactive. */
+.page-stamps-layer {
+  position: absolute;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+.page-stamps-svg {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  overflow: hidden;
+}
+.page-stamps-svg text {
+  white-space: pre;
+}
+
+/* The dialogs are a non-modal side panel so the pages (and the preview on
+   them) stay visible and scrollable while settings change. */
+.stamp-dialog {
+  left: auto;
+  right: 24px;
+  transform: translateY(-50%);
+  width: min(460px, calc(100vw - 32px));
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+}
+@media (max-width: 600px) {
+  .stamp-dialog {
+    right: 16px;
+  }
+}
+.stamp-section {
+  margin: 0 0 14px;
+}
+.stamp-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.stamp-details > summary {
+  cursor: pointer;
+}
+.stamp-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  font-size: 13px;
+  color: var(--fg);
+}
+.stamp-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.stamp-input {
+  min-width: 0;
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+.stamp-input:focus-visible,
+.stamp-chip:focus-visible,
+.stamp-color:focus-visible {
+  outline: 2px solid oklch(60% 0.16 250 / 0.85);
+  outline-offset: 1px;
+}
+.stamp-input[aria-invalid="true"] {
+  border-color: var(--error);
+}
+.stamp-num {
+  width: 64px;
+  font-variant-numeric: tabular-nums;
+}
+.stamp-short {
+  width: 72px;
+}
+.stamp-grow {
+  flex: 1;
+}
+.stamp-color {
+  width: 32px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: transparent;
+  cursor: pointer;
+}
+.stamp-slots {
+  display: grid;
+  grid-template-columns: auto repeat(3, minmax(0, 1fr));
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.stamp-col {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.stamp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.stamp-chip {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--fg);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background var(--t-fast);
+}
+.stamp-chip:hover {
+  background: var(--bg-subtle);
+}
+.stamp-chip.active {
+  background: var(--fg);
+  border-color: var(--fg);
+  color: var(--surface);
+}
+.stamp-token {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.stamp-note,
+.stamp-error {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--fg-muted);
+}
+.stamp-error {
+  color: var(--error);
+}
+.stamp-wm-text {
+  margin-bottom: 10px;
+}
+.stamp-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--fg);
+}
+.stamp-slider span {
+  font-variant-numeric: tabular-nums;
+}
+.stamp-thumb {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: oklch(98% 0 0);
+}
+.sig-actions .stamp-remove {
+  margin-right: auto;
+  color: var(--error);
+}
+.stamp-on {
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: var(--r-pill);
+  background: var(--fg);
+  color: var(--surface);
+  font-size: 10px;
+  font-weight: 600;
+}
+.stamp-tokens .stamp-note {
+  margin: 0;
+}
+
+/* Form fields + links (pdf.js annotation layer) ------------------------- */
+/* react-pdf renders the annotation layer inside .react-pdf__Page, which is
+   position:relative with no z-index (not a stacking context), so its z-index
+   competes directly with our sibling overlays inside .page-transform. pdf.js
+   ships it at z-index 3, tied with .editable-layer. Pin it to 1: above the
+   canvas, below every overlay of ours (existing-text/-image hits 2, edit boxes
+   3, tool capture layers 4). In Select mode the only things above it that take
+   the pointer are edit boxes (.editable-layer itself is pointer-events:none),
+   so widgets and links work everywhere except under a box the user placed. */
+.page-transform .react-pdf__Page__annotations {
+  z-index: 1;
+}
+
+/* In every tool mode (editText, addText, ocr, highlight, underline, comment,
+   ink, signZones) our layers win: widgets and links stop taking the pointer so
+   clicks and drags reach the tool overlays and the page. pdf.js sets
+   pointer-events:auto on each section and control, hence the descendant rule. */
+.pdf-wrapper:not(.mode-select) .react-pdf__Page__annotations,
+.pdf-wrapper:not(.mode-select) .react-pdf__Page__annotations * {
+  pointer-events: none !important;
+}
+
+/* .page-shell sets line-height:0 for the canvas stack; form controls inherit it. */
+.react-pdf__Page__annotations :is(input, textarea, select) {
+  line-height: normal;
+}
+
+/* Redaction ------------------------------------------------------------ */
+
+/* Drag overlay active in redact mode (sits with the other drag layers). */
+.redact-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  cursor: crosshair;
+  touch-action: none;
+}
+.redact-drag-preview {
+  position: absolute;
+  pointer-events: none;
+  border: 1.5px solid var(--error);
+  background: oklch(60% 0.22 25 / 0.12);
+}
+.redact-drag-preview.faint {
+  border-style: dashed;
+  background: transparent;
+}
+
+/* A pending mark: red outline (Acrobat convention) or, with the preview
+   toggle, the solid black it becomes on download. */
+.redact-preview {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-sizing: border-box;
+  border: 1.5px solid var(--error);
+  background: oklch(60% 0.22 25 / 0.1);
+}
+.redact-preview.solid {
+  border-color: #000;
+  background: #000;
+}
+.edit-box:has(> .redact-preview) {
+  border-color: transparent;
+}
+
+/* A text box a mark touches is blanked on download — hatch it so the preview
+   doesn't promise text that won't be there. */
+.edit-box.redact-affected {
+  border: 1.5px dashed var(--error);
+  background: repeating-linear-gradient(
+    45deg,
+    transparent 0 6px,
+    oklch(60% 0.22 25 / 0.08) 6px 12px
+  );
+}
+
+/* Rail popover additions (shares .ocr-menu-popover / .ocr-scope-btn). */
+.redact-menu {
+  width: 264px;
+}
+.redact-kbd {
+  margin-left: auto;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font: 11px var(--font-mono);
+  color: var(--fg-muted);
+}
+.redact-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 2px;
+  font-size: 13px;
+  color: var(--fg);
+  cursor: pointer;
+}
+.redact-check input {
+  margin: 0;
+  accent-color: var(--fg);
+}
+.redact-status {
+  margin: 0 0 6px;
+}
+
+/* Search & redact dialog. */
+.redact-search {
+  width: min(640px, 94vw);
+}
+.redact-search-form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.redact-search-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.redact-search-row .sig-type-input {
+  flex: 1;
+  min-width: 0;
+}
+.redact-patterns {
+  margin: 6px 0 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 12px;
+}
+.redact-patterns legend {
+  padding: 0;
+  margin-bottom: 2px;
+}
+.redact-results-wrap {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.redact-results-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.redact-results-bar span {
+  flex: 1;
+}
+.redact-results-bar button {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--fg);
+  font-size: 12px;
+  cursor: pointer;
+}
+.redact-results-bar button:hover {
+  background: var(--bg-subtle);
+}
+.redact-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.redact-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: var(--r-sm);
+  font-size: 13px;
+}
+.redact-result:hover {
+  background: var(--bg-subtle);
+}
+.redact-result label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.redact-result input {
+  margin: 0;
+  flex: none;
+  accent-color: var(--fg);
+}
+.redact-result-snippet {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+}
+.redact-result-snippet mark {
+  padding: 0 2px;
+  border-radius: 2px;
+  background: oklch(60% 0.22 25 / 0.18);
+  color: var(--fg);
+  font-weight: 600;
+}
+.redact-result-page {
+  flex: none;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--fg-muted);
+  font: 11px var(--font-mono);
+  cursor: pointer;
+}
+.redact-result-page:hover {
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+.redact-result-tag {
+  flex: none;
+  font-size: 11px;
+  color: var(--fg-muted);
+  font-style: italic;
+}
+.redact-confirm-body p {
+  margin: 0 0 10px;
+}
+.redact-confirm-body p:last-child {
+  margin-bottom: 0;
+}
+
 /* Protect PDF dialog */
 .protect-form {
   display: flex;

@@ -29,6 +29,22 @@ import {
   MoveHorizontal,
   Maximize,
   FilePlus,
+  Bookmark,
+  BookmarkPlus,
+  CheckSquare,
+  Copy,
+  RotateCcw,
+  FileOutput,
+  Replace,
+  PanelTop,
+  Hash,
+  Fingerprint,
+  Droplets,
+  Stamp,
+  Eraser,
+  EyeOff,
+  SearchCheck,
+  SquareDashed,
 } from "lucide-react";
 import { useEditorStore } from "../store/useEditorStore";
 import { useEditorActions } from "../hooks/useEditorActions";
@@ -40,7 +56,7 @@ type Props = {
 
 type PaletteAction = {
   id: string;
-  group: "File" | "Mode" | "Add" | "Annotate" | "Pages" | "View" | "Export";
+  group: "File" | "Mode" | "Add" | "Annotate" | "Redact" | "Pages" | "View" | "Export";
   label: string;
   icon: ReactNode;
   shortcut?: string;
@@ -53,6 +69,7 @@ const GROUP_ORDER: PaletteAction["group"][] = [
   "Mode",
   "Add",
   "Annotate",
+  "Redact",
   "Pages",
   "View",
   "Export",
@@ -62,6 +79,9 @@ const GROUP_ORDER: PaletteAction["group"][] = [
 export function CommandPalette({ onClose }: Props) {
   const file = useEditorStore((s) => s.file);
   const ocrBusy = useEditorStore((s) => s.ocrBusy);
+  const hasHeaderFooter = useEditorStore((s) => !!s.pageStamps.headerFooter);
+  const hasWatermark = useEditorStore((s) => !!s.pageStamps.watermark);
+  const hasForm = useEditorStore((s) => (s.formFields?.length ?? 0) > 0);
   const actions = useEditorActions();
 
   const [query, setQuery] = useState("");
@@ -227,6 +247,31 @@ export function CommandPalette({ onClose }: Props) {
         run: () => runAndClose(() => actions.setMode("ink")),
       },
       {
+        id: "redact-mark",
+        group: "Redact",
+        label: "Redact: mark text or an area",
+        icon: <EyeOff size={16} />,
+        shortcut: "R",
+        disabled: noFile,
+        run: () => runAndClose(() => actions.setMode("redact")),
+      },
+      {
+        id: "redact-search",
+        group: "Redact",
+        label: "Search & redact…",
+        icon: <SearchCheck size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(actions.openRedactSearch),
+      },
+      {
+        id: "redact-preview",
+        group: "Redact",
+        label: "Redact: toggle solid-black preview",
+        icon: <SquareDashed size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(actions.toggleRedactPreview),
+      },
+      {
         id: "page-add",
         group: "Pages",
         label: "Add / combine pages…",
@@ -249,6 +294,135 @@ export function CommandPalette({ onClose }: Props) {
         icon: <Trash2 size={16} />,
         disabled: noFile,
         run: () => runAndClose(() => actions.deletePage()),
+      },
+      {
+        id: "bookmark-add",
+        group: "Pages",
+        label: "Bookmark This Page",
+        icon: <BookmarkPlus size={16} />,
+        shortcut: "⌘B",
+        disabled: noFile,
+        run: () => runAndClose(() => void actions.addBookmark()),
+      },
+      {
+        id: "bookmark-show",
+        group: "Pages",
+        label: "Show Bookmarks",
+        icon: <Bookmark size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(actions.showBookmarks),
+      },
+      {
+        id: "pages-select-all",
+        group: "Pages",
+        label: "Select all pages",
+        icon: <CheckSquare size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(actions.selectAllPages),
+      },
+      {
+        id: "pages-duplicate",
+        group: "Pages",
+        label: "Duplicate selected pages",
+        icon: <Copy size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(() => void actions.duplicateSelectedPages()),
+      },
+      {
+        id: "pages-rotate-left",
+        group: "Pages",
+        label: "Rotate selected pages left",
+        icon: <RotateCcw size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(() => actions.rotateSelectedPages(-90)),
+      },
+      {
+        id: "pages-rotate-right",
+        group: "Pages",
+        label: "Rotate selected pages right",
+        icon: <RotateCw size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(() => actions.rotateSelectedPages(90)),
+      },
+      {
+        id: "pages-blank-after",
+        group: "Pages",
+        label: "Insert blank page after selection",
+        icon: <FilePlus size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(() => void actions.insertBlankAfterSelection()),
+      },
+      {
+        id: "pages-extract",
+        group: "Pages",
+        label: "Extract selected pages…",
+        icon: <FileOutput size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(actions.openExtractDialog),
+      },
+      {
+        id: "pages-replace",
+        group: "Pages",
+        label: "Replace selected pages…",
+        icon: <Replace size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(actions.openReplaceDialog),
+      },
+      {
+        id: "pages-delete",
+        group: "Pages",
+        label: "Delete selected pages",
+        icon: <Trash2 size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(actions.deleteSelectedPages),
+      },
+      {
+        id: "stamp-header-footer",
+        group: "Pages",
+        label: "Header & footer…",
+        icon: <PanelTop size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(() => actions.openHeaderFooter()),
+      },
+      {
+        id: "stamp-page-numbers",
+        group: "Pages",
+        label: "Add page numbers…",
+        icon: <Hash size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(() => actions.openHeaderFooter("page-of")),
+      },
+      {
+        id: "stamp-bates",
+        group: "Pages",
+        label: "Bates numbering…",
+        icon: <Fingerprint size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(() => actions.openHeaderFooter("bates")),
+      },
+      {
+        id: "stamp-watermark",
+        group: "Pages",
+        label: "Watermark…",
+        icon: <Droplets size={16} />,
+        disabled: noFile,
+        run: () => runAndClose(actions.openWatermark),
+      },
+      {
+        id: "stamp-remove-header-footer",
+        group: "Pages",
+        label: "Remove header & footer",
+        icon: <Eraser size={16} />,
+        disabled: noFile || !hasHeaderFooter,
+        run: () => runAndClose(() => useEditorStore.getState().setHeaderFooter(null)),
+      },
+      {
+        id: "stamp-remove-watermark",
+        group: "Pages",
+        label: "Remove watermark",
+        icon: <Eraser size={16} />,
+        disabled: noFile || !hasWatermark,
+        run: () => runAndClose(() => useEditorStore.getState().setWatermark(null)),
       },
       {
         id: "fit-width",
@@ -302,6 +476,22 @@ export function CommandPalette({ onClose }: Props) {
         run: () => runAndClose(() => void actions.downloadPdf()),
       },
       {
+        id: "download-flattened",
+        group: "Export",
+        label: "Download with form flattened",
+        icon: <Stamp size={16} />,
+        disabled: noFile || !hasForm,
+        run: () => runAndClose(() => void actions.downloadPdfFlattened()),
+      },
+      {
+        id: "form-reset",
+        group: "Export",
+        label: "Reset form",
+        icon: <Eraser size={16} />,
+        disabled: noFile || !hasForm,
+        run: () => runAndClose(actions.resetForm),
+      },
+      {
         id: "download-docx",
         group: "Export",
         label: "Export DOCX (formatted)",
@@ -337,7 +527,7 @@ export function CommandPalette({ onClose }: Props) {
     // actions is recreated each render but its handlers read the store at call
     // time, so the static list is fine to memoize on the reactive inputs only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [noFile, ocrBusy],
+    [noFile, ocrBusy, hasHeaderFooter, hasWatermark, hasForm],
   );
 
   const filtered = useMemo(() => {

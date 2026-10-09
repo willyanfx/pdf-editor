@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Document, Page } from "react-pdf";
-import type { PDFPageProxy } from "pdfjs-dist";
+import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { UploadCloud } from "lucide-react";
 import { EditableLayer } from "./EditableLayer";
@@ -9,10 +9,13 @@ import { ExistingImageLayer } from "./ExistingImageLayer";
 import { OcrLayer } from "./OcrLayer";
 import { SignatureZoneLayer } from "./SignatureZoneLayer";
 import { AnnotateLayer } from "./AnnotateLayer";
+import { RedactLayer } from "./RedactLayer";
 import { InkLayer } from "./InkLayer";
 import { TextDrawLayer } from "./TextDrawLayer";
+import { PageStampsLayer } from "./PageStampsLayer";
 import { PageActionsBar } from "./PageActionsBar";
-import { PagePanel } from "./PagePanel";
+import { SidePanel } from "./SidePanel";
+import { loadOutlineIntoStore } from "../lib/outlineRead";
 import { useEditorStore, makeCoverTextEdit, clampZoom } from "../store/useEditorStore";
 import { useToastStore } from "../store/useToastStore";
 import { openFiles } from "../lib/openFiles";
@@ -22,6 +25,8 @@ import { PDF_DOCUMENT_OPTIONS } from "../lib/pdfOptions";
 import { makeOnPassword } from "../lib/pdfPassword";
 import { usePageHeights } from "../hooks/usePageHeights";
 import { useScannedPdfPrompt } from "../hooks/useScannedPdfPrompt";
+import { useFormFieldSync } from "../hooks/useFormFieldSync";
+import { goToLinkedPage, EXTERNAL_LINK_REL, EXTERNAL_LINK_TARGET } from "../lib/pdfLinks";
 
 /** Vertical gap between page shells, reserved inside each virtual slot. */
 const PAGE_GAP = 24;
@@ -68,7 +73,14 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
 
   // Per-page pdf.js page proxies (for text extraction) and canvas refs (for
   // background-color sampling). Stored outside React state to avoid re-renders.
-  const pagesRef = useRef<Map<number, PDFPageProxy>>(new Map());
+  // Each proxy is tagged with its File: after a page rewrite (insert, duplicate,
+  // replace) swaps the File, the old document is destroyed and its proxies throw
+  // on use, so getPage only hands out proxies from the file now open.
+  const pagesRef = useRef<Map<number, { file: File | null; page: PDFPageProxy }>>(new Map());
+  const getPage = (index: number) => {
+    const entry = pagesRef.current.get(index);
+    return entry && entry.file === file ? entry.page : null;
+  };
   const canvasRefs = useRef<Map<number, HTMLCanvasElement | null>>(new Map());
   const pdfInputRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -81,6 +93,11 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
 
   // Nudge the user to run OCR when an opened PDF looks scanned (image-only).
   useScannedPdfPrompt(file);
+
+  // The loaded pdf.js document, tagged with its File so a stale proxy from the
+  // previous file is never handed to the form sync while the next one loads.
+  const [loadedPdf, setLoadedPdf] = useState<{ file: File; pdf: PDFDocumentProxy } | null>(null);
+  useFormFieldSync(loadedPdf && loadedPdf.file === file ? loadedPdf.pdf : null, scrollRef);
 
   const estimateSize = useCallback(
     (index: number) => (pageHeights[index] ?? ESTIMATED_PAGE_HEIGHT) + PAGE_GAP,
@@ -397,6 +414,11 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
         key={`doc-${passwordAttempt}`}
         file={file}
         options={PDF_DOCUMENT_OPTIONS}
+        // Internal links / named destinations: react-pdf resolves the target
+        // page and hands us its index; external URI links open in a new tab.
+        onItemClick={({ pageIndex }) => goToLinkedPage(pageIndex)}
+        externalLinkTarget={EXTERNAL_LINK_TARGET}
+        externalLinkRel={EXTERNAL_LINK_REL}
         onPassword={makeOnPassword({
           getPassword: () => useEditorStore.getState().documentPassword,
           onNeedPassword: () => useEditorStore.getState().setPasswordPrompt({ wrong: false }),
@@ -410,6 +432,8 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
           // the unlock modal if it was open.
           useEditorStore.getState().setPasswordPrompt(null);
           setNumPages(pdf.numPages);
+          void loadOutlineIntoStore(pdf, file);
+          setLoadedPdf({ file, pdf });
         }}
         onLoadError={(err) => {
           // A PasswordException here means the modal is (or will be) up; don't
@@ -421,7 +445,7 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
         loading={<p className="muted">Loading PDF…</p>}
         error={<p className="muted">Could not open this PDF.</p>}
       >
-        {pagePanelOpen && <PagePanel onClose={() => {}} />}
+        {pagePanelOpen && <SidePanel />}
         {/* Zoom sizer: reserves the scaled height so the scroll container scrolls
             the full zoomed document. The inner spacer is scaled from its top
             center — pages render at VIEWER_WIDTH (keeping every stored coordinate
@@ -486,37 +510,42 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
                       pageNumber={index + 1}
                       width={VIEWER_WIDTH}
                       renderTextLayer={false}
-                      renderAnnotationLayer={false}
+                      // Links + fillable form widgets. Only interactive in Select
+                      // mode; see the "Form fields + links" block in styles.css.
+                      renderAnnotationLayer
+                      renderForms
                       canvasRef={(el) => {
                         canvasRefs.current.set(index, el);
                       }}
                       onLoadSuccess={(page) => {
-                        pagesRef.current.set(index, page as unknown as PDFPageProxy);
+                        pagesRef.current.set(index, {
+                          file,
+                          page: page as unknown as PDFPageProxy,
+                        });
                         force((n) => n + 1);
                       }}
                     />
                     <ExistingTextLayer
                       pageIndex={index}
-                      page={pagesRef.current.get(index) ?? null}
+                      page={getPage(index)}
                       getCanvas={() => canvasRefs.current.get(index) ?? null}
                     />
                     <ExistingImageLayer
                       pageIndex={index}
-                      page={pagesRef.current.get(index) ?? null}
+                      page={getPage(index)}
                       getCanvas={() => canvasRefs.current.get(index) ?? null}
                     />
                     <OcrLayer
                       pageIndex={index}
                       getCanvas={() => canvasRefs.current.get(index) ?? null}
                     />
-                    <SignatureZoneLayer
-                      pageIndex={index}
-                      page={pagesRef.current.get(index) ?? null}
-                    />
+                    <SignatureZoneLayer pageIndex={index} page={getPage(index)} />
                     <AnnotateLayer pageIndex={index} />
+                    <RedactLayer pageIndex={index} page={getPage(index)} />
                     <InkLayer pageIndex={index} />
                     <TextDrawLayer pageIndex={index} />
                     <EditableLayer pageIndex={index} />
+                    <PageStampsLayer pageIndex={index} page={getPage(index)} />
                   </div>
                   <PageActionsBar
                     pageIndex={index}

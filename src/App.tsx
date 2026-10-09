@@ -11,10 +11,18 @@ import { MetadataModal } from "./components/MetadataModal";
 import { UrlDialog } from "./components/UrlDialog";
 import { CompressDialog } from "./components/CompressDialog";
 import { ProtectDialog } from "./components/ProtectDialog";
+import { PageStampsDialogs } from "./components/PageStampsDialogs";
 import { PasswordModal } from "./components/PasswordModal";
+import { ExtractPagesDialog, ReplacePagesDialog } from "./components/PageSelectionDialogs";
 import { FindBar } from "./components/FindBar";
-import { useEditorStore } from "./store/useEditorStore";
+import { RecoveryBanner } from "./components/RecoveryBanner";
+import { isDocumentDirty, useEditorStore } from "./store/useEditorStore";
+import { RedactSearchDialog } from "./components/RedactSearchDialog";
+import { RedactConfirmDialog } from "./components/RedactConfirmDialog";
 import { openFiles } from "./lib/openFiles";
+import { checkForRecovery, startAutosave } from "./lib/autosave";
+import { addBookmarkForCurrentPage } from "./lib/bookmarkActions";
+import { useBookmarksUiStore } from "./store/useBookmarksUiStore";
 
 export default function App() {
   // Whole-window drag-and-drop: drop a PDF anytime to open/replace it, or drop
@@ -37,7 +45,11 @@ export default function App() {
       const target = e.target as HTMLElement | null;
       const typing =
         target &&
-        (target.tagName === "TEXTAREA" || target.tagName === "INPUT" || target.isContentEditable);
+        (target.tagName === "TEXTAREA" ||
+          target.tagName === "INPUT" ||
+          // Form dropdowns/list boxes use type-ahead and arrow keys.
+          target.tagName === "SELECT" ||
+          target.isContentEditable);
 
       // ⌘K / Ctrl+K opens the command palette from anywhere (even while typing).
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -77,6 +89,15 @@ export default function App() {
           e.preventDefault();
           setPaletteOpen(false);
           setFindOpen((v) => !v);
+          return;
+        }
+      }
+
+      // ⌘B / Ctrl+B bookmarks the current page (inside text fields it stays bold).
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "b") {
+        if (useEditorStore.getState().file) {
+          e.preventDefault();
+          addBookmarkForCurrentPage();
           return;
         }
       }
@@ -143,6 +164,11 @@ export default function App() {
           store.setMode("ink");
           return;
         }
+        if (k === "r") {
+          e.preventDefault();
+          store.setMode("redact");
+          return;
+        }
         if (k === "w") {
           e.preventDefault();
           store.setZoomPreset("fit-width");
@@ -182,13 +208,27 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Warn before leaving if the open document has unsaved edits. Edits live only
-  // in memory (no backend), so a reload/close would silently discard them.
+  // Autosave to IndexedDB while the document is dirty, and offer to recover last
+  // session's unsaved work if the tab was closed or crashed.
+  useEffect(() => {
+    void checkForRecovery();
+    return startAutosave();
+  }, []);
+
+  // Bookmark actions (⌘B, the command palette) ask for the sidebar to open.
+  useEffect(
+    () =>
+      useBookmarksUiStore.subscribe((s, prev) => {
+        if (s.openRequest !== prev.openRequest) setPagesOpen(true);
+      }),
+    [],
+  );
+
+  // Warn before leaving if the open document has changed since it was opened or
+  // last downloaded (autosave is a safety net, not a substitute for exporting).
   useEffect(() => {
     function onBeforeUnload(e: BeforeUnloadEvent) {
-      const { file, edits, pageOps } = useEditorStore.getState();
-      const dirty = !!file && (edits.length > 0 || pageOps.length > 0);
-      if (dirty) {
+      if (isDocumentDirty()) {
         e.preventDefault();
         // Legacy requirement for some browsers to show the prompt.
         e.returnValue = "";
@@ -242,7 +282,13 @@ export default function App() {
       <UrlDialog />
       <CompressDialog />
       <ProtectDialog />
+      <PageStampsDialogs />
       <PasswordModal />
+      <RecoveryBanner />
+      <ExtractPagesDialog />
+      <ReplacePagesDialog />
+      <RedactSearchDialog />
+      <RedactConfirmDialog />
 
       {findOpen && <FindBar onClose={() => setFindOpen(false)} />}
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
