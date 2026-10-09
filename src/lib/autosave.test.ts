@@ -243,6 +243,27 @@ test("opening and editing another file cannot overwrite an unanswered slot", asy
   expect(record?.snapshot.edits.map((e) => e.id)).toEqual(["old1"]);
 });
 
+test("editing another file while the prompt is unanswered says autosave is paused", async () => {
+  const { useToastStore } = await import("../store/useToastStore");
+  await seedPreviousSession();
+  await checkForRecovery();
+  const listeners = { addEventListener: vi.fn(), removeEventListener: vi.fn() };
+  vi.stubGlobal("document", { visibilityState: "visible", ...listeners });
+  vi.stubGlobal("window", listeners);
+  const stop = startAutosave();
+  try {
+    openDocument(pdf("other.pdf"));
+    useEditorStore.getState().addEdit(rect("n1"));
+    useEditorStore.getState().addEdit(rect("n2"));
+    const notices = useToastStore
+      .getState()
+      .toasts.filter((t) => t.message.startsWith("Autosave is paused"));
+    expect(notices).toHaveLength(1);
+  } finally {
+    stop();
+  }
+});
+
 test("Discard deletes the slot and lets autosave resume", async () => {
   await seedPreviousSession();
   await checkForRecovery();

@@ -518,7 +518,7 @@ export function CommandPalette({ onClose }: Props) {
     // actions is recreated each render but its handlers read the store at call
     // time, so the static list is fine to memoize on the reactive inputs only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [noFile, ocrBusy, hasHeaderFooter, hasWatermark],
+    [noFile, ocrBusy, hasHeaderFooter, hasWatermark, hasForm],
   );
 
   const filtered = useMemo(() => {

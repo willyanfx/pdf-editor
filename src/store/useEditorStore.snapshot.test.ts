@@ -116,3 +116,31 @@ test("getDocumentSnapshot deep-clones so later edits don't mutate it", () => {
   s.updateEdit("r1", { x: 999 });
   expect(snap.edits[0].x).toBe(1);
 });
+
+test("restoring a snapshot taken before the outline loaded keeps the file's outline", () => {
+  const loaded = [{ id: "b1", title: "Intro", pageIndex: 0, children: [] }];
+  useEditorStore.setState({ outlineStatus: "pending", bookmarks: [] });
+  const snap = getDocumentSnapshot();
+  expect(snap.outlineStatus).toBe("pending");
+
+  // The viewer reads the file's outline after the snapshot was taken.
+  useEditorStore.setState({ outlineStatus: "ready", bookmarks: loaded });
+  restoreDocumentSnapshot(snap);
+
+  const after = useEditorStore.getState();
+  expect(after.bookmarks).toEqual(loaded);
+  expect(after.outlineStatus).toBe("ready");
+});
+
+test("restoring a snapshot with read bookmarks applies them and marks the outline ready", () => {
+  const edited = [{ id: "b2", title: "Renamed", pageIndex: 1, children: [] }];
+  useEditorStore.setState({ outlineStatus: "ready", bookmarks: edited });
+  const snap = getDocumentSnapshot();
+
+  useEditorStore.setState({ outlineStatus: "pending", bookmarks: [] });
+  restoreDocumentSnapshot(snap);
+
+  const after = useEditorStore.getState();
+  expect(after.bookmarks).toEqual(edited);
+  expect(after.outlineStatus).toBe("ready");
+});

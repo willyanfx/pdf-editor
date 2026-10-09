@@ -126,6 +126,8 @@ let firstPendingAt: number | null = null;
  * holds last session's work, so we must not overwrite or delete it. */
 let recoveryPending = false;
 let pendingRecord: RecoveryRecord | null = null;
+/** Whether the user has been told that autosave is paused behind the prompt. */
+let pausedNoticeShown = false;
 
 function clearTimer(): void {
   if (timer !== null) clearTimeout(timer);
@@ -187,7 +189,19 @@ function scheduleAutosave(): void {
  */
 export function startAutosave(): () => void {
   const unsubscribe = useEditorStore.subscribe((state, prev) => {
-    if (state.revision !== prev.revision && isDocumentDirty(state)) scheduleAutosave();
+    if (state.revision === prev.revision || !isDocumentDirty(state)) return;
+    // Saving now would overwrite last session's unanswered work, so autosave
+    // waits for the prompt — say so once rather than silently not saving.
+    if (recoveryPending && pendingRecord && !pausedNoticeShown) {
+      pausedNoticeShown = true;
+      useToastStore
+        .getState()
+        .addToast(
+          "Autosave is paused until you recover or discard your earlier unsaved changes.",
+          "info",
+        );
+    }
+    scheduleAutosave();
   });
   const onVisibility = () => {
     if (document.visibilityState === "hidden") void flushAutosave();
@@ -327,6 +341,7 @@ export const __testing = {
     queue = Promise.resolve();
     recoveryPending = false;
     pendingRecord = null;
+    pausedNoticeShown = false;
     warned = false;
     useRecoveryStore.setState({ info: null });
   },

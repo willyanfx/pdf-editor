@@ -43,10 +43,10 @@ export type { OcrEngine };
 export type { Bookmark };
 export type { FormFieldSummary, FormValue, FormValues };
 
-/** A history snapshot of the three mutable document arrays. */
-/** The undoable document state, as captured by snapshot(). Exposed so autosave
- * can persist/restore it without knowing which fields it contains. */
-export type DocumentSnapshot = HistoryEntry;
+/** The undoable document state, as captured by snapshot(), plus whether the
+ * file's own outline had been read when it was taken. Exposed so autosave can
+ * persist/restore it without knowing which fields it contains. */
+export type DocumentSnapshot = HistoryEntry & { outlineStatus?: "pending" | "ready" | "failed" };
 
 /** A history snapshot. `file`/`numPages` are captured so insert/merge (which
  * swap the underlying File and grow the page count) fully revert on undo; for
@@ -1070,7 +1070,8 @@ export const useEditorStore = create<EditorState>()(
 
 /** What autosave persists: exactly what snapshot() captures for undo. */
 export function getDocumentSnapshot(): DocumentSnapshot {
-  return snapshot(useEditorStore.getState());
+  const state = useEditorStore.getState();
+  return { ...snapshot(state), outlineStatus: state.outlineStatus };
 }
 
 /** Apply a snapshot (e.g. from crash recovery). No history entry; clears selection. */
@@ -1078,11 +1079,18 @@ export function restoreDocumentSnapshot(entry: DocumentSnapshot): void {
   lastCoalesce = null;
   // Spread the entry so any field a feature adds to snapshot()/HistoryEntry is
   // applied automatically (entry keys mirror state keys, as in undo()).
+  const { outlineStatus, ...rest } = entry;
+  // Snapshots without a status predate it: non-empty bookmarks can only come
+  // from a read outline.
+  const status = outlineStatus ?? (entry.bookmarks.length > 0 ? "ready" : "pending");
+  // Taken before the file's outline was read, the snapshot's empty bookmarks
+  // mean "unknown", not "all deleted": keep whatever the viewer has loaded (or
+  // will load) instead of wiping the outline on the next download.
+  const restored: Partial<EditorState> = { ...rest };
+  if (status === "pending") delete restored.bookmarks;
+  else restored.outlineStatus = status;
   useEditorStore.setState((state) => ({
-    ...entry,
-    // The restored bookmarks already include the file's outline; marking it
-    // ready stops the viewer's outline load from replacing them.
-    outlineStatus: "ready",
+    ...restored,
     selectedEditId: null,
     revision: state.revision + 1,
   }));
