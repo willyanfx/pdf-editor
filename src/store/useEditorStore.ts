@@ -339,6 +339,8 @@ type EditorState = {
   signaturePlacement: SignaturePlacement | null;
   /** Whether the split-by-range dialog is open. */
   splitDialogOpen: boolean;
+  /** Whether the compare-two-PDFs dialog is open. */
+  compareDialogOpen: boolean;
   /** Whether the read-only document-properties (metadata) modal is open. */
   metadataModalOpen: boolean;
   /** Whether the open-from-URL dialog is open. */
@@ -459,6 +461,7 @@ type EditorState = {
    * encrypted document reloads with it. */
   submitPassword: (password: string) => void;
   setSplitDialogOpen: (open: boolean) => void;
+  setCompareDialogOpen: (open: boolean) => void;
   setMetadataModalOpen: (open: boolean) => void;
   setUrlDialogOpen: (open: boolean) => void;
   setMode: (mode: EditorMode) => void;
@@ -545,6 +548,7 @@ const initialState = {
   signatureModalOpen: false,
   signaturePlacement: null as SignaturePlacement | null,
   splitDialogOpen: false,
+  compareDialogOpen: false,
   metadataModalOpen: false,
   urlDialogOpen: false,
   compressDialogOpen: false,
@@ -850,6 +854,7 @@ export const useEditorStore = create<EditorState>()(
         })),
 
       setSplitDialogOpen: (splitDialogOpen) => set({ splitDialogOpen }),
+      setCompareDialogOpen: (compareDialogOpen) => set({ compareDialogOpen }),
 
       setMetadataModalOpen: (metadataModalOpen) => set({ metadataModalOpen }),
 

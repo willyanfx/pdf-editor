@@ -18,6 +18,11 @@ export const FIXTURE_HTML = join(FIXTURE_DIR, "smoke.html");
 export const FEATURES_PDF = join(FIXTURE_DIR, "features.pdf");
 export const FORM_PDF = join(FIXTURE_DIR, "form.pdf");
 export const VIEWER_PDF = join(FIXTURE_DIR, "viewer.pdf");
+export const DIRTY_PDF = join(FIXTURE_DIR, "dirty.pdf");
+
+/** A 1x1 opaque red PNG, so the fixture has a real embedded image. */
+const RED_PIXEL_PNG =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 /** Static HTML (inline styles, no remote assets) for the HTML→PDF conversion test. */
 const FIXTURE_HTML_SOURCE = `<!doctype html>
@@ -50,6 +55,34 @@ export default async function globalSetup() {
   await writeFile(FEATURES_PDF, await buildFeaturesPdf());
   await writeFile(FORM_PDF, await buildFormPdf());
   await writeFile(VIEWER_PDF, await buildViewerPdf());
+  await writeFile(DIRTY_PDF, await buildDirtyPdf());
+}
+
+/** One page carrying an image, author metadata, an attachment and a comment. */
+async function buildDirtyPdf(): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  doc.setAuthor("Secret Author");
+  doc.setTitle("Internal draft");
+  const page = doc.addPage([612, 792]);
+  page.drawText("Visible text", { x: 72, y: 700, size: 18, font });
+  page.drawImage(await doc.embedPng(Buffer.from(RED_PIXEL_PNG, "base64")), {
+    x: 72,
+    y: 600,
+    width: 50,
+    height: 50,
+  });
+  await doc.attach(Buffer.from("confidential"), "notes.txt", { mimeType: "text/plain" });
+  const note = doc.context.register(
+    doc.context.obj({
+      Type: "Annot",
+      Subtype: "Text",
+      Rect: [300, 600, 320, 620],
+      Contents: PDFString.of("internal comment"),
+    }),
+  );
+  page.node.set(PDFName.of("Annots"), doc.context.obj([note]));
+  return doc.save();
 }
 
 /** Two pages with a fillable text field and checkbox on page 1. */
