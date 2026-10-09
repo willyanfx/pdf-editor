@@ -4,6 +4,7 @@ import { useEditorStore, type RedactEdit, type TextEdit } from "../store/useEdit
 import { extractScreenTextItems, type ScreenTextItem } from "../lib/textLayer";
 import { VIEWER_WIDTH, type ScreenRect } from "../lib/pdfGeometry";
 import { hitsText, textRectsUnderDrag } from "../lib/redactGeometry";
+import { clientToLayerPoint } from "../lib/layerPointer";
 
 type Props = {
   pageIndex: number;
@@ -23,6 +24,11 @@ const CLICK_PX = 4;
 export function RedactLayer({ pageIndex, page }: Props) {
   const mode = useEditorStore((s) => s.mode);
   const zoom = useEditorStore((s) => s.zoom);
+  // The organizer's rotation is applied by the `.page-transform` parent as a
+  // CSS rotate around its center; stored marks stay in unrotated page space.
+  const rotation = useEditorStore(
+    (s) => s.pageOps.find((o) => o.pageIndex === pageIndex)?.rotation ?? 0,
+  );
   const addEdits = useEditorStore((s) => s.addEdits);
   const allEdits = useEditorStore((s) => s.edits);
 
@@ -57,10 +63,19 @@ export function RedactLayer({ pageIndex, page }: Props) {
   if (!active) return null;
 
   function pointIn(e: React.PointerEvent): { x: number; y: number } {
-    // getBoundingClientRect() reports post-CSS-transform (zoomed) pixels; divide
-    // by zoom so marks are stored in unscaled VIEWER_WIDTH space.
-    const bounds = layerRef.current!.getBoundingClientRect();
-    return { x: (e.clientX - bounds.left) / zoom, y: (e.clientY - bounds.top) / zoom };
+    // getBoundingClientRect() reports the zoomed AND rotated box; map the
+    // pointer back through both so marks land where the user drags and are
+    // stored in the unrotated, unscaled VIEWER_WIDTH space.
+    const el = layerRef.current!;
+    return clientToLayerPoint(
+      { x: e.clientX, y: e.clientY },
+      {
+        bounds: el.getBoundingClientRect(),
+        size: { width: el.offsetWidth, height: el.offsetHeight },
+        rotation,
+        zoom,
+      },
+    );
   }
 
   /** The marks a drag rect would produce right now (also used for live preview). */

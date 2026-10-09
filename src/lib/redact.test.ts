@@ -16,6 +16,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   PDFArray,
+  PDFDict,
   PDFDocument,
   PDFName,
   PDFNumber,
@@ -276,6 +277,46 @@ async function pixelAt(bytes: Uint8Array, pageIndex: number, ux: number, uy: num
     const [px, py] = viewport.convertToViewportPoint(ux, uy) as [number, number];
     const d = ctx.getImageData(Math.round(px), Math.round(py), 1, 1).data;
     return [d[0], d[1], d[2]];
+  } finally {
+    await task.destroy();
+  }
+}
+
+/**
+ * Where pdf.js says every page-targeting reference in the file lands:
+ * outline items, /OpenAction, named destinations and GoTo links, each as the
+ * output page index it resolves to (null when it dangles).
+ */
+async function resolvedTargets(bytes: Uint8Array, names: string[]) {
+  const task = load(bytes);
+  try {
+    const doc = await task.promise;
+    const index = async (dest: unknown): Promise<number | null> => {
+      const arr = typeof dest === "string" ? await doc.getDestination(dest) : dest;
+      if (!Array.isArray(arr) || !arr[0]) return null;
+      try {
+        return await doc.getPageIndex(arr[0] as { num: number; gen: number });
+      } catch {
+        return null;
+      }
+    };
+    const outline: Record<string, number | null> = {};
+    for (const item of (await doc.getOutline()) ?? []) outline[item.title] = await index(item.dest);
+    const open = await doc.getOpenAction();
+    const openAction = open ? await index(open.dest) : null;
+    const named: Record<string, number | null> = {};
+    for (const name of names) named[name] = await index(name);
+    const links: Record<number, (number | null)[]> = {};
+    for (let i = 1; i <= doc.numPages; i++) {
+      const annots = await (await doc.getPage(i)).getAnnotations();
+      const targets: (number | null)[] = [];
+      for (const a of annots) {
+        if (a.subtype !== "Link") continue;
+        targets.push(await index(a.dest));
+      }
+      links[i - 1] = targets;
+    }
+    return { outline, openAction, named, links };
   } finally {
     await task.destroy();
   }
@@ -713,6 +754,278 @@ test("buildRedactTargets follows pageOrder and merges marks per output page", ()
   ]);
   // Identity order when pageOrder is omitted.
   expect(buildRedactTargets(edits).map((t) => t.outIndex)).toEqual([0, 1, 2]);
+});
+
+// ---------------------------------------------------------------------------
+// Referrers to the redacted page must neither keep its old content alive nor
+// break: the flattened page keeps the old page's object reference.
+// ---------------------------------------------------------------------------
+
+/** Two-page doc whose page 1 holds a secret and is the target of every kind of
+ * page reference: the file's own outline, GoTo links on page 2 (/Dest and
+ * /A /D forms), a /Names /Dests entry, a legacy catalog /Dests entry and the
+ * /OpenAction. Returns the viewer rect of the secret. */
+async function buildReferrerDoc(): Promise<{ src: Uint8Array; secret: UserRect }> {
+  let secret!: UserRect;
+  const src = await buildDoc((doc, font) => {
+    const ctx = doc.context;
+    const p1 = doc.addPage([612, 792]);
+    const p2 = doc.addPage([612, 792]);
+    secret = drawText(p1, font, "SECRET-REFERRED", 72, 700);
+    drawText(p2, font, "Page two body", 72, 700);
+
+    const outlineRef = ctx.nextRef();
+    const item = ctx.register(
+      ctx.obj({
+        Title: PDFString.of("To secret"),
+        Parent: outlineRef,
+        Dest: [p1.ref, "Fit"],
+      }),
+    );
+    ctx.assign(outlineRef, ctx.obj({ Type: "Outlines", First: item, Last: item, Count: 1 }));
+    doc.catalog.set(PDFName.of("Outlines"), outlineRef);
+
+    p2.node.addAnnot(
+      ctx.register(
+        ctx.obj({
+          Type: "Annot",
+          Subtype: "Link",
+          Rect: [72, 100, 200, 120],
+          Dest: [p1.ref, "Fit"],
+        }),
+      ),
+    );
+    p2.node.addAnnot(
+      ctx.register(
+        ctx.obj({
+          Type: "Annot",
+          Subtype: "Link",
+          Rect: [72, 140, 200, 160],
+          A: { S: "GoTo", D: [p1.ref, "XYZ", null, 700, null] },
+        }),
+      ),
+    );
+    doc.catalog.set(
+      PDFName.of("Names"),
+      ctx.obj({ Dests: ctx.obj({ Names: [PDFString.of("namedSecret"), [p1.ref, "Fit"]] }) }),
+    );
+    doc.catalog.set(PDFName.of("Dests"), ctx.obj({ legacySecret: [p1.ref, "Fit"] }));
+    doc.catalog.set(PDFName.of("OpenAction"), ctx.obj([p1.ref, "Fit"]));
+  });
+  return { src, secret };
+}
+
+test("outline, links, named dests and OpenAction pointing at the redacted page: no leak, and they still resolve to it", async () => {
+  const { src, secret } = await buildReferrerDoc();
+  const names = ["namedSecret", "legacySecret"];
+  const before = await resolvedTargets(src, names);
+  expect(before).toEqual({
+    outline: { "To secret": 0 },
+    openAction: 0,
+    named: { namedSecret: 0, legacySecret: 0 },
+    links: { 0: [], 1: [0, 0] },
+  });
+
+  // No `bookmarks` option: the file's own outline is carried through export.
+  const { bytes, warnings } = await exportRedactedPdf(
+    toFile(src),
+    [mark(await viewerRect(src, 0, secret))],
+    {},
+    { deps },
+  );
+  expect(warnings).toEqual([]);
+  expect(await recoverable(bytes)).not.toContain("SECRET-REFERRED");
+  expect((await pageTexts(bytes))[1]).toContain("Page two body");
+  expect(await resolvedTargets(bytes, names)).toEqual(before);
+});
+
+test("bookmarks written by the same export to the redacted page: no leak, bookmark still resolves", async () => {
+  let secret!: UserRect;
+  const src = await buildDoc((doc, font) => {
+    const p1 = doc.addPage([612, 792]);
+    const p2 = doc.addPage([612, 792]);
+    drawText(p1, font, "Cover page", 72, 700);
+    secret = drawText(p2, font, "SECRET-BOOKMARKED", 72, 700);
+  });
+  const { bytes, warnings } = await exportRedactedPdf(
+    toFile(src),
+    [mark(await viewerRect(src, 1, secret), 1)],
+    {
+      pageOrder: [0, 1],
+      bookmarks: [
+        { id: "a", title: "Cover", pageIndex: 0, children: [] },
+        { id: "b", title: "Secret page", pageIndex: 1, top: 700, children: [] },
+      ],
+    },
+    { deps },
+  );
+  expect(warnings).toEqual([]);
+  expect(await recoverable(bytes)).not.toContain("SECRET-BOOKMARKED");
+  const { outline } = await resolvedTargets(bytes, []);
+  expect(outline).toEqual({ Cover: 0, "Secret page": 1 });
+});
+
+test("structure element on the redacted page with kids elsewhere survives, points at the new page, and leaks nothing", async () => {
+  let secret!: UserRect;
+  const src = await buildDoc((doc, font) => {
+    const ctx = doc.context;
+    const p1 = doc.addPage([612, 792]);
+    const p2 = doc.addPage([612, 792]);
+    secret = drawText(p1, font, "SECRET-STRUCT", 72, 700);
+    drawText(p2, font, "Second page", 72, 700);
+    const elem = ctx.register(
+      ctx.obj({
+        Type: "StructElem",
+        S: "P",
+        Pg: p1.ref,
+        ActualText: PDFString.of("STRUCT-COPY"),
+        // MCID 0 on page 1 (inherited /Pg) and an explicit reference to page 2.
+        K: [0, { Type: "MCR", Pg: p2.ref, MCID: 0 }],
+      }),
+    );
+    const root = ctx.register(
+      ctx.obj({
+        Type: "StructTreeRoot",
+        K: [elem],
+        ParentTree: ctx.obj({ Nums: [0, [elem], 1, [elem]] }),
+        ParentTreeNextKey: 2,
+      }),
+    );
+    doc.catalog.set(PDFName.of("StructTreeRoot"), root);
+    doc.catalog.set(PDFName.of("MarkInfo"), ctx.obj({ Marked: true }));
+    p1.node.set(PDFName.of("StructParents"), PDFNumber.of(0));
+    p2.node.set(PDFName.of("StructParents"), PDFNumber.of(1));
+  });
+
+  const { bytes, warnings } = await exportRedactedPdf(
+    toFile(src),
+    [mark(await viewerRect(src, 0, secret))],
+    { pageOrder: [0, 1] },
+    { deps },
+  );
+  expect(warnings).toEqual([]);
+  const after = await recoverable(bytes);
+  expect(after).not.toContain("SECRET-STRUCT");
+  expect(after).not.toContain("STRUCT-COPY");
+
+  const out = await PDFDocument.load(bytes, { updateMetadata: false });
+  const root = out.catalog.lookup(PDFName.of("StructTreeRoot"), PDFDict);
+  const kids = root.lookup(PDFName.of("K"), PDFArray);
+  expect(kids.size()).toBe(1);
+  const elem = kids.lookup(0, PDFDict);
+  expect(elem.has(PDFName.of("ActualText"))).toBe(false);
+  // Its /Pg resolves to the (flattened) first page, not a dangling object.
+  expect(elem.get(PDFName.of("Pg"))).toBe(out.getPage(0).ref);
+  // The page-2 kid survived, the page-1 MCID did not.
+  const remaining = elem.lookup(PDFName.of("K"), PDFArray);
+  expect(remaining.size()).toBe(1);
+  expect(remaining.lookup(0, PDFDict).get(PDFName.of("Pg"))).toBe(out.getPage(1).ref);
+});
+
+test("an annotation of the redacted page kept alive only by a stray referrer is still removed (GC cut set)", async () => {
+  let secret!: UserRect;
+  const src = await buildDoc((doc, font) => {
+    const ctx = doc.context;
+    const p1 = doc.addPage([612, 792]);
+    const p2 = doc.addPage([612, 792]);
+    secret = drawText(p1, font, "SECRET-OBJR", 72, 700);
+    drawText(p2, font, "Second page", 72, 700);
+    const annot = ctx.register(
+      ctx.obj({
+        Type: "Annot",
+        Subtype: "Text",
+        Rect: [72, 500, 92, 520],
+        Contents: PDFString.of("ANNOT-VIA-OBJR"),
+      }),
+    );
+    p1.node.addAnnot(annot);
+    // A structure element that lives on page 2 but (wrongly) holds an object
+    // reference to page 1's annotation: pruneStructTree keeps the element.
+    const elem = ctx.register(
+      ctx.obj({ Type: "StructElem", S: "Annot", Pg: p2.ref, K: [{ Type: "OBJR", Obj: annot }] }),
+    );
+    const root = ctx.register(ctx.obj({ Type: "StructTreeRoot", K: [elem] }));
+    doc.catalog.set(PDFName.of("StructTreeRoot"), root);
+  });
+  expect(await recoverable(src)).toContain("ANNOT-VIA-OBJR");
+
+  const { bytes, warnings } = await exportRedactedPdf(
+    toFile(src),
+    [mark(await viewerRect(src, 0, secret))],
+    {},
+    { deps },
+  );
+  expect(warnings).toEqual([]);
+  const after = await recoverable(bytes);
+  expect(after).not.toContain("SECRET-OBJR");
+  expect(after).not.toContain("ANNOT-VIA-OBJR");
+  expect((await pageTexts(bytes))[1]).toContain("Second page");
+});
+
+test("a content stream shared with a surviving page is kept for that page", async () => {
+  let secret!: UserRect;
+  const src = await buildDoc((doc, font) => {
+    const p1 = doc.addPage([612, 792]);
+    const p2 = doc.addPage([612, 792]);
+    secret = drawText(p1, font, "SHARED-STREAM", 72, 700);
+    // Page 2 draws the very same content stream (templated pages do this).
+    p2.node.set(PDFName.of("Contents"), p1.node.get(PDFName.of("Contents"))!);
+    p2.node.set(PDFName.of("Resources"), p1.node.get(PDFName.of("Resources"))!);
+  });
+  expect((await pageTexts(src))[1]).toContain("SHARED-STREAM");
+
+  const { bytes, warnings } = await exportRedactedPdf(
+    toFile(src),
+    [mark(await viewerRect(src, 0, secret))],
+    {},
+    { deps },
+  );
+  expect(warnings).toEqual([]);
+  const texts = await pageTexts(bytes);
+  expect(texts[0]).not.toContain("SHARED-STREAM");
+  expect(texts[1]).toContain("SHARED-STREAM");
+});
+
+test("applyRedactions fails closed on a mark whose page is out of range", async () => {
+  const src = await buildDoc((doc, font) => {
+    drawText(doc.addPage([612, 792]), font, "Only page", 72, 700);
+  });
+  const exported = await exportEditedPdf(toFile(src), [], { redactionsHandled: true });
+  const rects = [{ x: 10, y: 10, width: 20, height: 20 }];
+  await expect(
+    applyRedactions(exported, src, [{ srcIndex: 0, outIndex: 3, rects }], { deps }),
+  ).rejects.toThrow(/page 4 .*out of range/i);
+  await expect(
+    applyRedactions(exported, src, [{ srcIndex: 2, outIndex: 0, rects }], { deps }),
+  ).rejects.toThrow(/page 3 .*out of range/i);
+});
+
+test("the redaction pass does not regenerate appearance streams of untouched fields", async () => {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const p1 = doc.addPage([612, 792]);
+  const p2 = doc.addPage([612, 792]);
+  const secret = drawText(p1, font, "SECRET-AP", 72, 700);
+  const keep = doc.getForm().createTextField("keep");
+  keep.setText("FIELD-KEEP");
+  keep.addToPage(p2, { x: 72, y: 450, width: 200, height: 24, font });
+  // A widget without an appearance stream, as many real forms ship them.
+  keep.acroField.getWidgets()[0].dict.delete(PDFName.of("AP"));
+  const src = await doc.save({ updateFieldAppearances: false });
+  const widgetHasAp = async (b: Uint8Array) => {
+    const doc = await PDFDocument.load(b, { updateMetadata: false });
+    const widget = doc.getForm().getTextField("keep").acroField.getWidgets()[0];
+    return widget.dict.has(PDFName.of("AP"));
+  };
+  expect(await widgetHasAp(src)).toBe(false);
+  const { bytes } = await exportRedactedPdf(
+    toFile(src),
+    [mark(await viewerRect(src, 0, secret))],
+    {},
+    { deps },
+  );
+  expect(await recoverable(bytes)).not.toContain("SECRET-AP");
+  expect(await widgetHasAp(bytes)).toBe(false);
 });
 
 test("exportEditedPdf refuses to bake pending redaction marks on its own", async () => {

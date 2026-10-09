@@ -6,9 +6,13 @@
  * Approach (per output page that carries marks):
  *   1. Render the page with pdf.js (intent "print", ~200 DPI), paint the marks
  *      solid black on the canvas, and encode the canvas as a JPEG.
- *   2. Replace the page with a fresh page of the same visible size that only
- *      draws that image. The old page dict (content streams, resources,
- *      annotations, thumbnails, page-level metadata) is unlinked.
+ *   2. Replace the page dict with a fresh one of the same visible size that
+ *      only draws that image — BEHIND THE SAME OBJECT REFERENCE, so outline
+ *      entries, links, named destinations, /OpenAction, structure elements and
+ *      anything else that pointed at the page keep working (see
+ *      replacePageInPlace). The old dict is dropped from the object table and
+ *      its constituents (content streams, annotations, thumbnail, metadata)
+ *      are recorded as "cut" for the GC below.
  *   3. Remove AcroForm fields that had a widget on the page (their stored /V
  *      values go with them), drop XFA data if any field was removed, and prune
  *      structure-tree elements that referred to the page (they can carry
@@ -17,9 +21,12 @@
  *      invisible text (render mode 3) so the page stays searchable.
  *   5. Garbage-collect: every indirect object no longer reachable from the
  *      trailer is deleted, so pdf-lib doesn't write the orphaned content
- *      streams, fonts, images or annotation dicts into the file. Images that
- *      were listed in a resources dict shared with other pages are dropped
- *      from those pages too when their content streams never draw them.
+ *      streams, fonts, images or annotation dicts into the file. The cut set is
+ *      deleted unconditionally and never traversed, so no stray referrer (a
+ *      shared annotation, an OBJR structure kid, ...) can keep old page content
+ *      in the file. Images that were listed in a resources dict shared with
+ *      other pages are dropped from those pages too when their content streams
+ *      never draw them.
  *
  * Coordinates: marks are stored in the viewer's 800px space of the ORIGINAL
  * page (pdf.js default viewport = page's own /Rotate, CropBox). They are mapped
@@ -35,6 +42,8 @@ import {
   PDFName,
   PDFNull,
   PDFNumber,
+  PDFPage,
+  PDFPageLeaf,
   PDFRawStream,
   PDFRef,
   PDFStream,
@@ -49,7 +58,6 @@ import {
   showText,
   type PDFFont,
   type PDFObject,
-  type PDFPage,
 } from "pdf-lib";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import type { PdfEdit } from "../store/useEditorStore";
@@ -211,13 +219,24 @@ export async function applyRedactions(
     const getFont = async () => (font ??= await pdfDoc.embedFont(StandardFonts.Helvetica));
 
     const suspectXObjects = new Set<PDFRef>();
-    const removedPageRefs: PDFRef[] = [];
+    const redactedPageRefs: PDFRef[] = [];
+    const cut = new Set<PDFRef>();
     const structParentKeys = new Set<number>();
     let removedFields = 0;
 
     for (const target of live) {
-      if (target.outIndex < 0 || target.outIndex >= pdfDoc.getPageCount()) continue;
-      if (target.srcIndex < 0 || target.srcIndex >= srcDoc.numPages) continue;
+      // Fail closed: a mark we can't place must never turn into a download
+      // that still carries what it was meant to remove.
+      if (target.outIndex < 0 || target.outIndex >= pdfDoc.getPageCount()) {
+        throw new Error(
+          `Redaction: output page ${target.outIndex + 1} is out of range (the document has ${pdfDoc.getPageCount()} pages).`,
+        );
+      }
+      if (target.srcIndex < 0 || target.srcIndex >= srcDoc.numPages) {
+        throw new Error(
+          `Redaction: source page ${target.srcIndex + 1} is out of range (the original has ${srcDoc.numPages} pages).`,
+        );
+      }
 
       const srcPage = await srcDoc.getPage(target.srcIndex + 1);
       const outPage = await outDoc.getPage(target.outIndex + 1);
@@ -228,13 +247,17 @@ export async function applyRedactions(
       const oldPage = pdfDoc.getPage(target.outIndex);
       collectSuspectXObjects(oldPage, suspectXObjects);
       collectStructParentKeys(oldPage, structParentKeys);
+      collectPageCutRefs(oldPage, cut);
       removedFields += removeFormFieldsOnPage(pdfDoc, oldPage, warnings);
 
-      // Fresh page dict: nothing from the old one (content, resources, annots,
-      // thumbnail, page-level metadata, /StructParents) carries over.
-      const newPage = pdfDoc.insertPage(target.outIndex, [raster.width, raster.height]);
-      pdfDoc.removePage(target.outIndex + 1);
-      removedPageRefs.push(oldPage.ref);
+      // Fresh page dict behind the old reference: nothing from the old one
+      // (content, resources, annots, thumbnail, page-level metadata,
+      // /StructParents) carries over, but every reference to the page does.
+      const newPage = replacePageInPlace(pdfDoc, oldPage, target.outIndex, [
+        raster.width,
+        raster.height,
+      ]);
+      redactedPageRefs.push(newPage.ref);
 
       const image = await pdfDoc.embedJpg(raster.jpeg);
       newPage.drawImage(image, { x: 0, y: 0, width: raster.width, height: raster.height });
@@ -244,13 +267,17 @@ export async function applyRedactions(
       redactedPages.push(target.outIndex);
     }
 
-    pruneStructTree(pdfDoc, removedPageRefs, structParentKeys, warnings);
+    pruneStructTree(pdfDoc, redactedPageRefs, structParentKeys, warnings);
     if (removedFields > 0) stripXfa(pdfDoc, warnings);
-    collectGarbage(pdfDoc);
+    exemptSharedPageParts(pdfDoc, cut);
+    collectGarbage(pdfDoc, cut);
     pruneSuspectXObjects(pdfDoc, suspectXObjects, warnings);
-    collectGarbage(pdfDoc);
+    collectGarbage(pdfDoc, cut);
 
-    const bytes = await pdfDoc.save({ useObjectStreams: true });
+    // removeFormFieldsOnPage populated pdf-lib's form cache; the default
+    // updateFieldAppearances: true would then redraw every untouched field
+    // that lacks an appearance stream (exportEditedPdf avoids this too).
+    const bytes = await pdfDoc.save({ useObjectStreams: true, updateFieldAppearances: false });
     return { bytes, warnings, redactedPages };
   } finally {
     await srcTask.destroy();
@@ -483,7 +510,105 @@ const N = {
   Alt: PDFName.of("Alt"),
   E: PDFName.of("E"),
   MarkInfo: PDFName.of("MarkInfo"),
+  Pages: PDFName.of("Pages"),
+  MediaBox: PDFName.of("MediaBox"),
+  Contents: PDFName.of("Contents"),
 };
+
+/**
+ * Swap the dict behind `oldPage.ref` for an empty page of `size` points and
+ * return it. The new page deliberately KEEPS THE OLD OBJECT REFERENCE.
+ *
+ * Why: a PDF refers to a page by reference from many places — outline /Dest
+ * arrays (the file's own or the ones exportPdf writes for bookmarks), GoTo
+ * link annotations on other pages (/Dest or /A /D), /Names /Dests and the
+ * legacy catalog /Dests, /OpenAction, structure elements' /Pg, AcroForm widget
+ * /P entries, article beads, ... With a NEW ref, each of those would have to
+ * be found and retargeted, and any kind we forgot would both dangle and keep
+ * the old dict (with its content streams, resources and annotations) alive
+ * for the garbage collector — the leak this replaces. Reusing the ref makes
+ * every referrer resolve to the flattened page with no rewrite at all, and the
+ * old dict is gone from the object table the moment `context.assign` runs, so
+ * no path can reach it. Its constituents are handled by collectPageCutRefs.
+ *
+ * Mechanics: pdf-lib caches PDFPage wrappers per leaf dict, and removePage
+ * does not invalidate that cache while insertPage does. So detach the old
+ * leaf from the page tree, assign the fresh leaf to the old ref, and insert
+ * the wrapper for it at the same index — insertPage sets its /Parent,
+ * registers the wrapper and invalidates the cache, all through public API.
+ */
+function replacePageInPlace(
+  pdfDoc: PDFDocument,
+  oldPage: PDFPage,
+  index: number,
+  size: [number, number],
+): PDFPage {
+  const { context } = pdfDoc;
+  const ref = oldPage.ref;
+  if (pdfDoc.getPage(index) !== oldPage) {
+    throw new Error(`Redaction: page ${index + 1} changed while it was being replaced.`);
+  }
+  const pagesRef = pdfDoc.catalog.get(N.Pages);
+  if (!(pagesRef instanceof PDFRef)) throw new Error("Redaction: the page tree is not indirect.");
+  const leaf = PDFPageLeaf.withContextAndParent(context, pagesRef);
+  leaf.set(N.MediaBox, context.obj([0, 0, size[0], size[1]]));
+
+  pdfDoc.removePage(index);
+  context.assign(ref, leaf);
+  const page = PDFPage.of(leaf, ref, pdfDoc);
+  pdfDoc.insertPage(index, page);
+  if (pdfDoc.getPage(index) !== page || context.lookup(ref) !== leaf) {
+    throw new Error(`Redaction: could not replace page ${index + 1}.`);
+  }
+  return page;
+}
+
+/**
+ * Indirect objects that belong to the old page dict and must not survive:
+ * its content streams (and the /Contents array itself when indirect), its
+ * annotations, thumbnail, metadata, piece info, beads, associated files and
+ * any other page-level entry. Excluded are the entries that are legitimately
+ * shared across pages: /Parent, the inheritable /Resources, /MediaBox,
+ * /CropBox and /Rotate (resources are handled by pruneSuspectXObjects), and
+ * /Group (a transparency group attribute dict, often one object for the
+ * whole file). exemptSharedPageParts later lifts the cut for anything a
+ * remaining page also lists directly.
+ */
+const PAGE_KEEP_KEYS = new Set(
+  ["Type", "Parent", "Resources", "MediaBox", "CropBox", "Rotate", "Group"].map((k) =>
+    PDFName.of(k),
+  ),
+);
+
+function collectPageCutRefs(page: PDFPage, into: Set<PDFRef>) {
+  const context = page.doc.context;
+  for (const [key, value] of page.node.entries()) {
+    if (PAGE_KEEP_KEYS.has(key)) continue;
+    if (value instanceof PDFRef) into.add(value);
+    // /Contents and /Annots are arrays of refs (direct or indirect); cut the
+    // elements too, so a referrer to one element can't keep it alive.
+    const resolved = value instanceof PDFRef ? context.lookup(value) : value;
+    if (resolved instanceof PDFArray) {
+      for (const el of resolved.asArray()) if (el instanceof PDFRef) into.add(el);
+    }
+  }
+}
+
+/** Objects a page shares with a page that stays (the same content stream or
+ * annotation listed by both) are still visible there, so they are not cut. */
+function exemptSharedPageParts(pdfDoc: PDFDocument, cut: Set<PDFRef>) {
+  if (cut.size === 0) return;
+  const context = pdfDoc.context;
+  for (const page of pdfDoc.getPages()) {
+    for (const [, value] of page.node.entries()) {
+      if (value instanceof PDFRef) cut.delete(value);
+      const resolved = value instanceof PDFRef ? context.lookup(value) : value;
+      if (resolved instanceof PDFArray) {
+        for (const el of resolved.asArray()) if (el instanceof PDFRef) cut.delete(el);
+      }
+    }
+  }
+}
 
 /** Image/form XObjects the page's resources list. If a resources dict is shared
  * with other pages, these survive GC through them — pruneSuspectXObjects then
@@ -569,20 +694,23 @@ function stripXfa(pdfDoc: PDFDocument, warnings: string[]) {
 /**
  * Tagged-PDF structure can hold copies of page text (/ActualText, /Alt, /E).
  * Drop every structure element or marked-content reference that points at a
- * removed page, and the ParentTree / IDTree entries that would keep them alive.
+ * redacted page (its ref now resolves to the flattened page, which has no
+ * marked content, so those kids are meaningless), and the ParentTree / IDTree
+ * entries that would keep them alive. Elements that also have kids on other
+ * pages survive with their text copies stripped.
  * Falls back to removing the whole structure tree if anything looks unusual.
  */
 function pruneStructTree(
   pdfDoc: PDFDocument,
-  removedPageRefs: PDFRef[],
+  redactedPageRefs: PDFRef[],
   structParentKeys: Set<number>,
   warnings: string[],
 ) {
   const catalog = pdfDoc.catalog;
   const root = catalog.lookupMaybe(N.StructTreeRoot, PDFDict);
-  if (!root || removedPageRefs.length === 0) return;
+  if (!root || redactedPageRefs.length === 0) return;
   const context = pdfDoc.context;
-  const removedPages = new Set(removedPageRefs);
+  const removedPages = new Set(redactedPageRefs);
   const droppedElements = new Set<PDFRef>();
 
   const dropRefs = (arr: PDFArray, remove: (v: PDFObject) => boolean) => {
@@ -723,8 +851,13 @@ function scrubValue(value: PDFObject, dropped: Set<PDFRef>, context: PDFDocument
  * Encrypt, ID). pdf-lib writes every indirect object it holds, so without this
  * the unlinked content streams, images, fonts and annotations would still be
  * in the file — exactly what redaction must prevent.
+ *
+ * `cut` refs are dead ends: they are never marked reachable (so they are
+ * always deleted) and never traversed (so nothing is kept alive through them),
+ * whatever still points at them. A reference to a deleted object is, per the
+ * spec, a reference to null.
  */
-export function collectGarbage(pdfDoc: PDFDocument) {
+export function collectGarbage(pdfDoc: PDFDocument, cut: Set<PDFRef> = new Set()) {
   const context = pdfDoc.context;
   const reachable = new Set<PDFRef>();
   const stack: PDFObject[] = [];
@@ -734,7 +867,7 @@ export function collectGarbage(pdfDoc: PDFDocument) {
   while (stack.length > 0) {
     const obj = stack.pop()!;
     if (obj instanceof PDFRef) {
-      if (reachable.has(obj)) continue;
+      if (cut.has(obj) || reachable.has(obj)) continue;
       reachable.add(obj);
       const target = context.lookup(obj);
       if (target) stack.push(target);

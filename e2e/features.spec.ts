@@ -126,6 +126,11 @@ test("redacted text is gone from the download; unmarked text stays searchable", 
   // Redact mode, then drag across page 1's "Alpha page" line (drawn at
   // x=72pt, baseline 700pt on a 612×792 page → ~94–230px, ~96–121px at 800px).
   await page.locator("body").click();
+  // A bookmark to the redacted page used to keep the original page (and its
+  // text) alive in the download; it must now resolve to the flattened page.
+  await page.keyboard.press("ControlOrMeta+b");
+  await page.keyboard.press("Enter");
+  await page.locator("body").click();
   await page.keyboard.press("r");
   const shell = page.locator('.page-shell[data-page-index="0"]');
   const box = (await shell.boundingBox())!;
@@ -150,6 +155,10 @@ test("redacted text is gone from the download; unmarked text stays searchable", 
   expect(texts[0]).not.toContain("Alpha");
   expect(texts[1]).toContain("Bravo page");
   expect(texts[2]).toContain("Charlie page");
+  const pdf = await openWithPdfJs(bytes);
+  const [bookmark] = await pdf.getOutline();
+  const dest = Array.isArray(bookmark.dest) ? bookmark.dest : await pdf.getDestination(bookmark.dest!);
+  expect(await pdf.getPageIndex(dest![0])).toBe(0);
   // No trace of the redacted string anywhere in the raw file either.
   expect(Buffer.from(bytes).toString("latin1")).not.toContain("Alpha");
 });
