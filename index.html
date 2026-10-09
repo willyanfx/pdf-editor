@@ -6,6 +6,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#1c1c1c" />
     <title>Browser PDF Editor</title>
+    <script>
+      // Apply the saved (or OS) color theme before first paint so a dark theme never
+      // flashes light. Mirrors src/lib/theme.ts — keep the storage key in sync.
+      (function () {
+        var theme = null;
+        try {
+          theme = localStorage.getItem("pdf-editor-theme");
+        } catch (e) {}
+        if (theme !== "light" && theme !== "dark") {
+          theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+        document.documentElement.dataset.theme = theme;
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -1,9 +1,9 @@
 import { create } from "zustand";
 
-export type SidePanelTab = "pages" | "bookmarks";
+export type SidePanelTab = "pages" | "bookmarks" | "attachments" | "layers";
 
 /**
- * UI-only state for the sidebar's Bookmarks view. Kept out of the editor store
+ * UI-only state for the sidebar (its active view and the Bookmarks tree). Kept out of the editor store
  * on purpose: none of it is document data, so it isn't undoable or saved.
  */
 type BookmarksUiState = {
@@ -27,6 +27,8 @@ type BookmarksUiState = {
   setRenaming: (id: string | null) => void;
   /** Open the sidebar on the Bookmarks view with `id` selected (optionally renaming). */
   reveal: (id: string | null, opts?: { rename?: boolean }) => void;
+  /** Open the sidebar on `tab`. */
+  showTab: (tab: SidePanelTab) => void;
 };
 
 export const useBookmarksUiStore = create<BookmarksUiState>()((set) => ({
@@ -63,4 +65,5 @@ export const useBookmarksUiStore = create<BookmarksUiState>()((set) => ({
       renamingId: opts.rename && id ? id : null,
       openRequest: s.openRequest + 1,
     })),
+  showTab: (tab) => set((s) => ({ tab, openRequest: s.openRequest + 1 })),
 }));

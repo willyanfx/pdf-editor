@@ -55,7 +55,15 @@ All engines emit bounding boxes in the 800px space; `fontSize.ts` estimates font
 
 `vite.config.ts` encodes several hard-won constraints: COOP/COEP headers for `SharedArrayBuffer` (multithreaded OCR; GitHub Pages can't set them, so production falls back to single-threaded), `process.env.DRAGGABLE_DEBUG` shim (react-rnd crashes without it), `optimizeDeps` include/exclude lists required by transformers.js and paddleocr's CJS imports, and ESM worker format for the VLM worker. Breaking any of these fails only at runtime, not build time.
 
+### Viewer state and layout
+
+- View-only state (theme, single/two-page layout, full screen, the open PDF's attachments and layers) lives in `src/store/useViewerStore.ts`, not the editor store — it isn't undoable, autosaved or exported. Theme and layout persist in `localStorage`.
+- The page stage scrolls in **rows** (`lib/pageLayout.ts`): one page, or two side by side. Pages deleted in the organizer are in no row. Use `buildPageRows`/`stepPage`/`rowIndexOfPage` rather than assuming page index == virtual item index.
+- Layer visibility works by wrapping `PDFPageProxy.prototype.render` (`lib/layers.ts`), because react-pdf can't pass `optionalContentConfigPromise`; `layerVersion` re-keys `<Page>`/`<Thumbnail>` to repaint.
+
 ### Gotchas
+
+- The page virtualizer works in **on-screen pixels**: row sizes are multiplied by `zoom`, and page shells sit at `item.start / zoom` inside the zoom-scaled spacer. Mixing unscaled offsets with the scroll container's `scrollTop` makes the page readout and jump-to-page wrong at any zoom other than 100%.
 
 - A `useEffect` that resets its own trigger flag at the top cancels its own in-flight async work — reset in `finally` instead (this bit the OCR flows).
 - When verifying in a real browser: pdf.js keeps the page busy so screenshot/read_page tools time out on this app — drive and assert with injected JavaScript instead.

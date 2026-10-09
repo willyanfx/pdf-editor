@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import {
   MousePointer2,
+  Hand,
   Pencil,
   Type,
   ImagePlus,
@@ -52,6 +53,7 @@ export function ToolRail({ onOpenPalette, onTogglePages, pagesActive }: Props) {
   return (
     <nav className="tool-rail" aria-label="Editing tools">
       {modeBtn("select", <MousePointer2 size={18} />, "Select (V)")}
+      {modeBtn("hand", <Hand size={18} />, "Hand tool — drag to pan (hold Space)")}
       {modeBtn("editText", <Pencil size={18} />, "Edit Text / Image (E)")}
 
       {/* Single OCR entry point — engine choice + scope actions in a popover. */}
