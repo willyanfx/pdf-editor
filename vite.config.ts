@@ -51,10 +51,19 @@ export default defineConfig({
   // ESM can't synthesize a `default` from CJS, so these MUST be pre-bundled by
   // esbuild (which adds the interop) — force-include the package and those deps,
   // or the browser throws "does not provide an export named 'default'".
+  // @neslinesli93/qpdf-wasm (PDF encryption) is a CommonJS Emscripten glue file
+  // that we only reach through a dynamic import(); include it so dev doesn't
+  // discover it mid-session and trigger a full-page re-optimize reload.
   // onnxruntime-web is the exception: paddle loads it via dynamic `import()` with
   // the same WASM shape as transformers, so it stays excluded.
   optimizeDeps: {
-    include: ["@paddleocr/paddleocr-js", "clipper-lib", "js-yaml", "@techstark/opencv-js"],
+    include: [
+      "@paddleocr/paddleocr-js",
+      "clipper-lib",
+      "js-yaml",
+      "@techstark/opencv-js",
+      "@neslinesli93/qpdf-wasm",
+    ],
     exclude: ["@huggingface/transformers", "onnxruntime-web"],
   },
   // The VLM OCR worker uses ES `import`s, so workers must be emitted as ESM for

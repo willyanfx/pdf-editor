@@ -343,6 +343,9 @@ type EditorState = {
   /** Whether the compress-PDF dialog is open. */
   compressDialogOpen: boolean;
   setCompressDialogOpen: (open: boolean) => void;
+  /** Whether the protect-PDF (password / permissions) dialog is open. */
+  protectDialogOpen: boolean;
+  setProtectDialogOpen: (open: boolean) => void;
 
   /** Bumped by every document mutation (history push, undo/redo, snapshot
    * restore). Reset to 0 by setFile. Drives autosave and the dirty flag. */
@@ -540,6 +543,7 @@ const initialState = {
   metadataModalOpen: false,
   urlDialogOpen: false,
   compressDialogOpen: false,
+  protectDialogOpen: false,
   revision: 0,
   savedRevision: 0,
   bookmarks: [] as Bookmark[],
@@ -600,7 +604,10 @@ async function rewritePages(
   if (!file) return null;
   try {
     const { loadPdf, buildPlannedPdf } = await import("../lib/pageOrganize");
-    const [baseDoc, extra] = await Promise.all([loadPdf(file), loadExtra?.()]);
+    const [baseDoc, extra] = await Promise.all([
+      loadPdf(file, start.documentPassword ?? undefined),
+      loadExtra?.(),
+    ]);
     const order = start.pageOrder.length ? start.pageOrder : baseDoc.getPageIndices();
     const plan = makePlan(baseDoc.getPageCount(), order, extra?.getPageCount() ?? 0);
     const bytes = await buildPlannedPdf(baseDoc, plan.layout, extra);
@@ -843,6 +850,7 @@ export const useEditorStore = create<EditorState>()(
       setUrlDialogOpen: (urlDialogOpen) => set({ urlDialogOpen }),
 
       setCompressDialogOpen: (compressDialogOpen) => set({ compressDialogOpen }),
+      setProtectDialogOpen: (protectDialogOpen) => set({ protectDialogOpen }),
 
       setHeaderFooter: (headerFooter) =>
         set((state) => {

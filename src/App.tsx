@@ -11,6 +11,7 @@ import { CompareDialog } from "./components/CompareDialog";
 import { MetadataModal } from "./components/MetadataModal";
 import { UrlDialog } from "./components/UrlDialog";
 import { CompressDialog } from "./components/CompressDialog";
+import { ProtectDialog } from "./components/ProtectDialog";
 import { PageStampsDialogs } from "./components/PageStampsDialogs";
 import { PasswordModal } from "./components/PasswordModal";
 import { ExtractPagesDialog, ReplacePagesDialog } from "./components/PageSelectionDialogs";
@@ -282,6 +283,7 @@ export default function App() {
       <MetadataModal />
       <UrlDialog />
       <CompressDialog />
+      <ProtectDialog />
       <PageStampsDialogs />
       <PasswordModal />
       <RecoveryBanner />

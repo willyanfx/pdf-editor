@@ -1,4 +1,5 @@
 import { PDFDocument } from "pdf-lib";
+import { loadPdfLibDocument } from "./pdfLoad";
 
 /**
  * Combine several PDFs into one, preserving order. All pages of each input are
@@ -69,9 +70,13 @@ export function chunkRanges(pageCount: number, size: number): number[][] {
  * already-computed groups (from parsePageRanges or chunkRanges). With no groups,
  * emits one file per page. Returns the parts ready to download.
  */
-export async function splitPdf(file: File, groups?: number[][]): Promise<SplitPart[]> {
+export async function splitPdf(
+  file: File,
+  groups?: number[][],
+  password?: string,
+): Promise<SplitPart[]> {
   const bytes = await file.arrayBuffer();
-  const doc = await PDFDocument.load(bytes);
+  const doc = await loadPdfLibDocument(bytes, password);
   const pageCount = doc.getPageCount();
 
   const finalGroups =
