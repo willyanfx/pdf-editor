@@ -518,7 +518,10 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
                         canvasRefs.current.set(index, el);
                       }}
                       onLoadSuccess={(page) => {
-                        pagesRef.current.set(index, { file, page: page as unknown as PDFPageProxy });
+                        pagesRef.current.set(index, {
+                          file,
+                          page: page as unknown as PDFPageProxy,
+                        });
                         force((n) => n + 1);
                       }}
                     />
@@ -536,10 +539,7 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
                       pageIndex={index}
                       getCanvas={() => canvasRefs.current.get(index) ?? null}
                     />
-                    <SignatureZoneLayer
-                      pageIndex={index}
-                      page={getPage(index)}
-                    />
+                    <SignatureZoneLayer pageIndex={index} page={getPage(index)} />
                     <AnnotateLayer pageIndex={index} />
                     <RedactLayer pageIndex={index} page={getPage(index)} />
                     <InkLayer pageIndex={index} />

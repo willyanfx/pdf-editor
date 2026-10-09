@@ -68,7 +68,9 @@ test("a bookmark added with ⌘B is written to the downloaded outline", async ({
 test("duplicating a page adds a real page to the download", async ({ page }) => {
   await openFixture(page);
   await runCommand(page, "Duplicate selected pages");
-  await expect.poll(() => page.evaluate(() => document.querySelectorAll(".page-shell").length)).toBe(4);
+  await expect
+    .poll(() => page.evaluate(() => document.querySelectorAll(".page-shell").length))
+    .toBe(4);
 
   const texts = await pageTexts(await downloadPdf(page));
   expect(texts.map((t) => t.trim())).toEqual([
@@ -157,7 +159,9 @@ test("redacted text is gone from the download; unmarked text stays searchable", 
   expect(texts[2]).toContain("Charlie page");
   const pdf = await openWithPdfJs(bytes);
   const [bookmark] = await pdf.getOutline();
-  const dest = Array.isArray(bookmark.dest) ? bookmark.dest : await pdf.getDestination(bookmark.dest!);
+  const dest = Array.isArray(bookmark.dest)
+    ? bookmark.dest
+    : await pdf.getDestination(bookmark.dest!);
   expect(await pdf.getPageIndex(dest![0])).toBe(0);
   // No trace of the redacted string anywhere in the raw file either.
   expect(Buffer.from(bytes).toString("latin1")).not.toContain("Alpha");

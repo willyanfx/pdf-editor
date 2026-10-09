@@ -49,7 +49,9 @@ async function buildFormPdf(): Promise<Uint8Array> {
   const page = doc.addPage([612, 792]);
   page.drawText("Name:", { x: 72, y: 700, size: 14, font });
   const form = doc.getForm();
-  form.createTextField("applicant.name").addToPage(page, { x: 130, y: 690, width: 200, height: 24 });
+  form
+    .createTextField("applicant.name")
+    .addToPage(page, { x: 130, y: 690, width: 200, height: 24 });
   form.createCheckBox("agree").addToPage(page, { x: 72, y: 640, width: 18, height: 18 });
   doc.addPage([612, 792]).drawText("Second page", { x: 72, y: 700, size: 14, font });
   return doc.save();
