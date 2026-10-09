@@ -18,12 +18,13 @@ export interface StaleChunkDeps {
 /** Returns true when a reload was triggered (caller should preventDefault). */
 export function handleStaleChunk(deps: StaleChunkDeps): boolean {
   const { storage, reload, now } = deps;
+  // Without storage the once-only guard is unenforceable, so don't risk a loop.
+  if (!storage) return false;
   try {
-    const last = Number(storage?.getItem(RELOAD_FLAG) ?? 0);
+    const last = Number(storage.getItem(RELOAD_FLAG) ?? 0);
     if (last && now() - last < RELOAD_WINDOW_MS) return false;
-    storage?.setItem(RELOAD_FLAG, String(now()));
+    storage.setItem(RELOAD_FLAG, String(now()));
   } catch {
-    // Storage blocked: reload at most once is unenforceable, so don't risk a loop.
     return false;
   }
   reload();

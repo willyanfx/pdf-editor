@@ -45,4 +45,10 @@ describe("handleStaleChunk", () => {
     expect(handleStaleChunk({ storage, reload, now: () => 1 })).toBe(false);
     expect(reload).not.toHaveBeenCalled();
   });
+
+  it("does not reload when there is no storage at all", () => {
+    const reload = vi.fn();
+    expect(handleStaleChunk({ storage: null, reload, now: () => 1 })).toBe(false);
+    expect(reload).not.toHaveBeenCalled();
+  });
 });
