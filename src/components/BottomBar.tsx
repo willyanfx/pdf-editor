@@ -297,7 +297,6 @@ export function BottomBar() {
           </button>
         )}
       </div>
-
     </div>
   );
 }
