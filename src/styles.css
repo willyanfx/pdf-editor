@@ -1,84 +1,116 @@
 /* ===================================================================== *
- * Design tokens — monochrome, zero-chroma OKLCH. Depth from borders, not
- * shadows. The only actual color in the system is --error.
+ * Design tokens — an Acrobat-style workspace: white chrome around a quiet
+ * gray canvas, one blue accent for "you are here" (active tool, selection,
+ * focus, the primary action) and red reserved for errors. Neutrals carry a
+ * faint cool tint so the gray reads as deliberate rather than muddy.
  * ===================================================================== */
 
 :root {
+  /* Shell geometry, shared by the grid and every fixed-position overlay. */
+  --topbar-h: 52px;
+  --rail-w: 60px;
+
   /* Surfaces & text (light) */
-  --bg: oklch(97% 0 0);
-  --bg-subtle: oklch(94% 0 0);
+  --bg: oklch(97.5% 0.002 260);
+  --bg-subtle: oklch(94.5% 0.003 260);
   --surface: oklch(100% 0 0);
-  --surface-glass: rgba(255, 255, 255, 0.72);
-  --surface-raised: oklch(99% 0 0);
-  --border: oklch(88% 0 0);
-  --border-strong: oklch(78% 0 0);
-  --fg: oklch(18% 0 0);
-  --fg-muted: oklch(52% 0 0);
-  --fg-faint: oklch(70% 0 0);
+  --surface-glass: rgba(255, 255, 255, 0.86);
+  --surface-raised: oklch(99% 0.001 260);
+  --border: oklch(90% 0.004 260);
+  --border-strong: oklch(80% 0.005 260);
+  --fg: oklch(24% 0.006 260);
+  --fg-muted: oklch(48% 0.008 260);
+  --fg-faint: oklch(66% 0.006 260);
 
-  /* Dark chrome (top bar, tool rail, floating format bar) */
-  --rail-bg: oklch(15% 0 0);
-  --rail-fg: oklch(72% 0 0);
-  --rail-hover-bg: oklch(24% 0 0);
-  --rail-active-bg: oklch(30% 0 0);
-  --rail-active-fg: oklch(96% 0 0);
-  --rail-border: oklch(24% 0 0);
+  /* Accent — the one hue in the chrome. */
+  --accent: oklch(55% 0.19 257);
+  --accent-hover: oklch(49% 0.19 257);
+  --accent-fg: #fff;
+  --accent-soft: oklch(55% 0.19 257 / 0.11);
+  --accent-soft-fg: oklch(47% 0.18 257);
 
-  --topbar-bg: oklch(13% 0 0);
-  --topbar-fg: oklch(82% 0 0);
-  --topbar-muted: oklch(60% 0 0);
-  --topbar-border: oklch(24% 0 0);
-  --topbar-btn-bg: oklch(22% 0 0);
-  --topbar-btn-hover: oklch(28% 0 0);
+  /* Chrome (top bar, tool rail, floating bars) follows the theme. */
+  --rail-bg: var(--surface);
+  --rail-fg: oklch(40% 0.008 260);
+  --rail-hover-bg: oklch(95.5% 0.003 260);
+  --rail-active-bg: var(--accent-soft);
+  --rail-active-fg: var(--accent-soft-fg);
+  --rail-border: var(--border);
 
-  --ftb-bg: oklch(15% 0 0);
-  --ftb-border: oklch(26% 0 0);
-  --ftb-btn: oklch(24% 0 0);
-  --ftb-btn-hover: oklch(30% 0 0);
-  --ftb-active: oklch(36% 0 0);
-  --ftb-fg: oklch(88% 0 0);
+  --topbar-bg: var(--surface);
+  --topbar-fg: var(--fg);
+  --topbar-muted: var(--fg-muted);
+  --topbar-border: var(--border);
+  --topbar-btn-bg: oklch(95.5% 0.003 260);
+  --topbar-btn-hover: oklch(92.5% 0.004 260);
 
-  /* The only color */
-  --error: #ec2729;
+  /* Floating toolbars and tooltips stay dark in both themes: they sit over the
+     page and must separate from white paper at a glance. */
+  --ftb-bg: oklch(22% 0.006 260);
+  --ftb-border: oklch(32% 0.006 260);
+  --ftb-btn: oklch(28% 0.006 260);
+  --ftb-btn-hover: oklch(34% 0.006 260);
+  --ftb-active: oklch(40% 0.006 260);
+  --ftb-fg: oklch(93% 0.003 260);
 
-  /* Radius — 0 by default, rounded selectively */
+  --error: #d7373f;
+
   --r-none: 0px;
-  --r-sm: 3px;
-  --r-md: 6px;
-  --r-lg: 10px;
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 12px;
   --r-pill: 999px;
 
-  /* Type — system sans + native mono (no font dependency) */
   --font-sans:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace;
 
-  /* The PDF page reads as elevated paper — the one place a shadow earns its keep. */
-  --page-shadow: 0 2px 14px oklch(0% 0 0 / 0.12);
+  /* Floating chrome (view controls, tool bar, popovers) lifts off the canvas. */
+  --shadow-float: 0 1px 2px oklch(0% 0 0 / 0.06), 0 6px 20px oklch(0% 0 0 / 0.1);
+  /* The PDF page reads as elevated paper. */
+  --page-shadow: 0 1px 3px oklch(0% 0 0 / 0.1), 0 4px 16px oklch(0% 0 0 / 0.08);
   /* Paper stays white in every theme: it is the document, not interface chrome. */
   --paper: #fff;
-  --selected-bg: oklch(92% 0 0);
+  --selected-bg: var(--accent-soft);
 
   --t-fast: 120ms ease;
   --t-mid: 200ms ease;
 }
 
-/* Dark theme: set on <html> by the viewer store (see src/lib/theme.ts). Only the
-   light-surface tokens change — the top bar, rail and floating bars are already
-   dark — and --paper stays white so the document itself is untouched. */
+/* Dark theme: set on <html> by the viewer store (see src/lib/theme.ts). The
+   chrome is lighter than the canvas so the page and tools stay distinct, and
+   --paper stays white so the document itself is untouched. */
 :root[data-theme="dark"] {
-  --bg: oklch(16% 0 0);
-  --bg-subtle: oklch(21% 0 0);
-  --surface: oklch(24% 0 0);
-  --surface-glass: rgba(38, 38, 38, 0.78);
-  --surface-raised: oklch(27% 0 0);
-  --border: oklch(34% 0 0);
-  --border-strong: oklch(46% 0 0);
-  --fg: oklch(93% 0 0);
-  --fg-muted: oklch(72% 0 0);
-  --fg-faint: oklch(54% 0 0);
-  --selected-bg: oklch(32% 0 0);
+  --bg: oklch(18% 0.004 260);
+  --bg-subtle: oklch(16% 0.004 260);
+  --surface: oklch(23% 0.005 260);
+  --surface-glass: rgba(44, 45, 48, 0.9);
+  --surface-raised: oklch(26% 0.005 260);
+  --border: oklch(32% 0.005 260);
+  --border-strong: oklch(44% 0.006 260);
+  --fg: oklch(94% 0.003 260);
+  --fg-muted: oklch(74% 0.006 260);
+  --fg-faint: oklch(56% 0.006 260);
+
+  --accent: oklch(64% 0.17 257);
+  --accent-hover: oklch(70% 0.15 257);
+  --accent-fg: oklch(16% 0.02 257);
+  --accent-soft: oklch(64% 0.17 257 / 0.2);
+  --accent-soft-fg: oklch(80% 0.11 257);
+
+  --rail-fg: oklch(78% 0.006 260);
+  --rail-hover-bg: oklch(29% 0.005 260);
+  --topbar-btn-bg: oklch(29% 0.005 260);
+  --topbar-btn-hover: oklch(33% 0.005 260);
+
+  --ftb-bg: oklch(28% 0.005 260);
+  --ftb-border: oklch(38% 0.006 260);
+  --ftb-btn: oklch(33% 0.005 260);
+  --ftb-btn-hover: oklch(38% 0.005 260);
+  --ftb-active: oklch(44% 0.006 260);
+
   --error: #f2585a;
+  --shadow-float: 0 1px 2px oklch(0% 0 0 / 0.3), 0 8px 24px oklch(0% 0 0 / 0.45);
   --page-shadow: 0 2px 18px oklch(0% 0 0 / 0.55);
 }
 
@@ -92,9 +124,9 @@ body {
   background: var(--bg);
   color: var(--fg);
   -webkit-font-smoothing: antialiased;
-  /* The document surface (scroll area, page canvas) is light; dark chrome opts
-     back in to color-scheme: dark locally so its native controls render right. */
   color-scheme: light;
+  /* Native checkboxes, radios and ranges pick up the accent. */
+  accent-color: var(--accent);
 }
 
 :root[data-theme="dark"] body {
@@ -107,15 +139,28 @@ button {
   touch-action: manipulation;
 }
 
-/* Dark-surface chrome: fixes native <select>, scrollbars, and form controls
-   rendered inside these regions under OS dark mode. */
-.topbar,
-.tool-rail,
+/* One consistent, high-contrast keyboard focus ring. :where() keeps it at zero
+   specificity so components with a bespoke ring still win. */
+:where(button, a, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Dark-surface floating chrome: fixes native controls inside it. */
 .text-format-toolbar,
 .palette,
 .sig-modal,
 .split-dialog {
   color-scheme: dark;
+}
+:root:not([data-theme="dark"]) .palette,
+:root:not([data-theme="dark"]) .sig-modal,
+:root:not([data-theme="dark"]) .split-dialog {
+  color-scheme: light;
+}
+
+kbd {
+  font-family: var(--font-mono);
 }
 
 /* Honor reduced-motion: drop entrance animations and shorten transitions. */
@@ -130,10 +175,13 @@ button {
   }
 }
 
-/* App shell: top bar spans the full width; below it a slim rail + the canvas. */
+/* App shell: top bar across the full width; below it the tool rail + canvas.
+   View controls and the active-tool bar float over the canvas. */
 .app {
   display: grid;
-  grid-template: 44px 1fr 36px / 52px 1fr;
+  /* minmax(0, …) pins the work row to the viewport even when the rail's
+     content is taller, so the floating view controls stay on screen. */
+  grid-template: var(--topbar-h) minmax(0, 1fr) / var(--rail-w) minmax(0, 1fr);
   height: 100vh;
 }
 
@@ -144,137 +192,225 @@ button {
   z-index: 50;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 12px;
+  gap: 12px;
+  padding: 0 12px 0 0;
   background: var(--topbar-bg);
   border-bottom: 1px solid var(--topbar-border);
 }
 
+/* Start and end share the free space so the search sits near the middle;
+   when space runs out the file name truncates first, never the actions. */
+.topbar-start,
+.topbar-end {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.topbar-start {
+  flex: 1 1 0;
+}
+
+.topbar-end {
+  flex: 1 0 auto;
+  justify-content: flex-end;
+}
+
+.topbar-brand {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-right: 6px;
+}
+
+/* The mark sits centered over the rail so the two read as one column. */
+.topbar-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--rail-w);
+  height: var(--topbar-h);
+  margin-right: -10px;
+}
+
+.topbar-logo span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-md);
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
 .topbar-app-name {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
   color: var(--topbar-fg);
   white-space: nowrap;
 }
 
 .topbar-divider {
+  flex: 0 0 auto;
   width: 1px;
-  height: 18px;
+  height: 20px;
+  margin: 0 6px;
   background: var(--topbar-border);
 }
 
+.topbar-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .topbar-file-name {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--topbar-muted);
-  max-width: 320px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--topbar-fg);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.topbar-spacer {
-  flex: 1;
-}
-
-.topbar-pages {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-right: 4px;
-}
-
-.topbar-page-info {
+/* "Edited" status — tells the user there are changes to download. */
+.topbar-status {
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 1px;
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-size: 12px;
-  color: var(--topbar-fg);
-  min-width: 56px;
-}
-
-.topbar-page-input {
-  width: 2.4em;
-  padding: 1px 2px;
-  border: 1px solid transparent;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  -moz-appearance: textfield;
-}
-
-.topbar-page-input:hover {
-  border-color: var(--topbar-btn-bg);
-}
-
-.topbar-page-input:focus {
-  outline: none;
-  border-color: var(--accent, #4c8bf5);
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
   background: var(--topbar-btn-bg);
-}
-
-.topbar-page-total {
+  color: var(--topbar-muted);
+  font-size: 11px;
+  font-weight: 500;
   white-space: nowrap;
 }
 
-.topbar-page-nav {
-  display: inline-flex;
+.topbar-status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* Search-style launcher for the command palette (Acrobat's "find a tool"). */
+.topbar-search {
+  flex: 0 1 340px;
+  min-width: 0;
+  display: flex;
   align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--topbar-fg);
+  gap: 8px;
+  height: 34px;
+  padding: 0 8px 0 12px;
+  border: 1px solid var(--topbar-border);
+  border-radius: var(--r-pill);
+  background: var(--bg);
+  color: var(--topbar-muted);
+  font-size: 13px;
+  text-align: left;
   cursor: pointer;
-  transition: background var(--t-fast);
+  transition:
+    border-color var(--t-fast),
+    background var(--t-fast);
 }
 
-.topbar-page-nav:hover:not(:disabled) {
-  background: var(--topbar-btn-bg);
+.topbar-search:hover {
+  border-color: var(--border-strong);
+  background: var(--surface);
 }
 
-.topbar-page-nav:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
+.topbar-search-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-search kbd,
+.topbar-tip kbd {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border: 1px solid var(--topbar-border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--topbar-muted);
+  font-size: 11px;
+}
+
+.topbar-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .topbar-btn {
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  height: 28px;
-  padding: 0 11px;
+  height: 34px;
+  padding: 0 12px;
   border: 0;
-  border-radius: var(--r-md);
-  background: var(--topbar-btn-bg);
+  border-radius: var(--r-pill);
+  background: transparent;
   color: var(--topbar-fg);
   font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
   cursor: pointer;
-  transition: background var(--t-fast);
+  transition:
+    background var(--t-fast),
+    color var(--t-fast);
 }
 
 .topbar-btn:hover:not(:disabled) {
+  background: var(--topbar-btn-bg);
+}
+
+.topbar-btn:active:not(:disabled) {
   background: var(--topbar-btn-hover);
 }
 
 .topbar-btn:disabled {
-  opacity: 0.4;
+  opacity: 0.38;
   cursor: not-allowed;
 }
 
+.topbar-icon-btn {
+  width: 34px;
+  padding: 0;
+}
+
+/* The one primary action on screen. */
+.topbar-btn.is-primary {
+  margin-left: 6px;
+  padding: 0 16px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+}
+
+.topbar-btn.is-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.topbar-btn.is-primary:disabled {
+  opacity: 1;
+  background: var(--topbar-btn-bg);
+  color: var(--fg-faint);
+}
+
 .topbar-download[data-state="done"] {
-  background: oklch(32% 0 0);
+  background: oklch(52% 0.13 155);
 }
 
 .dl-spin {
@@ -285,18 +421,65 @@ button {
   animation: check-pop 0.3s ease both;
 }
 
-/* Bottom bar ----------------------------------------------------------- */
+/* Narrower windows: secondary actions collapse to icons (names stay in the
+   accessible label and tooltip). */
+@media (max-width: 1180px) {
+  /* The file name outranks a centered search box. */
+  .topbar-end {
+    flex-grow: 0;
+  }
+  .topbar-search {
+    flex-basis: 260px;
+  }
+  .topbar-btn.is-collapsible > span {
+    display: none;
+  }
+  .topbar-btn.is-collapsible {
+    width: 34px;
+    padding: 0;
+  }
+}
+@media (max-width: 900px) {
+  .topbar-search-label,
+  .topbar-search kbd,
+  .topbar-status {
+    display: none;
+  }
+  .topbar-search {
+    flex: 0 0 34px;
+    padding: 0;
+    justify-content: center;
+  }
+  .topbar-app-name {
+    display: none;
+  }
+}
+
+/* View controls (page nav, zoom, layout) — a pill floating over the canvas -- */
 
 .bottombar {
-  grid-area: 3 / 1 / 4 / 3;
-  z-index: 50;
+  grid-area: 2 / 2 / 3 / 3;
+  align-self: end;
+  justify-self: center;
+  z-index: 45;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 0 12px;
-  background: var(--topbar-bg);
-  border-top: 1px solid var(--topbar-border);
+  gap: 4px;
+  margin-bottom: 16px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  box-shadow: var(--shadow-float);
+  color: var(--fg);
+}
+
+.bottombar-group,
+.bottombar-view,
+.bottombar-pages {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .bottombar-zoom {
@@ -306,27 +489,79 @@ button {
   gap: 2px;
 }
 
+.bottombar-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 2px;
+  background: var(--border);
+}
+
 .bottombar-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   border: 0;
-  border-radius: var(--r-sm);
+  border-radius: var(--r-pill);
   background: transparent;
-  color: var(--topbar-fg);
+  color: var(--fg-muted);
   cursor: pointer;
-  transition: background var(--t-fast);
+  transition:
+    background var(--t-fast),
+    color var(--t-fast);
 }
 
 .bottombar-btn:hover:not(:disabled) {
   background: var(--topbar-btn-bg);
+  color: var(--fg);
 }
 
 .bottombar-btn:disabled {
-  opacity: 0.3;
+  opacity: 0.35;
   cursor: not-allowed;
+}
+
+.bottombar-btn.is-active {
+  background: var(--accent-soft);
+  color: var(--accent-soft-fg);
+}
+
+.bottombar-page-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 2px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+.bottombar-page-input {
+  width: 3ch;
+  min-width: 34px;
+  height: 28px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  transition: border-color var(--t-fast);
+}
+
+.bottombar-page-input:hover {
+  border-color: var(--border-strong);
+}
+
+.bottombar-page-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  background: var(--surface);
 }
 
 .bottombar-zoom-level {
@@ -334,16 +569,15 @@ button {
   align-items: center;
   justify-content: center;
   gap: 3px;
-  min-width: 72px;
-  height: 24px;
-  padding: 0 6px;
+  min-width: 78px;
+  height: 32px;
+  padding: 0 8px;
   border: 0;
-  border-radius: var(--r-sm);
+  border-radius: var(--r-pill);
   background: transparent;
-  color: var(--topbar-fg);
-  font-family: var(--font-mono);
+  color: var(--fg);
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
-  font-size: 12px;
   cursor: pointer;
   transition: background var(--t-fast);
 }
@@ -354,33 +588,32 @@ button {
 
 .bottombar-zoom-menu {
   position: absolute;
-  bottom: calc(100% + 6px);
+  bottom: calc(100% + 10px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 60;
   display: flex;
   flex-direction: column;
-  min-width: 120px;
+  min-width: 148px;
   padding: 4px;
-  border: 1px solid var(--topbar-border);
-  border-radius: var(--r-md, 8px);
-  background: var(--topbar-bg);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.28);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-float);
 }
 
 .bottombar-zoom-menu button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 28px;
-  padding: 0 8px;
+  height: 30px;
+  padding: 0 10px;
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
-  color: var(--topbar-fg);
-  font-family: var(--font-mono);
+  color: var(--fg);
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
-  font-size: 12px;
   text-align: left;
   cursor: pointer;
   transition: background var(--t-fast);
@@ -391,30 +624,29 @@ button {
 }
 
 .bottombar-zoom-menu button.is-active {
-  background: var(--topbar-btn-bg);
+  background: var(--accent-soft);
+  color: var(--accent-soft-fg);
   font-weight: 600;
 }
 
 .bottombar-zoom-menu-sep {
   height: 1px;
   margin: 4px 2px;
-  background: var(--topbar-border);
+  background: var(--border);
 }
 
 .bottombar-zoom-kbd {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 16px;
-  height: 16px;
+  min-width: 18px;
+  height: 18px;
   padding: 0 4px;
-  border: 1px solid var(--topbar-border);
+  border: 1px solid var(--border);
   border-radius: var(--r-sm);
-  background: var(--bg-subtle);
-  color: var(--topbar-fg);
-  font-family: var(--font-mono);
+  background: var(--bg);
+  color: var(--fg-muted);
   font-size: 10px;
-  opacity: 0.7;
 }
 
 /* Tool rail ------------------------------------------------------------ */
@@ -431,34 +663,51 @@ button {
   border-right: 1px solid var(--rail-border);
 }
 
+/* Rail popovers are non-modal: their click-away layer shouldn't blur the page. */
+.ocr-menu-anchor > .palette-backdrop {
+  backdrop-filter: none;
+  animation: none;
+}
+
 .rail-btn {
   position: relative;
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 40px;
   height: 40px;
   border: 0;
-  border-radius: var(--r-none);
+  border-radius: var(--r-md);
   background: transparent;
   color: var(--rail-fg);
   cursor: pointer;
   transition:
     background var(--t-fast),
-    color var(--t-fast),
-    border-radius var(--t-fast);
+    color var(--t-fast);
 }
 
 .rail-btn:hover:not(:disabled) {
   background: var(--rail-hover-bg);
-  color: var(--rail-active-fg);
-  border-radius: var(--r-md);
+  color: var(--fg);
 }
 
 .rail-btn.active {
   background: var(--rail-active-bg);
   color: var(--rail-active-fg);
-  border-radius: var(--r-md);
+}
+
+/* Active indicator bar on the rail's edge, so the current tool is findable
+   without relying on the tint alone. */
+.rail-btn.active::before {
+  content: "";
+  position: absolute;
+  left: -10px;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
 }
 
 .rail-btn:disabled {
@@ -466,54 +715,185 @@ button {
   cursor: not-allowed;
 }
 
-/* CSS-only tooltip to the right of each rail button. */
-.rail-btn::after {
-  content: attr(data-tip);
-  position: absolute;
-  left: calc(100% + 10px);
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 60;
-  padding: 5px 9px;
-  border-radius: var(--r-md);
-  background: var(--ftb-bg);
-  border: 1px solid var(--ftb-border);
-  color: var(--ftb-fg);
-  font-size: 12px;
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--t-fast);
+.rail-btn:disabled.active {
+  background: transparent;
+  color: var(--rail-fg);
 }
 
-.rail-btn:hover:not(:disabled)::after {
-  opacity: 1;
+.rail-btn:disabled.active::before {
+  display: none;
+}
+
+/* Tooltip: label + shortcut, shown on hover and on keyboard focus. Fixed
+   positioning (set from the button rect in RailButton) keeps it above the
+   canvas and side panel regardless of stacking. */
+.rail-tip {
+  position: fixed;
+  z-index: 100;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 10px;
+  border-radius: var(--r-md);
+  background: var(--ftb-bg);
+  color: var(--ftb-fg);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: var(--shadow-float);
+  pointer-events: none;
+  transform: translateY(-50%);
+  animation: rail-tip-in 120ms ease both;
+}
+
+.rail-tip kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--ftb-border);
+  border-radius: var(--r-sm);
+  color: oklch(78% 0.005 260);
+  font-size: 10px;
+}
+
+@keyframes rail-tip-in {
+  from {
+    opacity: 0;
+    transform: translate(-4px, -50%);
+  }
 }
 
 .rail-divider {
-  width: 24px;
+  flex: 0 0 auto;
+  width: 28px;
   height: 1px;
   background: var(--rail-border);
-  margin: 5px 0;
+  margin: 6px 0;
 }
 
-/* The rail has ~20 tools; tighten it on shorter windows so every one stays
-   reachable without the rail running off the bottom. */
 @media (max-height: 960px) {
   .tool-rail {
     gap: 0;
-    padding: 4px 0;
+    padding: 6px 0;
   }
   .rail-btn {
-    height: 34px;
+    height: 36px;
+  }
+  .rail-btn.active::before {
+    top: 8px;
+    bottom: 8px;
   }
   .rail-divider {
-    margin: 3px 0;
+    margin: 4px 0;
+  }
+}
+
+@media (max-height: 760px) {
+  .rail-btn {
+    height: 30px;
+  }
+  .rail-btn.active::before {
+    top: 6px;
+    bottom: 6px;
+  }
+  .rail-divider {
+    margin: 2px 0;
+  }
+}
+
+/* Too short for every tool: let the rail scroll rather than cut tools off. */
+@media (max-height: 660px) {
+  .tool-rail {
+    overflow-y: auto;
+    scrollbar-width: none;
   }
 }
 
 .rail-spacer {
   flex: 1;
+}
+
+/* Active-tool bar: names the current tool, says how to use it, offers a way
+   out. Floats at the top of the canvas while any tool other than Select is on. */
+.tool-hint {
+  grid-area: 2 / 2 / 3 / 3;
+  align-self: start;
+  justify-self: center;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 32px);
+  margin-top: 12px;
+  padding: 5px 5px 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  box-shadow: var(--shadow-float);
+  font-size: 13px;
+  animation: tool-hint-in 160ms ease both;
+}
+
+.tool-hint-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: var(--accent);
+}
+
+.tool-hint-name {
+  flex: 0 0 auto;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.tool-hint-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+}
+
+.tool-hint-done {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 6px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--t-fast);
+}
+
+.tool-hint-done:hover {
+  background: var(--topbar-btn-bg);
+}
+
+.tool-hint-done kbd {
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--fg-muted);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+@keyframes tool-hint-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@media (max-width: 900px) {
+  .tool-hint-text {
+    display: none;
+  }
 }
 
 /* Empty state ---------------------------------------------------------- */
@@ -526,18 +906,21 @@ button {
   justify-content: center;
   padding: 32px;
   text-align: center;
-  background: var(--bg);
+  background: var(--bg-subtle);
   overflow-y: auto;
 }
 
 .empty h1 {
-  font-size: 40px;
+  margin: 0 0 6px;
+  font-size: 30px;
+  font-weight: 650;
   letter-spacing: -0.02em;
-  margin: 0 0 8px;
 }
 
-.empty p {
+.empty-lede {
+  margin: 0 0 24px;
   font-size: 15px;
+  color: var(--fg-muted);
 }
 
 .muted {
@@ -550,12 +933,11 @@ button {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  width: min(520px, 100%);
-  margin: 24px 0;
-  padding: 48px 32px;
+  gap: 10px;
+  width: min(560px, 100%);
+  padding: 44px 32px 40px;
   border: 1.5px dashed var(--border-strong);
-  border-radius: var(--r-md);
+  border-radius: var(--r-lg);
   background: var(--surface);
   color: inherit;
   font: inherit;
@@ -566,31 +948,106 @@ button {
 }
 
 .dropzone:hover {
-  border-color: var(--fg);
-  background: var(--bg-subtle);
-}
-
-.dropzone:focus-visible {
-  outline: 2px solid var(--fg);
-  outline-offset: 2px;
+  border-color: var(--accent);
+  background: color-mix(in oklch, var(--accent-soft) 35%, var(--surface));
 }
 
 .dropzone-icon {
-  color: var(--fg-faint);
-  transition: color var(--t-mid);
-}
-
-.dropzone:hover .dropzone-icon {
-  color: var(--fg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  margin-bottom: 4px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .dropzone-title {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
 }
 
 .dropzone-sub {
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+/* Looks like a button, but the whole drop zone is the click target. */
+.dropzone-cta {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  margin-top: 10px;
+  padding: 0 20px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: var(--accent-fg);
   font-size: 14px;
+  font-weight: 600;
+  transition: background var(--t-fast);
+}
+
+.dropzone:hover .dropzone-cta {
+  background: var(--accent-hover);
+}
+
+.empty-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  width: min(560px, 100%);
+  margin-top: 16px;
+}
+
+.empty-action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--t-fast),
+    box-shadow var(--t-fast);
+}
+
+.empty-action:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-float);
+}
+
+.empty-action svg {
+  color: var(--accent);
+}
+
+.empty-action small {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--fg-muted);
+}
+
+.empty-privacy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 24px 0 0;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+@media (max-width: 640px) {
+  .empty-actions {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Whole-window drag overlay ------------------------------------------- */
@@ -609,7 +1066,7 @@ button {
 
 .drop-overlay-card {
   padding: 28px 40px;
-  border: 2px dashed var(--fg);
+  border: 2px dashed var(--accent);
   border-radius: var(--r-md);
   background: var(--surface-glass);
   backdrop-filter: blur(8px);
@@ -637,7 +1094,7 @@ button {
   gap: 10px;
   padding: 11px 12px;
   border: 1px solid var(--border);
-  border-left: 3px solid var(--fg);
+  border-left: 3px solid var(--accent);
   border-radius: var(--r-md);
   background: var(--surface-glass);
   backdrop-filter: blur(16px);
@@ -729,7 +1186,7 @@ button {
 }
 
 .palette-input:focus-visible {
-  border-bottom-color: oklch(60% 0.16 250 / 0.9);
+  border-bottom-color: var(--accent);
 }
 
 .palette-input::placeholder {
@@ -805,7 +1262,8 @@ button {
 
 .pdf-wrapper {
   grid-area: 2 / 2 / 3 / 3;
-  padding: 24px;
+  /* The bottom inset keeps the last page clear of the floating view controls. */
+  padding: 24px 24px 88px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1180,7 +1638,7 @@ button {
 }
 
 .existing-text-hit:focus-visible {
-  outline: 2px solid oklch(50% 0.16 250 / 0.75);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
@@ -1370,7 +1828,8 @@ button {
 
 .ocr-menu-popover {
   position: absolute;
-  left: calc(100% + 8px); /* 8px gap to the right of the 48px rail */
+  /* The 40px button is centered in the rail; this clears the rail's edge by 8px. */
+  left: calc(100% + (var(--rail-w) - 40px) / 2 + 8px);
   top: 0;
   z-index: 95; /* above canvas (40), format bar (60), palette-backdrop (90) */
   width: 232px;
@@ -1378,8 +1837,8 @@ button {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
-  box-shadow: 0 8px 32px oklch(0% 0 0 / 0.18);
-  color-scheme: light; /* popover is always light even though the rail is dark */
+  box-shadow: var(--shadow-float);
+  color-scheme: light;
 }
 
 .ocr-menu-label {
@@ -1415,9 +1874,9 @@ button {
 }
 
 .ocr-engine-pill.active {
-  background: var(--fg);
-  color: var(--surface);
-  border-color: var(--fg);
+  background: var(--accent-soft);
+  color: var(--accent-soft-fg);
+  border-color: var(--accent);
 }
 
 .ocr-engine-pill:disabled {
@@ -1765,9 +2224,9 @@ button {
 /* Page organizer panel -------------------------------------------------- */
 .page-panel {
   position: fixed;
-  top: 52px;
-  left: 52px;
-  bottom: 40px;
+  top: var(--topbar-h);
+  left: var(--rail-w);
+  bottom: 0;
   width: 168px;
   z-index: 30;
   display: flex;
@@ -1797,18 +2256,34 @@ button {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--surface);
+  padding: 8px 6px 6px;
+  border: 2px solid transparent;
+  border-radius: var(--r-md);
+  background: transparent;
   cursor: grab;
+  transition:
+    background var(--t-fast),
+    border-color var(--t-fast);
 }
+.page-thumb:hover {
+  background: var(--topbar-btn-bg);
+}
+/* The page image itself reads as a small sheet of paper. */
+.page-thumb canvas {
+  box-shadow:
+    0 0 0 1px var(--border),
+    0 1px 3px oklch(0% 0 0 / 0.08);
+}
+/* Current page: Acrobat's blue frame. */
 .page-thumb.current {
-  border-color: oklch(55% 0.14 250 / 0.7);
-  box-shadow: 0 0 0 1px oklch(55% 0.14 250 / 0.5);
+  border-color: var(--accent);
+}
+.page-thumb.current .page-thumb-num {
+  color: var(--accent-soft-fg);
+  font-weight: 600;
 }
 .page-thumb:focus-visible {
-  outline: 2px solid oklch(55% 0.16 250 / 0.85);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 .page-thumb.dragging {
@@ -1823,7 +2298,7 @@ button {
   right: 2px;
   height: 2px;
   border-radius: 2px;
-  background: oklch(55% 0.16 250 / 0.95);
+  background: var(--accent);
   pointer-events: none;
 }
 .page-thumb.drop-before::before {
@@ -1884,7 +2359,7 @@ button {
 /* Find bar -------------------------------------------------------------- */
 .find-bar {
   position: fixed;
-  top: 60px;
+  top: calc(var(--topbar-h) + 12px);
   right: 16px;
   z-index: 80;
   display: flex;
@@ -1898,7 +2373,7 @@ button {
   box-shadow: 0 8px 24px oklch(0% 0 0 / 0.18);
 }
 .find-bar:focus-within {
-  border-color: oklch(60% 0.16 250 / 0.7);
+  border-color: var(--accent);
 }
 .find-icon {
   color: var(--muted, var(--fg));
@@ -1938,7 +2413,7 @@ button {
   cursor: default;
 }
 .find-bar button:focus-visible {
-  outline: 2px solid oklch(60% 0.16 250 / 0.85);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
@@ -1994,12 +2469,12 @@ button {
   cursor: pointer;
 }
 .sig-tabs button.active {
-  background: var(--fg);
-  color: var(--surface);
-  border-color: var(--fg);
+  background: var(--accent-soft);
+  color: var(--accent-soft-fg);
+  border-color: var(--accent);
 }
 .sig-tabs button:focus-visible {
-  outline: 2px solid oklch(60% 0.16 250 / 0.85);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 .sig-canvas-wrap {
@@ -2042,8 +2517,8 @@ button {
   outline: none;
 }
 .sig-type-input:focus-visible {
-  border-color: oklch(60% 0.16 250 / 0.9);
-  box-shadow: 0 0 0 2px oklch(60% 0.16 250 / 0.25);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 .sig-type-preview {
   height: 90px;
@@ -2176,7 +2651,7 @@ button {
 }
 .sig-upload-replace {
   font-size: 13px;
-  color: oklch(60% 0.16 250 / 0.95);
+  color: var(--accent);
   cursor: pointer;
   text-decoration: underline;
 }
@@ -2223,7 +2698,7 @@ button {
 .sig-crop-box {
   position: absolute;
   box-sizing: border-box;
-  border: 1.5px solid oklch(60% 0.16 250 / 0.95);
+  border: 1.5px solid var(--accent);
   box-shadow: 0 0 0 9999px oklch(20% 0.02 250 / 0.45);
   cursor: move;
 }
@@ -2232,7 +2707,7 @@ button {
   width: 12px;
   height: 12px;
   background: var(--surface);
-  border: 1.5px solid oklch(60% 0.16 250 / 0.95);
+  border: 1.5px solid var(--accent);
   border-radius: 50%;
 }
 .sig-crop-nw {
@@ -2274,9 +2749,15 @@ button {
   color: var(--fg);
 }
 .sig-insert {
-  background: var(--fg);
-  color: var(--surface);
-  border-color: var(--fg);
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+  font-weight: 600;
+  transition: background var(--t-fast);
+}
+.sig-insert:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 .sig-insert:disabled {
   opacity: 0.45;
@@ -2430,7 +2911,7 @@ button {
 }
 
 .insert-gap-btn:focus-visible {
-  outline: 2px solid oklch(55% 0.16 250 / 0.85);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -2442,7 +2923,7 @@ button {
 .insert-gap.file-drag-over .insert-gap-btn {
   opacity: 1;
   border-style: solid;
-  border-color: oklch(55% 0.16 250 / 0.9);
+  border-color: var(--accent);
   color: oklch(40% 0.14 250);
   background: oklch(55% 0.14 250 / 0.08);
 }
@@ -2488,7 +2969,7 @@ button {
 }
 
 .insert-menu-item:focus-visible {
-  outline: 2px solid oklch(55% 0.16 250 / 0.85);
+  outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
@@ -2506,7 +2987,7 @@ button {
   max-width: min(640px, calc(100vw - 32px));
   padding: 10px 12px;
   border: 1px solid var(--border);
-  border-left: 3px solid var(--fg);
+  border-left: 3px solid var(--accent);
   border-radius: var(--r-md);
   background: var(--surface-glass);
   backdrop-filter: blur(16px);
@@ -2537,9 +3018,9 @@ button {
    "Pages | Bookmarks" switch; the page panel is re-seated inside it. */
 .side-panel {
   position: fixed;
-  top: 52px;
-  left: 52px;
-  bottom: 40px;
+  top: var(--topbar-h);
+  left: var(--rail-w);
+  bottom: 0;
   width: 208px;
   z-index: 30;
   display: flex;
@@ -2574,7 +3055,7 @@ button {
   border-bottom-color: var(--fg);
 }
 .side-panel-tab:focus-visible {
-  outline: 2px solid oklch(55% 0.16 250 / 0.85);
+  outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 .side-panel-body {
@@ -2664,7 +3145,7 @@ button {
 }
 .bm-add:focus-visible,
 .bm-icon-btn:focus-visible {
-  outline: 2px solid oklch(55% 0.16 250 / 0.85);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 .bm-empty {
@@ -2701,7 +3182,7 @@ button {
   background: oklch(55% 0.14 250 / 0.12);
 }
 .bm-row:focus-visible {
-  outline: 2px solid oklch(55% 0.16 250 / 0.85);
+  outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 .bm-row.no-target .bm-title {
@@ -2714,7 +3195,7 @@ button {
   opacity: 0.5;
 }
 .bm-row.drop-inside {
-  box-shadow: inset 0 0 0 2px oklch(55% 0.16 250 / 0.85);
+  box-shadow: inset 0 0 0 2px var(--accent);
 }
 .bm-row.drop-before::before,
 .bm-row.drop-after::after {
@@ -2724,7 +3205,7 @@ button {
   right: 4px;
   height: 2px;
   border-radius: 2px;
-  background: oklch(55% 0.16 250 / 0.95);
+  background: var(--accent);
   pointer-events: none;
 }
 .bm-row.drop-before::before {
@@ -2767,7 +3248,7 @@ button {
   min-width: 0;
   height: 22px;
   padding: 0 5px;
-  border: 1px solid oklch(55% 0.16 250 / 0.85);
+  border: 1px solid var(--accent);
   border-radius: var(--r-sm);
   background: var(--surface);
   color: var(--fg);
@@ -2777,8 +3258,8 @@ button {
 
 /* Page organizing: multi-select, selection toolbar, extract/replace dialogs -- */
 .page-thumb.selected {
-  background: oklch(60% 0.12 250 / 0.14);
-  border-color: oklch(55% 0.14 250 / 0.55);
+  background: var(--accent-soft);
+  border-color: color-mix(in oklch, var(--accent) 55%, transparent);
 }
 .page-sel-bar {
   padding: 6px 8px 8px;
@@ -2830,7 +3311,7 @@ button {
 }
 .page-sel-actions button:focus-visible,
 .page-sel-clear:focus-visible {
-  outline: 2px solid oklch(55% 0.16 250 / 0.85);
+  outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 .page-sel-check {
@@ -2952,7 +3433,7 @@ p.page-sel-error {
 .stamp-input:focus-visible,
 .stamp-chip:focus-visible,
 .stamp-color:focus-visible {
-  outline: 2px solid oklch(60% 0.16 250 / 0.85);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 .stamp-input[aria-invalid="true"] {
@@ -3008,9 +3489,9 @@ p.page-sel-error {
   background: var(--bg-subtle);
 }
 .stamp-chip.active {
-  background: var(--fg);
-  border-color: var(--fg);
-  color: var(--surface);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-soft-fg);
 }
 .stamp-token {
   font-family: var(--font-mono);
@@ -3310,30 +3791,11 @@ p.page-sel-error {
 }
 
 .find-bar .find-toggle.active {
-  background: oklch(60% 0.16 250 / 0.28);
-  box-shadow: inset 0 0 0 1px oklch(60% 0.16 250 / 0.6);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--accent-soft-fg);
 }
 
-/* Bottom bar: page layout + full screen, then zoom. */
-.bottombar-view {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-.bottombar-sep {
-  width: 1px;
-  height: 16px;
-  background: var(--topbar-border);
-}
-.bottombar-btn.is-active {
-  background: var(--topbar-btn-hover);
-  color: var(--rail-active-fg);
-}
-.topbar-icon-btn {
-  justify-content: center;
-  width: 28px;
-  padding: 0;
-}
 
 /* Hand tool: the stage pans; nothing on the pages reacts to the pointer. */
 .pdf-wrapper.is-hand {
@@ -3361,6 +3823,7 @@ p.page-sel-error {
 .app.is-fullscreen > .topbar,
 .app.is-fullscreen > .tool-rail,
 .app.is-fullscreen > .bottombar,
+.app.is-fullscreen > .tool-hint,
 .app.is-fullscreen .side-panel {
   display: none;
 }
@@ -3501,7 +3964,7 @@ p.page-sel-error {
   color: var(--fg);
 }
 .att-page-link:focus-visible {
-  outline: 2px solid oklch(55% 0.16 250 / 0.85);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 .att-save {
@@ -3542,7 +4005,7 @@ p.page-sel-error {
 .layer-row input {
   flex: none;
   margin: 0;
-  accent-color: oklch(55% 0.16 250);
+  accent-color: var(--accent);
 }
 .layer-name {
   min-width: 0;
@@ -3571,7 +4034,7 @@ p.page-sel-error {
 }
 .layer-folder:focus-visible,
 .layer-row input:focus-visible {
-  outline: 2px solid oklch(55% 0.16 250 / 0.85);
+  outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 .layer-twisty {
@@ -3885,7 +4348,7 @@ p.page-sel-error {
   border-color: var(--border-strong);
 }
 .cmp-page-item:focus-visible {
-  outline: 2px solid oklch(60% 0.16 250 / 0.85);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 .cmp-status-changed {
@@ -4160,7 +4623,7 @@ p.page-sel-error {
 }
 .shape-btn:focus-visible,
 .stamp-chip:focus-visible {
-  outline: 2px solid oklch(55% 0.16 250 / 0.85);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
@@ -4205,7 +4668,7 @@ p.page-sel-error {
   min-height: 42px;
 }
 .cm-panel :focus-visible {
-  outline: 2px solid oklch(55% 0.16 250 / 0.85);
+  outline: 2px solid var(--accent);
   outline-offset: -1px;
 }
 .cm-filters {
@@ -4254,7 +4717,7 @@ p.page-sel-error {
 }
 .cm-item.selected {
   background: oklch(60% 0.12 250 / 0.07);
-  box-shadow: inset 2px 0 0 oklch(55% 0.16 250);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 .cm-row {
   display: flex;
@@ -4432,12 +4895,13 @@ p.page-sel-error {
   cursor: not-allowed;
 }
 .cm-btn.primary {
-  border-color: var(--fg);
-  background: var(--fg);
-  color: var(--surface);
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-fg);
 }
 .cm-btn.primary:hover:not(:disabled) {
-  background: oklch(28% 0 0);
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
 }
 .cm-btn.danger {
   margin-left: auto;

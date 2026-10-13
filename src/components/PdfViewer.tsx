@@ -2,7 +2,14 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Document, Page } from "react-pdf";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { UploadCloud } from "lucide-react";
+import {
+  Combine,
+  FileInput,
+  GitCompareArrows,
+  Link2,
+  ShieldCheck,
+  UploadCloud,
+} from "lucide-react";
 import { EditableLayer } from "./EditableLayer";
 import { ExistingTextLayer } from "./ExistingTextLayer";
 import { ExistingImageLayer } from "./ExistingImageLayer";
@@ -28,6 +35,7 @@ import { makeOnPassword } from "../lib/pdfPassword";
 import { usePageHeights } from "../hooks/usePageHeights";
 import { useScannedPdfPrompt } from "../hooks/useScannedPdfPrompt";
 import { useFormFieldSync } from "../hooks/useFormFieldSync";
+import { useEditorActions } from "../hooks/useEditorActions";
 import { useHandTool } from "../hooks/useHandTool";
 import { loadAttachments } from "../lib/attachments";
 import { loadLayers } from "../lib/layers";
@@ -102,6 +110,7 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
   };
   const canvasRefs = useRef<Map<number, HTMLCanvasElement | null>>(new Map());
   const pdfInputRef = useRef<HTMLInputElement | null>(null);
+  const actions = useEditorActions();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   // Bump to re-render once a page proxy lands so ExistingTextLayer gets it.
   const [, force] = useState(0);
@@ -330,10 +339,13 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
       // view restores a manual zoom) but before this effect is torn down; a stale
       // run must not overwrite that zoom.
       if (!useEditorStore.getState().zoomPreset) return;
-      // clientWidth excludes the scrollbar; subtract the wrapper's 24px h-padding
-      // (both sides) plus a small gutter so the page never butts the scrollbar.
-      const availW = el.clientWidth - 48 - 4;
-      const availH = el.clientHeight - 48;
+      // clientWidth excludes the scrollbar; subtract the wrapper's padding plus a
+      // small gutter so the page never butts the scrollbar. The bottom padding
+      // keeps a fitted page clear of the floating view controls.
+      const pad = getComputedStyle(el);
+      const availW =
+        el.clientWidth - parseFloat(pad.paddingLeft) - parseFloat(pad.paddingRight) - 4;
+      const availH = el.clientHeight - parseFloat(pad.paddingTop) - parseFloat(pad.paddingBottom);
       // A collapsed/zero-size container would produce a non-positive or infinite
       // fit; skip until it has real dimensions.
       if (availW <= 0) return;
@@ -543,6 +555,9 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
     return (
       <section className="empty">
         <h1>Browser PDF Editor</h1>
+        <p className="empty-lede">
+          Edit, sign, comment on and organize PDFs — right in your browser.
+        </p>
         <input
           ref={pdfInputRef}
           type="file"
@@ -554,11 +569,41 @@ export function PdfViewer({ pagePanelOpen = false }: PdfViewerProps) {
           }}
         />
         <button type="button" className="dropzone" onClick={() => pdfInputRef.current?.click()}>
-          <UploadCloud size={48} className="dropzone-icon" />
+          <span className="dropzone-icon" aria-hidden="true">
+            <UploadCloud size={30} />
+          </span>
           <span className="dropzone-title">Drop a PDF here</span>
-          <span className="dropzone-sub muted">or click to browse</span>
+          <span className="dropzone-sub">
+            Word, Excel, HTML and images are converted to PDF automatically
+          </span>
+          <span className="dropzone-cta">Select a file</span>
         </button>
-        <p className="muted">No backend. No upload. Your files never leave your browser.</p>
+        <div className="empty-actions">
+          <button type="button" className="empty-action" onClick={actions.convertFile}>
+            <FileInput size={20} aria-hidden="true" />
+            Convert to PDF
+            <small>Word, Excel, HTML, images</small>
+          </button>
+          <button type="button" className="empty-action" onClick={actions.mergePdfs}>
+            <Combine size={20} aria-hidden="true" />
+            Combine PDFs
+            <small>Merge files into one</small>
+          </button>
+          <button type="button" className="empty-action" onClick={actions.openCompare}>
+            <GitCompareArrows size={20} aria-hidden="true" />
+            Compare PDFs
+            <small>See what changed</small>
+          </button>
+          <button type="button" className="empty-action" onClick={actions.openUrlDialog}>
+            <Link2 size={20} aria-hidden="true" />
+            Open from URL
+            <small>Load a PDF by link</small>
+          </button>
+        </div>
+        <p className="empty-privacy">
+          <ShieldCheck size={15} aria-hidden="true" />
+          No upload. Your files never leave your browser.
+        </p>
       </section>
     );
   }
