@@ -20,6 +20,7 @@ import {
   Underline,
 } from "lucide-react";
 import { useEditorStore, type EditorMode } from "../store/useEditorStore";
+import { useEditorActions } from "../hooks/useEditorActions";
 
 type ToolInfo = { name: string; hint: string; icon: ReactNode };
 
@@ -95,7 +96,7 @@ const TOOLS: Record<Exclude<EditorMode, "select">, ToolInfo> = {
 export function ToolHint() {
   const file = useEditorStore((s) => s.file);
   const mode = useEditorStore((s) => s.mode);
-  const setMode = useEditorStore((s) => s.setMode);
+  const { setMode } = useEditorActions();
 
   if (!file || mode === "select") return null;
   const tool = TOOLS[mode];

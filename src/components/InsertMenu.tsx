@@ -44,7 +44,11 @@ export function InsertMenu({ position, onClose }: Props) {
   // Close on Escape.
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        // Handled: the app-level Escape (leave tool / deselect) must not also fire.
+        e.preventDefault();
+        onClose();
+      }
     }
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);

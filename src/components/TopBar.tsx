@@ -25,9 +25,6 @@ type Props = {
   onFind: () => void;
 };
 
-/** "⌘" on Apple platforms, "Ctrl+" elsewhere — for visible shortcut hints. */
-const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl+";
-
 export function TopBar({ onOpenPalette, onFind }: Props) {
   const file = useEditorStore((s) => s.file);
   const dirty = useEditorStore((s) => isDocumentDirty(s));
@@ -85,12 +82,12 @@ export function TopBar({ onOpenPalette, onFind }: Props) {
         type="button"
         className="topbar-search"
         aria-label="Search tools and commands"
-        title={`Search tools and commands (${MOD}K)`}
+        title="Search tools and commands (⌘K)"
         onClick={onOpenPalette}
       >
         <Search size={15} aria-hidden="true" />
         <span className="topbar-search-label">Search tools &amp; commands</span>
-        <kbd>{MOD}K</kbd>
+        <kbd>⌘K</kbd>
       </button>
 
       <div className="topbar-end">
@@ -98,7 +95,7 @@ export function TopBar({ onOpenPalette, onFind }: Props) {
           <button
             type="button"
             className="topbar-btn topbar-icon-btn"
-            title={`Undo (${MOD}Z)`}
+            title="Undo (⌘Z)"
             aria-label="Undo"
             disabled={!file || !canUndo}
             onClick={undo}
@@ -108,7 +105,7 @@ export function TopBar({ onOpenPalette, onFind }: Props) {
           <button
             type="button"
             className="topbar-btn topbar-icon-btn"
-            title={`Redo (${MOD}⇧Z)`}
+            title="Redo (⌘⇧Z)"
             aria-label="Redo"
             disabled={!file || !canRedo}
             onClick={redo}
@@ -118,7 +115,7 @@ export function TopBar({ onOpenPalette, onFind }: Props) {
           <button
             type="button"
             className="topbar-btn topbar-icon-btn"
-            title={`Find in document (${MOD}F)`}
+            title="Find in document (⌘F)"
             aria-label="Find in document"
             disabled={!file}
             onClick={onFind}

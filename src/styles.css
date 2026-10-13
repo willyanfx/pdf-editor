@@ -178,11 +178,29 @@ kbd {
 /* App shell: top bar across the full width; below it the tool rail + canvas.
    View controls and the active-tool bar float over the canvas. */
 .app {
+  /* Width of the open side panel, which overlays the canvas's left edge; the
+     floating view controls and tool bar center in the space beside it. */
+  --panel-w: 0px;
   display: grid;
   /* minmax(0, …) pins the work row to the viewport even when the rail's
      content is taller, so the floating view controls stay on screen. */
   grid-template: var(--topbar-h) minmax(0, 1fr) / var(--rail-w) minmax(0, 1fr);
   height: 100vh;
+}
+
+/* The side panel's width lives here (one value drives the panel and the
+   offset of the floating bars). Later rules win: Comments is widest. */
+.app:has(.side-panel) {
+  --panel-w: 208px;
+}
+.app:has(.side-panel[data-tabs="3"]) {
+  --panel-w: 244px;
+}
+.app:has(.side-panel[data-tabs="4"]) {
+  --panel-w: 284px;
+}
+.app:has(.side-panel.wide) {
+  --panel-w: 300px;
 }
 
 /* Top bar -------------------------------------------------------------- */
@@ -334,8 +352,7 @@ kbd {
   white-space: nowrap;
 }
 
-.topbar-search kbd,
-.topbar-tip kbd {
+.topbar-search kbd {
   flex: 0 0 auto;
   padding: 1px 6px;
   border: 1px solid var(--topbar-border);
@@ -466,6 +483,7 @@ kbd {
   align-items: center;
   gap: 4px;
   margin-bottom: 16px;
+  margin-left: var(--panel-w);
   padding: 4px;
   border: 1px solid var(--border);
   border-radius: var(--r-pill);
@@ -474,7 +492,6 @@ kbd {
   color: var(--fg);
 }
 
-.bottombar-group,
 .bottombar-view,
 .bottombar-pages {
   display: flex;
@@ -821,8 +838,9 @@ kbd {
   display: flex;
   align-items: center;
   gap: 10px;
-  max-width: calc(100% - 32px);
+  max-width: calc(100% - 32px - var(--panel-w));
   margin-top: 12px;
+  margin-left: var(--panel-w);
   padding: 5px 5px 5px 12px;
   border: 1px solid var(--border);
   border-radius: var(--r-pill);
@@ -830,6 +848,8 @@ kbd {
   box-shadow: var(--shadow-float);
   font-size: 13px;
   animation: tool-hint-in 160ms ease both;
+  /* Informational: let drags on the page underneath through (Done opts back in). */
+  pointer-events: none;
 }
 
 .tool-hint-icon {
@@ -854,6 +874,7 @@ kbd {
 
 .tool-hint-done {
   flex: 0 0 auto;
+  pointer-events: auto;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -3021,7 +3042,7 @@ kbd {
   top: var(--topbar-h);
   left: var(--rail-w);
   bottom: 0;
-  width: 208px;
+  width: var(--panel-w);
   z-index: 30;
   display: flex;
   flex-direction: column;
@@ -3829,6 +3850,8 @@ p.page-sel-error {
 }
 .app.is-fullscreen .pdf-wrapper {
   grid-area: 1 / 1 / 2 / 2;
+  /* The floating view controls are hidden here; drop their bottom inset. */
+  padding-bottom: 24px;
 }
 .app.is-fullscreen .find-bar {
   top: 16px;
@@ -3875,13 +3898,8 @@ p.page-sel-error {
   }
 }
 
-/* Sidebar: extra tabs (Attachments, Layers) appear only when the PDF has them. */
-.side-panel[data-tabs="3"] {
-  width: 244px;
-}
-.side-panel[data-tabs="4"] {
-  width: 284px;
-}
+/* Sidebar: extra tabs (Attachments, Layers) appear only when the PDF has them;
+   the panel widens for them via --panel-w (see the app shell). */
 .side-panel[data-tabs="3"] .side-panel-tab,
 .side-panel[data-tabs="4"] .side-panel-tab {
   padding-inline: 2px;
@@ -4628,9 +4646,6 @@ p.page-sel-error {
 }
 
 /* Comments panel ---------------------------------------------------------- */
-.side-panel.wide {
-  width: 300px;
-}
 .cm-panel {
   flex: 1;
   min-height: 0;

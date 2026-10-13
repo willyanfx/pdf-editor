@@ -39,6 +39,7 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [pagesOpen, setPagesOpen] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
+  const [findFocus, setFindFocus] = useState(0);
   const fullscreen = useViewerStore((s) => s.fullscreen);
 
   function hasFiles(e: React.DragEvent) {
@@ -304,6 +305,7 @@ export default function App() {
         onFind={() => {
           setPaletteOpen(false);
           setFindOpen(true);
+          setFindFocus((n) => n + 1);
         }}
       />
       <ToolRail onTogglePages={() => setPagesOpen((v) => !v)} pagesActive={pagesOpen} />
@@ -329,7 +331,7 @@ export default function App() {
       <RedactSearchDialog />
       <RedactConfirmDialog />
 
-      {findOpen && <FindBar onClose={() => setFindOpen(false)} />}
+      {findOpen && <FindBar onClose={() => setFindOpen(false)} focusRequest={findFocus} />}
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
 
       {isDragging && (

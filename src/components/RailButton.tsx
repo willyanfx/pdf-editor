@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 export type RailButtonProps = {
   icon: ReactNode;
@@ -32,6 +32,19 @@ export function RailButton({
   // Tooltip anchor in viewport coordinates (the tip is position: fixed).
   const [tipAt, setTipAt] = useState<{ top: number; left: number } | null>(null);
   const { label, shortcut } = splitTip(tip);
+
+  // The fixed tip doesn't follow its button, so drop it once anything scrolls
+  // (the rail scrolls on short windows) or the window resizes.
+  useEffect(() => {
+    if (!tipAt) return;
+    const hide = () => setTipAt(null);
+    window.addEventListener("scroll", hide, true);
+    window.addEventListener("resize", hide);
+    return () => {
+      window.removeEventListener("scroll", hide, true);
+      window.removeEventListener("resize", hide);
+    };
+  }, [tipAt]);
 
   function showTip(el: HTMLElement) {
     const r = el.getBoundingClientRect();

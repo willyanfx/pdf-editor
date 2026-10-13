@@ -82,7 +82,11 @@ export function BottomBar() {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") {
+        // Handled: the app-level Escape (leave tool / deselect) must not also fire.
+        e.preventDefault();
+        setOpen(false);
+      }
     }
     window.addEventListener("mousedown", onDown);
     window.addEventListener("keydown", onKey);
