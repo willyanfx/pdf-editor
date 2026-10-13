@@ -6,7 +6,6 @@ import {
   Type,
   ImagePlus,
   Square,
-  Command,
   Highlighter,
   Underline,
   MessageSquare,
@@ -27,12 +26,11 @@ import { RedactMenu } from "./RedactMenu";
 import { ShapesMenu } from "./ShapesMenu";
 
 type Props = {
-  onOpenPalette: () => void;
   onTogglePages: () => void;
   pagesActive: boolean;
 };
 
-export function ToolRail({ onOpenPalette, onTogglePages, pagesActive }: Props) {
+export function ToolRail({ onTogglePages, pagesActive }: Props) {
   const file = useEditorStore((s) => s.file);
   const mode = useEditorStore((s) => s.mode);
   const { setMode, pickImage, addRectangle, openSignature, convertFile, addPages, showComments } =
@@ -123,7 +121,6 @@ export function ToolRail({ onOpenPalette, onTogglePages, pagesActive }: Props) {
         disabled={noFile}
         onClick={() => showComments()}
       />
-      <RailButton icon={<Command size={18} />} tip="Command palette (⌘K)" onClick={onOpenPalette} />
     </nav>
   );
 }

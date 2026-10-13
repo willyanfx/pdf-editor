@@ -4,6 +4,8 @@ import { useEditorStore } from "../store/useEditorStore";
 
 type Props = {
   onClose: () => void;
+  /** Bumped to pull focus back into an already-open bar. */
+  focusRequest?: number;
 };
 
 /**
@@ -12,7 +14,7 @@ type Props = {
  * whole-word. Enter / arrows step through matches, scrolling each into view,
  * selecting it, and jumping to its page.
  */
-export function FindBar({ onClose }: Props) {
+export function FindBar({ onClose, focusRequest }: Props) {
   const query = useEditorStore((s) => s.searchQuery);
   const matchIds = useEditorStore((s) => s.searchMatchIds);
   const setSearchQuery = useEditorStore((s) => s.setSearchQuery);
@@ -29,7 +31,7 @@ export function FindBar({ onClose }: Props) {
   useEffect(() => {
     inputRef.current?.focus();
     inputRef.current?.select();
-  }, []);
+  }, [focusRequest]);
 
   useEffect(() => {
     cursorRef.current = 0;

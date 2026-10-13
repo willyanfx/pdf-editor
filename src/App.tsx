@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { TopBar } from "./components/TopBar";
 import { ToolRail } from "./components/ToolRail";
+import { ToolHint } from "./components/ToolHint";
 import { PdfViewer } from "./components/PdfViewer";
 import { BottomBar } from "./components/BottomBar";
 import { Toaster } from "./components/Toaster";
@@ -38,6 +39,7 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [pagesOpen, setPagesOpen] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
+  const [findFocus, setFindFocus] = useState(0);
   const fullscreen = useViewerStore((s) => s.fullscreen);
 
   function hasFiles(e: React.DragEvent) {
@@ -128,6 +130,19 @@ export default function App() {
           store.resetZoom();
           return;
         }
+      }
+
+      // Escape steps back: deselect the selected edit, else leave the active tool.
+      // Deferred so overlays that own Escape (a polygon in progress, popovers,
+      // dialogs) handle it first and mark it handled with preventDefault.
+      if (e.key === "Escape" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        setTimeout(() => {
+          if (e.defaultPrevented) return;
+          const s = useEditorStore.getState();
+          if (s.selectedEditId) s.selectEdit(null);
+          else if (s.mode !== "select") s.setMode("select");
+        });
+        return;
       }
 
       const store = useEditorStore.getState();
@@ -285,13 +300,17 @@ export default function App() {
         openFiles(e.dataTransfer.files);
       }}
     >
-      <TopBar />
-      <ToolRail
+      <TopBar
         onOpenPalette={() => setPaletteOpen(true)}
-        onTogglePages={() => setPagesOpen((v) => !v)}
-        pagesActive={pagesOpen}
+        onFind={() => {
+          setPaletteOpen(false);
+          setFindOpen(true);
+          setFindFocus((n) => n + 1);
+        }}
       />
+      <ToolRail onTogglePages={() => setPagesOpen((v) => !v)} pagesActive={pagesOpen} />
       <PdfViewer pagePanelOpen={pagesOpen} />
+      <ToolHint />
       <BottomBar />
 
       <Toaster />
@@ -312,7 +331,7 @@ export default function App() {
       <RedactSearchDialog />
       <RedactConfirmDialog />
 
-      {findOpen && <FindBar onClose={() => setFindOpen(false)} />}
+      {findOpen && <FindBar onClose={() => setFindOpen(false)} focusRequest={findFocus} />}
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
 
       {isDragging && (
