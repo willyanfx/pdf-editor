@@ -21,6 +21,9 @@ import type { AnnotationMode } from "../lib/annotationExport";
 import { useExportToolsUi } from "../store/useExportToolsUi";
 import type { ImageFormat } from "../lib/pageImages";
 import type { SanitizeOptions } from "../lib/sanitize";
+import type { LayoutOptions } from "../lib/printLayout";
+import type { A11yFixes, A11yReport } from "../lib/accessibility";
+import type { PdfaIssue } from "../lib/pdfa";
 
 /** Which pages an image export covers. "selected" falls back to the current page. */
 export type PageScope = "all" | "current" | "selected";
@@ -871,6 +874,179 @@ export function useEditorActions() {
     }
   }
 
+  // --- Print layouts, accessibility, PDF/A ---------------------------------
+
+  function openPrintLayout() {
+    if (useEditorStore.getState().file) useExportToolsUi.getState().open("printLayout");
+  }
+
+  function openAccessibilityCheck() {
+    if (useEditorStore.getState().file) useExportToolsUi.getState().open("accessibility");
+  }
+
+  function openPdfaExport() {
+    if (useEditorStore.getState().file) useExportToolsUi.getState().open("pdfa");
+  }
+
+  /**
+   * The document with edits baked in, for tools that rewrite the bytes further.
+   * Pending redactions are confirmed and applied like any download. Resolves
+   * null when there is no document or the user backs out.
+   */
+  async function bakeForTool(
+    opts: { pages?: number[]; flatten?: boolean } = {},
+  ): Promise<{ bytes: Uint8Array; decrypted: boolean } | null> {
+    const { file, edits } = useEditorStore.getState();
+    if (!file) return null;
+    if (!(await confirmRedactions())) return null;
+    const { exportRedactedPdf } = await import("../lib/redact");
+    let decrypted = false;
+    const { bytes, warnings } = await exportRedactedPdf(file, edits, {
+      ...exportOptions(opts.pages),
+      ...(opts.flatten ? { flattenForms: true, annotations: "flatten" as const } : {}),
+      onDecrypted: () => (decrypted = true),
+    });
+    for (const w of warnings) useToastStore.getState().addToast(w, "info");
+    return { bytes, decrypted };
+  }
+
+  /** Tell the user when a tool's output lost the source's password protection. */
+  function noteIfDecrypted(baked: { decrypted: boolean }) {
+    if (!baked.decrypted) return;
+    useToastStore
+      .getState()
+      .addToast("The copy has no password protection — use Protect PDF to add it back", "info");
+  }
+
+  /** Base file name without the .pdf extension. */
+  function baseName() {
+    return (useEditorStore.getState().file?.name ?? "document").replace(/\.pdf$/i, "");
+  }
+
+  /**
+   * Download the pages rearranged for printing — several per sheet, or a folded
+   * booklet. Comments and form fields are drawn into the pages first, since the
+   * rearranged copies can't carry live annotations. Resolves true on success.
+   */
+  async function exportPrintLayout(options: LayoutOptions, scope: PageScope): Promise<boolean> {
+    const pages = pagesForScope(scope);
+    if (pages.length === 0) {
+      useToastStore.getState().addToast("No pages to lay out.", "info");
+      return false;
+    }
+    try {
+      const baked = await bakeForTool({ pages, flatten: true });
+      if (!baked) return false;
+      const { layoutPdf } = await import("../lib/printLayout");
+      const { bytes, sheets } = await layoutPdf(baked.bytes, options);
+      const suffix = options.kind === "booklet" ? "booklet" : `${options.perSheet}-up`;
+      downloadBytes(bytes, `${baseName()}.${suffix}.pdf`);
+      noteIfDecrypted(baked);
+      useToastStore
+        .getState()
+        .addToast(
+          options.kind === "booklet"
+            ? `Booklet ready (${sheets} printed sides). Print double-sided, flipping on the short edge, then fold.`
+            : `Print layout ready (${sheets} sheet${sheets === 1 ? "" : "s"}).`,
+          "success",
+        );
+      return true;
+    } catch (err) {
+      useToastStore
+        .getState()
+        .addToast(exportFailureMessage(err, "Could not lay out this PDF for printing."), "error");
+      return false;
+    }
+  }
+
+  /**
+   * Check the document as it would download (edits baked in). Pending redaction
+   * marks are ignored here: a check should not need a confirmation. Resolves
+   * null on failure, after telling the user.
+   */
+  async function runAccessibilityCheck(): Promise<{
+    report: A11yReport;
+    defaults: { title: string; lang: string };
+  } | null> {
+    const { file, edits, documentPassword } = useEditorStore.getState();
+    if (!file) return null;
+    try {
+      const { exportEditedPdf } = await import("../lib/exportPdf");
+      const bytes = await exportEditedPdf(
+        file,
+        edits.filter((e) => e.type !== "redact"),
+        { ...exportOptions(), redactionsHandled: true },
+      );
+      const { checkAccessibility } = await import("../lib/accessibility");
+      let scanned = false;
+      try {
+        const { isLikelyScanned } = await import("../lib/scannedPdf");
+        scanned = await isLikelyScanned(new File([bytes.slice()], file.name));
+      } catch {
+        // The scanned-text hint is a bonus; the structural check still runs.
+      }
+      const report = await checkAccessibility(bytes, {
+        scanned,
+        password: documentPassword ?? undefined,
+      });
+      return { report, defaults: { title: report.title, lang: report.lang } };
+    } catch (err) {
+      useToastStore
+        .getState()
+        .addToast(exportFailureMessage(err, "Could not check this PDF."), "error");
+      return null;
+    }
+  }
+
+  /** Download a copy with the title / language fixes from the checker applied. */
+  async function downloadAccessibleCopy(fixes: A11yFixes): Promise<boolean> {
+    try {
+      const baked = await bakeForTool();
+      if (!baked) return false;
+      const { applyA11yFixes } = await import("../lib/accessibility");
+      downloadBytes(await applyA11yFixes(baked.bytes, fixes), `${baseName()}.accessible.pdf`);
+      noteIfDecrypted(baked);
+      useToastStore.getState().addToast("Fixed copy exported", "success");
+      return true;
+    } catch (err) {
+      useToastStore
+        .getState()
+        .addToast(exportFailureMessage(err, "Could not apply those fixes."), "error");
+      return false;
+    }
+  }
+
+  /**
+   * Download a copy prepared for PDF/A-2b. Resolves what was changed and what
+   * still stops it from conforming, or null when nothing was exported.
+   */
+  async function exportPdfA(options: {
+    removeRestricted: boolean;
+  }): Promise<{ applied: string[]; issues: PdfaIssue[] } | null> {
+    try {
+      const baked = await bakeForTool();
+      if (!baked) return null;
+      const { prepareForPdfA } = await import("../lib/pdfa");
+      const { bytes, applied, issues } = await prepareForPdfA(baked.bytes, options);
+      downloadBytes(bytes, `${baseName()}.pdfa.pdf`);
+      noteIfDecrypted(baked);
+      useToastStore
+        .getState()
+        .addToast(
+          issues.length
+            ? "PDF/A copy exported — some issues remain"
+            : "PDF/A copy exported (not checked by an external validator)",
+          issues.length ? "info" : "success",
+        );
+      return { applied, issues };
+    } catch (err) {
+      useToastStore
+        .getState()
+        .addToast(exportFailureMessage(err, "Could not prepare this PDF as PDF/A."), "error");
+      return null;
+    }
+  }
+
   // --- Redaction ----------------------------------------------------------
 
   /** Open the "Search & redact" dialog. */
@@ -952,5 +1128,12 @@ export function useEditorActions() {
     exportPagesAsImages,
     saveEmbeddedImages,
     removeHiddenInfo,
+    openPrintLayout,
+    openAccessibilityCheck,
+    openPdfaExport,
+    exportPrintLayout,
+    runAccessibilityCheck,
+    downloadAccessibleCopy,
+    exportPdfA,
   };
 }

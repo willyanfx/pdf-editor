@@ -1,6 +1,12 @@
 import { create } from "zustand";
 
-export type ExportToolsDialog = "pageImages" | "embeddedImages" | "sanitize";
+export type ExportToolsDialog =
+  | "pageImages"
+  | "embeddedImages"
+  | "sanitize"
+  | "printLayout"
+  | "accessibility"
+  | "pdfa";
 
 /**
  * Which of the image-export / sanitize dialogs is open. Pure UI state, kept out
