@@ -2,7 +2,7 @@ import { PDFDocument, StandardFonts, PDFName, PDFString } from "pdf-lib";
 import { describe, expect, it } from "vite-plus/test";
 import { buildSrgbProfile } from "./iccSrgb";
 import { prepareForPdfA } from "./pdfa";
-import { readXmp } from "./xmp";
+import { readXmp, setXmp } from "./xmp";
 
 async function fixture(setup?: (doc: PDFDocument) => void | Promise<void>) {
   const doc = await PDFDocument.create();
@@ -91,6 +91,27 @@ describe("prepareForPdfA", () => {
     const doc = await PDFDocument.load(bytes);
     const a = doc.getPage(0).node.Annots()!.lookup(0) as import("pdf-lib").PDFDict;
     expect(a.get(PDFName.of("F"))?.toString()).toBe("4");
+  });
+
+  it("reports JavaScript and attachments it was told to leave in", async () => {
+    const withScript = await fixture((doc) => {
+      doc.catalog.set(
+        PDFName.of("OpenAction"),
+        doc.context.obj({ Type: "Action", S: "JavaScript", JS: PDFString.of("app.alert(1)") }),
+      );
+    });
+    const kept = await prepareForPdfA(withScript, { removeRestricted: false });
+    expect(kept.issues.find((i) => i.id === "restricted")?.message).toContain("1 script");
+    const removed = await prepareForPdfA(withScript, { removeRestricted: true });
+    expect(removed.issues.some((i) => i.id === "restricted")).toBe(false);
+  });
+
+  it("does not leave the original XMP packet in the file", async () => {
+    const { bytes } = await prepareForPdfA(
+      await fixture((doc) => setXmp(doc, "<x:xmpmeta>ORIGINAL-AUTHOR-MARKER</x:xmpmeta>")),
+      { removeRestricted: true },
+    );
+    expect(new TextDecoder("latin1").decode(bytes)).not.toContain("ORIGINAL-AUTHOR-MARKER");
   });
 
   it("removes JavaScript only when asked", async () => {

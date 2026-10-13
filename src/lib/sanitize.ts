@@ -10,6 +10,7 @@ import {
 } from "pdf-lib";
 import { removeOutline } from "./outline";
 import { removeUnreachableObjects } from "./pageReorder";
+import { dictOf, plural } from "./pdfObjects";
 
 /** What "Remove hidden information" can strip. Fillable forms are flattened by
  * the export pass (flattenForms), not here, so they aren't an option. */
@@ -69,13 +70,6 @@ const COMMENT_SUBTYPES = new Set([
 
 function emptyReport(): HiddenInfoReport {
   return { metadata: 0, attachments: 0, javascript: 0, comments: 0, bookmarks: 0, hiddenLayers: 0 };
-}
-
-function dictOf(ctx: PDFContext, obj: PDFObject | undefined): PDFDict | undefined {
-  const v = ctx.lookup(obj);
-  if (v instanceof PDFDict) return v;
-  if (v instanceof PDFStream) return v.dict;
-  return undefined;
 }
 
 /** True for a JavaScript action, or any action whose /Next chain reaches one
@@ -318,10 +312,7 @@ function stripOpenAction(doc: PDFDocument, options: SanitizeOptions, apply: bool
 export async function scanHiddenInfo(
   pdfBytes: Uint8Array | ArrayBuffer,
 ): Promise<HiddenInfoReport> {
-  const doc = await PDFDocument.load(pdfBytes, { updateMetadata: false });
-  const report = inspectOrStrip(doc, DEFAULT_SANITIZE, false);
-  report.javascript += stripOpenAction(doc, DEFAULT_SANITIZE, false);
-  return report;
+  return scanHiddenInfoOfDocument(await PDFDocument.load(pdfBytes, { updateMetadata: false }));
 }
 
 /**
@@ -335,14 +326,26 @@ export async function sanitizePdf(
   options: SanitizeOptions,
 ): Promise<{ bytes: Uint8Array; removed: HiddenInfoReport }> {
   const doc = await PDFDocument.load(pdfBytes, { updateMetadata: false });
+  const removed = sanitizeDocument(doc, options);
+  return { bytes: await doc.save(), removed };
+}
+
+/** `sanitizePdf` on a document the caller already holds: strips it in place. */
+export function sanitizeDocument(doc: PDFDocument, options: SanitizeOptions): HiddenInfoReport {
   const cut = new Set<PDFRef>();
   const removed = inspectOrStrip(doc, options, true, cut);
   removed.javascript += stripOpenAction(doc, options, true);
   // A removed annotation can still hang off the structure tree (OBJR), which
   // would keep its text alive in the file; cut those refs explicitly.
   removeUnreachableObjects(doc, cut);
-  const bytes = await doc.save();
-  return { bytes, removed: pickRemoved(removed, options) };
+  return pickRemoved(removed, options);
+}
+
+/** What hides in a document the caller already holds, without changing it. */
+export function scanHiddenInfoOfDocument(doc: PDFDocument): HiddenInfoReport {
+  const report = inspectOrStrip(doc, DEFAULT_SANITIZE, false);
+  report.javascript += stripOpenAction(doc, DEFAULT_SANITIZE, false);
+  return report;
 }
 
 /** Zero the categories the user left unticked, so the summary lists only what was removed. */
@@ -367,7 +370,6 @@ export function hasHiddenInfo(report: HiddenInfoReport): boolean {
 
 /** "3 comments, 1 attachment and metadata" — a one-line summary of what was removed. */
 export function describeRemoved(removed: HiddenInfoReport): string {
-  const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
   const parts: string[] = [];
   if (removed.comments) parts.push(plural(removed.comments, "comment"));
   if (removed.attachments) parts.push(plural(removed.attachments, "attachment"));

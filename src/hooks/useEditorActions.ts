@@ -910,6 +910,14 @@ export function useEditorActions() {
     return { bytes, decrypted };
   }
 
+  /** Tell the user when a tool's output lost the source's password protection. */
+  function noteIfDecrypted(baked: { decrypted: boolean }) {
+    if (!baked.decrypted) return;
+    useToastStore
+      .getState()
+      .addToast("The copy has no password protection — use Protect PDF to add it back", "info");
+  }
+
   /** Base file name without the .pdf extension. */
   function baseName() {
     return (useEditorStore.getState().file?.name ?? "document").replace(/\.pdf$/i, "");
@@ -933,6 +941,7 @@ export function useEditorActions() {
       const { bytes, sheets } = await layoutPdf(baked.bytes, options);
       const suffix = options.kind === "booklet" ? "booklet" : `${options.perSheet}-up`;
       downloadBytes(bytes, `${baseName()}.${suffix}.pdf`);
+      noteIfDecrypted(baked);
       useToastStore
         .getState()
         .addToast(
@@ -968,7 +977,7 @@ export function useEditorActions() {
         edits.filter((e) => e.type !== "redact"),
         { ...exportOptions(), redactionsHandled: true },
       );
-      const { checkAccessibility, readA11yFixDefaults } = await import("../lib/accessibility");
+      const { checkAccessibility } = await import("../lib/accessibility");
       let scanned = false;
       try {
         const { isLikelyScanned } = await import("../lib/scannedPdf");
@@ -976,11 +985,11 @@ export function useEditorActions() {
       } catch {
         // The scanned-text hint is a bonus; the structural check still runs.
       }
-      const pw = documentPassword ?? undefined;
-      return {
-        report: await checkAccessibility(bytes, { scanned, password: pw }),
-        defaults: await readA11yFixDefaults(bytes, pw),
-      };
+      const report = await checkAccessibility(bytes, {
+        scanned,
+        password: documentPassword ?? undefined,
+      });
+      return { report, defaults: { title: report.title, lang: report.lang } };
     } catch (err) {
       useToastStore
         .getState()
@@ -996,6 +1005,7 @@ export function useEditorActions() {
       if (!baked) return false;
       const { applyA11yFixes } = await import("../lib/accessibility");
       downloadBytes(await applyA11yFixes(baked.bytes, fixes), `${baseName()}.accessible.pdf`);
+      noteIfDecrypted(baked);
       useToastStore.getState().addToast("Fixed copy exported", "success");
       return true;
     } catch (err) {
@@ -1019,6 +1029,7 @@ export function useEditorActions() {
       const { prepareForPdfA } = await import("../lib/pdfa");
       const { bytes, applied, issues } = await prepareForPdfA(baked.bytes, options);
       downloadBytes(bytes, `${baseName()}.pdfa.pdf`);
+      noteIfDecrypted(baked);
       useToastStore
         .getState()
         .addToast(

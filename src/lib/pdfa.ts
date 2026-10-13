@@ -7,12 +7,11 @@ import {
   PDFNumber,
   PDFStream,
   PDFString,
-  type PDFContext,
-  type PDFObject,
 } from "pdf-lib";
 import { buildSrgbProfile, SRGB_PROFILE_NAME } from "./iccSrgb";
 import { loadPdfLibDocument } from "./pdfLoad";
-import { sanitizePdf } from "./sanitize";
+import { dictOf, nameOf, plural } from "./pdfObjects";
+import { sanitizeDocument, scanHiddenInfoOfDocument } from "./sanitize";
 import { buildPdfaXmp, setXmp } from "./xmp";
 
 /**
@@ -26,7 +25,7 @@ import { buildPdfaXmp, setXmp } from "./xmp";
  */
 
 export type PdfaIssue = {
-  id: "fonts" | "annotations" | "filters" | "encryption";
+  id: "fonts" | "annotations" | "filters" | "restricted";
   message: string;
 };
 
@@ -46,30 +45,33 @@ export type PdfaOptions = {
 
 const n = (s: string) => PDFName.of(s);
 
-function dictOf(ctx: PDFContext, obj: PDFObject | undefined): PDFDict | undefined {
-  const v = ctx.lookup(obj);
-  if (v instanceof PDFDict) return v;
-  if (v instanceof PDFStream) return v.dict;
-  return undefined;
-}
-
-function nameOf(ctx: PDFContext, obj: PDFObject | undefined): string | undefined {
-  const v = ctx.lookup(obj);
-  return v instanceof PDFName ? v.decodeText() : undefined;
-}
-
 const SUBSET_PREFIX = /^[A-Z]{6}\+/;
 
-/** Names of fonts whose program is not embedded in the file. */
-function unembeddedFonts(doc: PDFDocument): string[] {
+/**
+ * One pass over every indirect object: names of fonts whose program is not
+ * embedded, and the stream filters PDF/A-2 forbids (LZW and the Crypt filter).
+ */
+function scanObjects(doc: PDFDocument): { fonts: string[]; filters: string[] } {
   const ctx = doc.context;
-  const names = new Set<string>();
+  const fonts = new Set<string>();
+  const filters = new Set<string>();
   const hasProgram = (descriptor: PDFDict | undefined) =>
     !!descriptor &&
     (descriptor.has(n("FontFile")) ||
       descriptor.has(n("FontFile2")) ||
       descriptor.has(n("FontFile3")));
   for (const [, obj] of ctx.enumerateIndirectObjects()) {
+    if (obj instanceof PDFStream) {
+      const filter = ctx.lookup(obj.dict.get(n("Filter")));
+      const list =
+        filter instanceof PDFArray ? filter.asArray().map((f) => ctx.lookup(f)) : [filter];
+      for (const f of list) {
+        if (f instanceof PDFName && ["LZWDecode", "Crypt"].includes(f.decodeText())) {
+          filters.add(f.decodeText());
+        }
+      }
+      continue;
+    }
     if (!(obj instanceof PDFDict) || nameOf(ctx, obj.get(n("Type"))) !== "Font") continue;
     const subtype = nameOf(ctx, obj.get(n("Subtype")));
     // Type 3 glyphs are drawn inline; CID fonts are judged via their Type0 parent.
@@ -82,25 +84,9 @@ function unembeddedFonts(doc: PDFDocument): string[] {
     }
     if (hasProgram(descriptor)) continue;
     const base = nameOf(ctx, obj.get(n("BaseFont"))) ?? "(unnamed)";
-    names.add(base.replace(SUBSET_PREFIX, ""));
+    fonts.add(base.replace(SUBSET_PREFIX, ""));
   }
-  return [...names].sort();
-}
-
-/** Stream filters PDF/A-2 forbids (LZW, and the encryption Crypt filter). */
-function forbiddenFilters(doc: PDFDocument): string[] {
-  const ctx = doc.context;
-  const found = new Set<string>();
-  for (const [, obj] of ctx.enumerateIndirectObjects()) {
-    if (!(obj instanceof PDFStream)) continue;
-    const filter = ctx.lookup(obj.dict.get(n("Filter")));
-    const list = filter instanceof PDFArray ? filter.asArray().map((f) => ctx.lookup(f)) : [filter];
-    for (const f of list) {
-      if (f instanceof PDFName && ["LZWDecode", "Crypt"].includes(f.decodeText()))
-        found.add(f.decodeText());
-    }
-  }
-  return [...found];
+  return { fonts: [...fonts].sort(), filters: [...filters] };
 }
 
 const FLAG_INVISIBLE = 1;
@@ -145,8 +131,6 @@ function randomId(): PDFHexString {
   return PDFHexString.of([...bytes].map((b) => b.toString(16).padStart(2, "0")).join(""));
 }
 
-const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
-
 /** Prepare finished PDF bytes for PDF/A-2b. */
 export async function prepareForPdfA(
   bytes: Uint8Array | ArrayBuffer,
@@ -155,23 +139,34 @@ export async function prepareForPdfA(
   const applied: string[] = [];
   const issues: PdfaIssue[] = [];
 
-  let working: Uint8Array | ArrayBuffer = bytes;
+  const doc = await loadPdfLibDocument(bytes, options.password);
+  const ctx = doc.context;
+  const catalog = doc.catalog;
+
   if (options.removeRestricted) {
-    const { bytes: cleaned, removed } = await sanitizePdf(working, {
+    const removed = sanitizeDocument(doc, {
       metadata: false,
       comments: false,
       bookmarks: false,
       attachments: true,
       javascript: true,
     });
-    working = cleaned;
     if (removed.javascript) applied.push(`Removed ${plural(removed.javascript, "script")}`);
     if (removed.attachments) applied.push(`Removed ${plural(removed.attachments, "attachment")}`);
+  } else {
+    // Left in on request, but PDF/A-2b forbids both, so say so.
+    const found = scanHiddenInfoOfDocument(doc);
+    const parts = [
+      found.javascript ? plural(found.javascript, "script") : "",
+      found.attachments ? plural(found.attachments, "attachment") : "",
+    ].filter(Boolean);
+    if (parts.length) {
+      issues.push({
+        id: "restricted",
+        message: `Contains ${parts.join(" and ")}, which PDF/A-2b does not allow. Export again with the removal option ticked.`,
+      });
+    }
   }
-
-  const doc = await loadPdfLibDocument(working, options.password);
-  const ctx = doc.context;
-  const catalog = doc.catalog;
 
   // Properties: write the same values to the Info dictionary and the XMP packet.
   const now = new Date();
@@ -235,7 +230,7 @@ export async function prepareForPdfA(
     });
   }
 
-  const fonts = unembeddedFonts(doc);
+  const { fonts, filters } = scanObjects(doc);
   if (fonts.length) {
     const shown =
       fonts.slice(0, 6).join(", ") + (fonts.length > 6 ? `, +${fonts.length - 6} more` : "");
@@ -245,7 +240,6 @@ export async function prepareForPdfA(
     });
   }
 
-  const filters = forbiddenFilters(doc);
   if (filters.length) {
     issues.push({
       id: "filters",

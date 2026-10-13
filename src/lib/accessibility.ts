@@ -11,6 +11,7 @@ import {
   type PDFObject,
 } from "pdf-lib";
 import { loadPdfLibDocument } from "./pdfLoad";
+import { dictOf, nameOf, plural } from "./pdfObjects";
 import { readXmp, replaceXmpTitle, setXmp, xmpTitle } from "./xmp";
 
 /**
@@ -37,6 +38,9 @@ export type A11yReport = {
   /** Whether the document carries a structure tree at all. */
   tagged: boolean;
   counts: Record<A11yStatus, number>;
+  /** The document title (Info or XMP) and language tag, for prefilling the fix form. */
+  title: string;
+  lang: string;
 };
 
 export type A11yOptions = {
@@ -47,22 +51,10 @@ export type A11yOptions = {
 
 const n = (s: string) => PDFName.of(s);
 
-function dictOf(ctx: PDFContext, obj: PDFObject | undefined): PDFDict | undefined {
-  const v = ctx.lookup(obj);
-  if (v instanceof PDFDict) return v;
-  if (v instanceof PDFStream) return v.dict;
-  return undefined;
-}
-
 function textOf(ctx: PDFContext, obj: PDFObject | undefined): string {
   const v = ctx.lookup(obj);
   if (v instanceof PDFString || v instanceof PDFHexString) return v.decodeText().trim();
   return "";
-}
-
-function nameOf(ctx: PDFContext, obj: PDFObject | undefined): string | undefined {
-  const v = ctx.lookup(obj);
-  return v instanceof PDFName ? v.decodeText() : undefined;
 }
 
 /** A page attribute that may be inherited from an ancestor /Pages node. */
@@ -79,6 +71,8 @@ function inherited(ctx: PDFContext, node: PDFDict, key: PDFName): PDFObject | un
 
 type StructFacts = {
   elements: number;
+  /** The walk hit its size or depth limit, so the lists below may be incomplete. */
+  truncated: boolean;
   figures: { page: number | null; hasAlt: boolean }[];
   /** Heading levels in reading order, with the page they sit on. */
   headings: { level: number; page: number | null }[];
@@ -94,7 +88,13 @@ function readStructure(doc: PDFDocument, pageNumber: Map<PDFRef, number>): Struc
   const root = dictOf(ctx, doc.catalog.get(n("StructTreeRoot")));
   if (!root) return null;
   const roleMap = dictOf(ctx, root.get(n("RoleMap")));
-  const facts: StructFacts = { elements: 0, figures: [], headings: [], tables: [] };
+  const facts: StructFacts = {
+    elements: 0,
+    truncated: false,
+    figures: [],
+    headings: [],
+    tables: [],
+  };
   const seen = new Set<PDFDict>();
 
   /** Standard role of an element, following the role map (cycle-safe). */
@@ -110,7 +110,10 @@ function readStructure(doc: PDFDocument, pageNumber: Map<PDFRef, number>): Struc
 
   /** Returns true if a TH was seen anywhere inside (so a table can be judged). */
   const visit = (obj: PDFObject | undefined, pg: PDFRef | undefined, depth: number): boolean => {
-    if (depth > MAX_STRUCT_DEPTH || facts.elements > MAX_STRUCT_ELEMENTS) return false;
+    if (depth > MAX_STRUCT_DEPTH || facts.elements > MAX_STRUCT_ELEMENTS) {
+      facts.truncated = true;
+      return false;
+    }
     const resolved = ctx.lookup(obj);
     if (resolved instanceof PDFArray) {
       let header = false;
@@ -175,8 +178,6 @@ function pageList(pages: (number | null)[]): number[] | undefined {
   return list.length ? list : undefined;
 }
 
-const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
-
 /** A loose BCP 47 shape (`en`, `en-US`, `zh-Hant-TW`). */
 export const LANGUAGE_TAG = /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$/;
 
@@ -236,6 +237,20 @@ export async function checkAccessibility(
     });
   }
 
+  // Passes below mean "everything was inspected"; after a truncated walk they would lie.
+  const addPass = (c: A11yCheck) => {
+    if (!facts?.truncated) add(c);
+  };
+  if (facts?.truncated) {
+    add({
+      id: "structure-truncated",
+      status: "warn",
+      title: "Structure tree too large to check completely",
+      detail:
+        "Only part of the tags were inspected, so figures, headings and tables further on may have problems that are not listed.",
+    });
+  }
+
   // --- Language ---------------------------------------------------------
   const lang = textOf(ctx, doc.catalog.get(n("Lang")));
   if (!lang) {
@@ -285,7 +300,7 @@ export async function checkAccessibility(
   if (facts) {
     const missing = facts.figures.filter((f) => !f.hasAlt);
     if (facts.figures.length === 0) {
-      add({ id: "figures", status: "pass", title: "No figures to describe", detail: "" });
+      addPass({ id: "figures", status: "pass", title: "No figures to describe", detail: "" });
     } else if (missing.length) {
       add({
         id: "figures",
@@ -295,7 +310,7 @@ export async function checkAccessibility(
         pages: pageList(missing.map((f) => f.page)),
       });
     } else {
-      add({
+      addPass({
         id: "figures",
         status: "pass",
         title: `All ${plural(facts.figures.length, "figure")} have alternate text`,
@@ -345,7 +360,7 @@ export async function checkAccessibility(
           pages: pageList(skipped),
         });
       } else {
-        add({
+        addPass({
           id: "headings",
           status: "pass",
           title: `${plural(facts.headings.length, "heading")} in a logical order`,
@@ -357,7 +372,7 @@ export async function checkAccessibility(
     // --- Tables -----------------------------------------------------------
     if (facts.tables.length) {
       const bad = facts.tables.filter((t) => !t.hasHeader);
-      add(
+      (bad.length ? add : addPass)(
         bad.length
           ? {
               id: "tables",
@@ -405,7 +420,16 @@ export async function checkAccessibility(
       return;
     }
     fieldCount++;
-    if (!tip) unlabelled.push(widgetPage.get(field) ?? null);
+    if (tip) return;
+    // A field with separate widgets is not itself an annotation: use its first widget's page.
+    const widgets =
+      kids instanceof PDFArray
+        ? Array.from({ length: kids.size() }, (_, i) => dictOf(ctx, kids.get(i)))
+        : [];
+    const own =
+      widgetPage.get(field) ??
+      widgets.map((w) => (w ? widgetPage.get(w) : undefined)).find((p) => p !== undefined);
+    unlabelled.push(own ?? null);
   };
   const fields = ctx.lookup(dictOf(ctx, doc.catalog.get(n("AcroForm")))?.get(n("Fields")));
   if (fields instanceof PDFArray)
@@ -486,7 +510,7 @@ export async function checkAccessibility(
 
   const counts: Record<A11yStatus, number> = { fail: 0, warn: 0, pass: 0, manual: 0 };
   for (const c of checks) counts[c.status]++;
-  return { checks, tagged, counts };
+  return { checks, tagged, counts, title, lang };
 }
 
 /** Document-level fixes the checker offers. */
@@ -527,16 +551,4 @@ export async function applyA11yFixes(
     doc.catalog.set(n("Lang"), PDFString.of(lang));
   }
   return doc.save({ useObjectStreams: true });
-}
-
-/** The values the checker can prefill the fix form with. */
-export async function readA11yFixDefaults(
-  bytes: Uint8Array | ArrayBuffer,
-  password?: string,
-): Promise<{ title: string; lang: string }> {
-  const doc = await loadPdfLibDocument(bytes, password);
-  return {
-    title: (doc.getTitle() ?? "").trim(),
-    lang: textOf(doc.context, doc.catalog.get(n("Lang"))),
-  };
 }

@@ -1,12 +1,12 @@
 import {
-  PDFDict,
   PDFName,
   PDFRawStream,
+  PDFRef,
   PDFStream,
   decodePDFRawStream,
   type PDFDocument,
 } from "pdf-lib";
-import { escapeXml } from "./xml";
+import { decodeEntities, escapeXml } from "./xml";
 
 /** The document's XMP packet as text, or null when it has none / can't be decoded. */
 export function readXmp(doc: PDFDocument): string | null {
@@ -21,21 +21,26 @@ export function readXmp(doc: PDFDocument): string | null {
   }
 }
 
+/** A `<dc:title>` element (it may carry attributes); group 1 is its content. */
+const DC_TITLE = /<dc:title(?:\s[^>]*)?>([\s\S]*?)<\/dc:title>/;
+
 /** First `<dc:title>` text in an XMP packet (the x-default alternative), if any. */
 export function xmpTitle(xmp: string): string | null {
-  const block = xmp.match(/<dc:title>([\s\S]*?)<\/dc:title>/);
+  const block = xmp.match(DC_TITLE);
   if (!block) return null;
   const item = block[1].match(/<rdf:li[^>]*>([\s\S]*?)<\/rdf:li>/);
-  const text = (item ? item[1] : block[1].replace(/<[^>]+>/g, "")).trim();
+  const text = decodeEntities(item ? item[1] : block[1].replace(/<[^>]+>/g, "")).trim();
   return text || null;
 }
 
 /** Replace the `<dc:title>` alternative in an existing packet; null if it has none. */
 export function replaceXmpTitle(xmp: string, title: string): string | null {
-  if (!/<dc:title>[\s\S]*?<\/dc:title>/.test(xmp)) return null;
+  if (!DC_TITLE.test(xmp)) return null;
+  // A function replacer: a title containing "$&" must not be read as a pattern.
   return xmp.replace(
-    /<dc:title>[\s\S]*?<\/dc:title>/,
-    `<dc:title><rdf:Alt><rdf:li xml:lang="x-default">${escapeXml(title)}</rdf:li></rdf:Alt></dc:title>`,
+    DC_TITLE,
+    () =>
+      `<dc:title><rdf:Alt><rdf:li xml:lang="x-default">${escapeXml(title)}</rdf:li></rdf:Alt></dc:title>`,
   );
 }
 
@@ -100,16 +105,17 @@ export function buildPdfaXmp(f: XmpFields): string {
   ].join("\n");
 }
 
-/** Point the catalog's /Metadata at a fresh, uncompressed XMP stream. */
+/**
+ * Point the catalog's /Metadata at a fresh, uncompressed XMP stream. The old
+ * stream is deleted: pdf-lib writes every registered object, so leaving it
+ * would keep the previous packet in the file.
+ */
 export function setXmp(doc: PDFDocument, xml: string): void {
+  const old = doc.catalog.get(PDFName.of("Metadata"));
+  if (old instanceof PDFRef) doc.context.delete(old);
   const stream = doc.context.stream(new TextEncoder().encode(xml), {
     Type: "Metadata",
     Subtype: "XML",
   });
   doc.catalog.set(PDFName.of("Metadata"), doc.context.register(stream));
-}
-
-/** Whether `obj` is a dictionary (helper for callers walking raw PDF objects). */
-export function isDict(obj: unknown): obj is PDFDict {
-  return obj instanceof PDFDict;
 }

@@ -4,6 +4,7 @@ import { PDFDocument, PDFName, PDFString, type PDFRef } from "pdf-lib";
 type Elem = Record<string, string | PDFString | PDFRef[] | undefined>;
 import { describe, expect, it } from "vite-plus/test";
 import { applyA11yFixes, checkAccessibility, type A11yReport } from "./accessibility";
+import { readXmp, setXmp, xmpTitle } from "./xmp";
 
 type Spec = {
   lang?: string;
@@ -181,7 +182,61 @@ describe("checkAccessibility", () => {
   });
 });
 
+describe("structure walk limits", () => {
+  it("warns instead of passing when the tree is too deep to inspect fully", async () => {
+    const doc = await PDFDocument.create();
+    const page = doc.addPage();
+    const ctx = doc.context;
+    let inner = ctx.register(
+      ctx.obj({ Type: "StructElem", S: "Figure", Alt: PDFString.of("ok"), Pg: page.ref }),
+    );
+    for (let i = 0; i < 300; i++) {
+      inner = ctx.register(ctx.obj({ Type: "StructElem", S: "Div", K: [inner] } as never));
+    }
+    doc.catalog.set(
+      PDFName.of("StructTreeRoot"),
+      ctx.register(ctx.obj({ Type: "StructTreeRoot", K: [inner] })),
+    );
+    const report = await checkAccessibility(await doc.save());
+    expect(byId(report, "structure-truncated")?.status).toBe("warn");
+    expect(byId(report, "figures")).toBeUndefined();
+  });
+});
+
+describe("form fields with separate widgets", () => {
+  it("reports the page of an unlabelled field whose widget is a kid", async () => {
+    const doc = await PDFDocument.create();
+    doc.addPage();
+    const page = doc.addPage();
+    const ctx = doc.context;
+    const field = ctx.nextRef();
+    const widget = ctx.register(
+      ctx.obj({ Type: "Annot", Subtype: "Widget", Rect: [0, 0, 10, 10], Parent: field }),
+    );
+    ctx.assign(field, ctx.obj({ FT: "Tx", T: PDFString.of("name"), Kids: [widget] }));
+    page.node.set(PDFName.of("Annots"), ctx.obj([widget]));
+    doc.catalog.set(PDFName.of("AcroForm"), ctx.obj({ Fields: [field] }));
+    const report = await checkAccessibility(await doc.save());
+    expect(byId(report, "forms")?.pages).toEqual([2]);
+  });
+});
+
 describe("applyA11yFixes", () => {
+  it("keeps an existing XMP title in step with the new title", async () => {
+    const doc = await PDFDocument.create();
+    doc.addPage();
+    doc.setTitle("Old title");
+    setXmp(
+      doc,
+      `<x:xmpmeta><rdf:RDF><rdf:Description><dc:title><rdf:Alt><rdf:li xml:lang="x-default">Old title</rdf:li></rdf:Alt></dc:title></rdf:Description></rdf:RDF></x:xmpmeta>`,
+    );
+    const fixed = await applyA11yFixes(await doc.save(), { title: "New title" });
+    const out = await PDFDocument.load(fixed, { updateMetadata: false });
+    expect(xmpTitle(readXmp(out) ?? "")).toBe("New title");
+    expect(out.getTitle()).toBe("New title");
+    expect(new TextDecoder("latin1").decode(fixed)).not.toContain("Old title");
+  });
+
   it("sets language, title and the title display preference", async () => {
     const fixed = await applyA11yFixes(await build(), { lang: "fr-CA", title: "Rapport" });
     const report = await checkAccessibility(fixed);
