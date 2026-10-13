@@ -3817,7 +3817,6 @@ p.page-sel-error {
   color: var(--accent-soft-fg);
 }
 
-
 /* Hand tool: the stage pans; nothing on the pages reacts to the pointer. */
 .pdf-wrapper.is-hand {
   cursor: grab;
