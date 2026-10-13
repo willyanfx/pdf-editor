@@ -57,6 +57,10 @@ All engines emit bounding boxes in the 800px space; `fontSize.ts` estimates font
 
 `vite.config.ts` encodes several hard-won constraints: COOP/COEP headers for `SharedArrayBuffer` (multithreaded OCR; GitHub Pages can't set them, so production falls back to single-threaded), `process.env.DRAGGABLE_DEBUG` shim (react-rnd crashes without it), `optimizeDeps` include/exclude lists required by transformers.js and paddleocr's CJS imports, and ESM worker format for the VLM worker. Breaking any of these fails only at runtime, not build time.
 
+### Print layouts, accessibility check, PDF/A
+
+All three are command-palette tools (Export group) that bake the edits first, then post-process the bytes: `lib/printLayout.ts` (N-up + saddle-stitch booklet via `embedPages`; pure `plan*` functions are unit-tested), `lib/accessibility.ts` (structure-tree checks + title/language fixes), `lib/pdfa.ts` (best-effort PDF/A-2b: XMP, generated sRGB intent in `iccSrgb.ts`, file ID; it *reports* unembedded fonts rather than fixing them and is not validator-certified). Dialogs live in `ComplianceDialogs.tsx`, sharing `ToolDialogShell.tsx` with `ExportToolsDialogs.tsx`.
+
 ### Viewer state and layout
 
 - View-only state (theme, single/two-page layout, full screen, the open PDF's attachments and layers) lives in `src/store/useViewerStore.ts`, not the editor store — it isn't undoable, autosaved or exported. Theme and layout persist in `localStorage`.

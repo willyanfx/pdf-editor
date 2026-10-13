@@ -3663,6 +3663,72 @@ p.page-sel-error {
   white-space: nowrap;
 }
 
+/* Print layout, accessibility check and PDF/A dialogs */
+.a11y-report {
+  max-height: 40vh;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+.a11y-heading {
+  margin: 8px 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted, var(--fg));
+}
+.a11y-list {
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 0;
+}
+.a11y-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 2px;
+  border-bottom: 1px solid oklch(60% 0.02 250 / 0.1);
+  font-size: 13px;
+  color: var(--fg);
+}
+.a11y-icon {
+  flex: none;
+  margin-top: 1px;
+}
+.a11y-fail {
+  color: oklch(55% 0.2 27);
+}
+.a11y-warn {
+  color: oklch(65% 0.15 75);
+}
+.a11y-pass {
+  color: var(--success, #2f9e44);
+}
+.a11y-manual {
+  color: var(--muted, var(--fg));
+}
+.a11y-fixes {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 0;
+}
+.a11y-field input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  margin-left: auto;
+  max-width: 260px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg, #fff);
+  color: var(--fg);
+  font: inherit;
+}
+.a11y-error {
+  display: block;
+  margin: -4px 0 8px;
+  color: oklch(55% 0.2 27);
+  font-size: 12px;
+}
+
 /* Protect PDF dialog */
 .protect-form {
   display: flex;
